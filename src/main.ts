@@ -1,7 +1,11 @@
 import gsap from 'gsap';
 import { SplitText } from 'gsap/SplitText';
+import { loadLyricSheet, lyricSheetNameFromLocation } from './app/load-lyric-sheet';
+import { mountLyricTimeline } from './app/lyric-timeline';
+import { Ticker } from './app/ticker';
 import { assetUrl } from './lib/asset';
 import { AudioPlayer } from './stage/audio-player';
+import { LyricStage } from './stage/lyric-stage';
 import { mountTransport } from './stage/transport';
 import './style.css';
 
@@ -16,30 +20,29 @@ function required<T extends HTMLElement>(id: string): T {
   return el as T;
 }
 
-// --- ステージのタイトル演出（M3 で演出プリセットに置き換える） ---
-const stageText = required<HTMLDivElement>('stage-text');
-stageText.textContent = 'lyric stage';
-
-// SplitText は元のテキストを 1 文字ずつ <div> に分解してくれる。
-// 分解後の要素配列 (split.chars) に対してまとめて gsap.from を掛け、
-// stagger で 1 文字ずつ時間をずらすのが「刻む」演出の基本形。
-const split = SplitText.create(stageText, { type: 'chars' });
-
-gsap.from(split.chars, {
-  opacity: 0,
-  yPercent: 60,
-  duration: 0.8,
-  ease: 'power3.out',
-  stagger: 0.06,
-});
-
-// --- 音声 ---
+// ここは composition root。各層を組み立てて起動するだけで、
+// 演出の中身も歌詞の判定ロジックも持たない。
+const ticker = new Ticker();
 const player = new AudioPlayer(assetUrl('audio/maou_14_shining_star.mp3'));
+const stage = new LyricStage(required<HTMLDivElement>('stage-text'));
+const message = required('transport-message');
 
-mountTransport(player, {
+mountTransport(player, ticker, {
   root: required('transport'),
   toggle: required<HTMLButtonElement>('transport-toggle'),
   seek: required<HTMLInputElement>('transport-seek'),
   time: required('transport-time'),
-  message: required('transport-message'),
+  message,
 });
+
+ticker.start();
+
+loadLyricSheet(lyricSheetNameFromLocation(location.search))
+  .then((sheet) => {
+    document.title = `${sheet.title} — lyric-stage`;
+    mountLyricTimeline(player, ticker, sheet, stage);
+  })
+  .catch((error: unknown) => {
+    message.textContent = '歌詞ファイルを読み込めませんでした。';
+    console.error(error);
+  });

@@ -1,3 +1,4 @@
+import type { Ticker } from '../app/ticker';
 import type { Playback } from './playback';
 
 /** 12.34 秒 → "0:12" */
@@ -20,10 +21,14 @@ export interface TransportElements {
  * 再生コントロールの見た目を Playback に繋ぐ。
  * 状態を持つのは Playback 側だけで、ここは「映すだけ」に徹する。
  *
- * 戻り値を呼ぶと購読と rAF ループを止める（今は使っていないが、
- * M2 で app 層の ticker に一本化する時にここを差し替える）。
+ * 毎フレームの更新は app 層の Ticker に相乗りする（rAF はアプリ全体で 1 本）。
+ * 戻り値を呼ぶと購読を解除する。
  */
-export function mountTransport(player: Playback, el: TransportElements): () => void {
+export function mountTransport(
+  player: Playback,
+  ticker: Ticker,
+  el: TransportElements,
+): () => void {
   // シークバーを操作している間は再生位置での上書きを止める。
   // これをしないと、つまみを動かした瞬間に再生位置へ引き戻される。
   // input で立てて change で倒すので、ポインタでもキーボードでも同じ経路になる。
@@ -90,18 +95,15 @@ export function mountTransport(player: Playback, el: TransportElements): () => v
   const unsubscribe = player.subscribe(render);
 
   // 再生中は毎フレーム表示を更新する。timeupdate イベントは 250ms 程度しか
-  // 発火せずカクつくため、M2 のタイムラインと同じ rAF ループで回す。
-  let frame = 0;
-  const tick = () => {
+  // 発火せずカクつくため、歌詞タイムラインと同じ Ticker に乗せる。
+  const untick = ticker.subscribe(() => {
     if (!player.paused) render();
-    frame = requestAnimationFrame(tick);
-  };
-  frame = requestAnimationFrame(tick);
+  });
 
   render();
 
   return () => {
-    cancelAnimationFrame(frame);
+    untick();
     unsubscribe();
     el.toggle.removeEventListener('click', onClick);
     el.seek.removeEventListener('input', onInput);
