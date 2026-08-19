@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { isValidSheetName, lyricSheetNameFromLocation } from './load-lyric-sheet';
+import {
+  DEFAULT_SHEET_NAME,
+  isValidSheetName,
+  lyricSheetNameFromLocation,
+} from './load-lyric-sheet';
 
 describe('isValidSheetName', () => {
   it('英数字・アンダースコア・ハイフンだけを通す', () => {
@@ -27,16 +31,16 @@ describe('isValidSheetName', () => {
 });
 
 describe('lyricSheetNameFromLocation', () => {
-  it('指定が無ければ sample', () => {
-    expect(lyricSheetNameFromLocation('')).toBe('sample');
-    expect(lyricSheetNameFromLocation('?other=1')).toBe('sample');
+  it('指定が無ければ本編', () => {
+    expect(lyricSheetNameFromLocation('')).toBe(DEFAULT_SHEET_NAME);
+    expect(lyricSheetNameFromLocation('?other=1')).toBe(DEFAULT_SHEET_NAME);
   });
 
-  it('空の指定でも sample に落とす', () => {
-    expect(lyricSheetNameFromLocation('?lyrics=')).toBe('sample');
+  it('空の指定でも本編に落とす', () => {
+    expect(lyricSheetNameFromLocation('?lyrics=')).toBe(DEFAULT_SHEET_NAME);
   });
 
   it('指定された名前を返す', () => {
-    expect(lyricSheetNameFromLocation('?lyrics=shining')).toBe('shining');
+    expect(lyricSheetNameFromLocation('?lyrics=sample')).toBe('sample');
   });
 });

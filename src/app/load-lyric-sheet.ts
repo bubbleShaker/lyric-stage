@@ -10,9 +10,12 @@ export function isValidSheetName(name: string): boolean {
   return /^[\w-]+$/.test(name);
 }
 
-/** URL の ?lyrics=xxx で歌詞ファイルを切り替える。既定は sample */
+/** 作品本編の歌詞シート。?lyrics= の指定が無いときはこれを読む */
+export const DEFAULT_SHEET_NAME = 'shining-star';
+
+/** URL の ?lyrics=xxx で歌詞ファイルを切り替える。既定は本編 */
 export function lyricSheetNameFromLocation(search: string): string {
-  return new URLSearchParams(search).get('lyrics') || 'sample';
+  return new URLSearchParams(search).get('lyrics') || DEFAULT_SHEET_NAME;
 }
 
 /** public/lyrics/<name>.json を読み込む */
