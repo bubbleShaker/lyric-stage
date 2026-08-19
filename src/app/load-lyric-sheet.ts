@@ -2,14 +2,23 @@ import { assetUrl } from '../lib/asset';
 import { parseLyricSheet, type LyricSheet } from '../domain/lyrics';
 
 /**
- * public/lyrics/<name>.json を読み込む。
- *
- * name は URL の ?lyrics= から来るため、パス区切りや .. を含むものは弾く。
- * 外から与えられた文字列をそのまま URL に埋めない。
+ * 歌詞ファイル名として許すのは英数字・アンダースコア・ハイフンだけ。
+ * URL から来た文字列をそのままパスに埋めると、`../` などで
+ * 意図しない場所を読みに行かせられる。ホワイトリストで弾く。
  */
+export function isValidSheetName(name: string): boolean {
+  return /^[\w-]+$/.test(name);
+}
+
+/** URL の ?lyrics=xxx で歌詞ファイルを切り替える。既定は sample */
+export function lyricSheetNameFromLocation(search: string): string {
+  return new URLSearchParams(search).get('lyrics') || 'sample';
+}
+
+/** public/lyrics/<name>.json を読み込む */
 export async function loadLyricSheet(name: string): Promise<LyricSheet> {
-  if (!/^[\w-]+$/.test(name)) {
-    throw new Error(`歌詞ファイル名に使えない文字が含まれています: ${name}`);
+  if (!isValidSheetName(name)) {
+    throw new Error('歌詞ファイル名に使えない文字が含まれています');
   }
 
   const response = await fetch(assetUrl(`lyrics/${name}.json`));
@@ -18,9 +27,4 @@ export async function loadLyricSheet(name: string): Promise<LyricSheet> {
   }
 
   return parseLyricSheet(await response.json());
-}
-
-/** URL の ?lyrics=xxx で歌詞ファイルを切り替える。既定は sample */
-export function lyricSheetNameFromLocation(search: string): string {
-  return new URLSearchParams(search).get('lyrics') ?? 'sample';
 }

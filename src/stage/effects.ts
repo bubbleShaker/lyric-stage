@@ -31,5 +31,15 @@ export const effects: Record<string, Effect> = {
 export const DEFAULT_EFFECT = 'fade';
 
 export function resolveEffect(name: string | undefined): Effect {
-  return effects[name ?? DEFAULT_EFFECT] ?? effects[DEFAULT_EFFECT];
+  if (name === undefined) return effects[DEFAULT_EFFECT];
+
+  // Object.hasOwn で自前のキーだけを見る。単に effects[name] と書くと
+  // 'toString' や '__proto__' のような Object.prototype 由来の値まで拾ってしまい、
+  // 外部 JSON の effect 名で関数でないものを呼び出してしまう。
+  if (!Object.hasOwn(effects, name)) {
+    console.warn(`未知の演出名です: ${name}（既定の ${DEFAULT_EFFECT} を使います）`);
+    return effects[DEFAULT_EFFECT];
+  }
+
+  return effects[name];
 }

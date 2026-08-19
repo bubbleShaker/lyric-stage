@@ -25,24 +25,27 @@ function required<T extends HTMLElement>(id: string): T {
 const ticker = new Ticker();
 const player = new AudioPlayer(assetUrl('audio/maou_14_shining_star.mp3'));
 const stage = new LyricStage(required<HTMLDivElement>('stage-text'));
-const message = required('transport-message');
 
-mountTransport(player, ticker, {
+const transport = mountTransport(player, {
   root: required('transport'),
   toggle: required<HTMLButtonElement>('transport-toggle'),
   seek: required<HTMLInputElement>('transport-seek'),
   time: required('transport-time'),
-  message,
+  message: required('transport-message'),
 });
 
+// 毎フレームの駆動はここで一括して行う（rAF はアプリ全体で 1 本）。
+// 購読解除の関数は捨てている。ページの寿命 = アプリの寿命なので破棄しない。
+ticker.subscribe(transport.render);
 ticker.start();
 
 loadLyricSheet(lyricSheetNameFromLocation(location.search))
   .then((sheet) => {
-    document.title = `${sheet.title} — lyric-stage`;
     mountLyricTimeline(player, ticker, sheet, stage);
   })
   .catch((error: unknown) => {
-    message.textContent = '歌詞ファイルを読み込めませんでした。';
+    // 再生コントロール側のメッセージ欄とは別の場所に出す。
+    // あちらは毎フレーム書き換わるので、書いてもすぐ消えてしまう。
+    required('stage-message').textContent = '歌詞ファイルを読み込めませんでした。';
     console.error(error);
   });

@@ -1,5 +1,4 @@
-import type { Ticker } from '../app/ticker';
-import type { Playback } from './playback';
+import type { Playback } from '../domain/ports';
 
 /** 12.34 秒 → "0:12" */
 export function formatTime(seconds: number): string {
@@ -17,35 +16,46 @@ export interface TransportElements {
   message: HTMLElement;
 }
 
+export interface TransportHandle {
+  /** 表示を最新の状態に合わせる。毎フレーム呼ばれる想定 */
+  render(): void;
+  dispose(): void;
+}
+
 /**
  * 再生コントロールの見た目を Playback に繋ぐ。
  * 状態を持つのは Playback 側だけで、ここは「映すだけ」に徹する。
  *
- * 毎フレームの更新は app 層の Ticker に相乗りする（rAF はアプリ全体で 1 本）。
- * 戻り値を呼ぶと購読を解除する。
+ * 毎フレーム誰が呼ぶかはここでは決めない（rAF は app 層の Ticker が持つ）。
+ * render を外に返し、駆動は組み立て側に任せる。
  */
-export function mountTransport(
-  player: Playback,
-  ticker: Ticker,
-  el: TransportElements,
-): () => void {
+export function mountTransport(player: Playback, el: TransportElements): TransportHandle {
   // シークバーを操作している間は再生位置での上書きを止める。
   // これをしないと、つまみを動かした瞬間に再生位置へ引き戻される。
   // input で立てて change で倒すので、ポインタでもキーボードでも同じ経路になる。
   let scrubbing = false;
 
+  // 毎フレーム同じ文字列を代入し直すと、role="status" の読み上げが繰り返される。
+  // 前回と違う時だけ書き込む。
+  const setText = (target: HTMLElement, text: string) => {
+    if (target.textContent !== text) target.textContent = text;
+  };
+  const setAttr = (target: Element, name: string, value: string) => {
+    if (target.getAttribute(name) !== value) target.setAttribute(name, value);
+  };
+
   const render = () => {
     const { duration, currentTime } = player;
     const status = player.currentStatus;
 
-    el.toggle.textContent = player.paused ? '再生' : '停止';
-    el.time.textContent = `${formatTime(currentTime)} / ${formatTime(duration)}`;
+    setText(el.toggle, player.paused ? '再生' : '停止');
+    setText(el.time, `${formatTime(currentTime)} / ${formatTime(duration)}`);
 
     if (!scrubbing) {
-      el.seek.max = String(duration || 0);
+      setAttr(el.seek, 'max', String(duration || 0));
       el.seek.value = String(currentTime);
     }
-    el.seek.setAttribute('aria-valuetext', formatTime(Number(el.seek.value)));
+    setAttr(el.seek, 'aria-valuetext', formatTime(Number(el.seek.value)));
 
     // 再生ボタンは読み込み中でも押せるようにする。iOS Safari は preload を無視し
     // play() が呼ばれるまでメタデータを取りに行かないため、loadedmetadata を
@@ -55,14 +65,16 @@ export function mountTransport(
     el.seek.disabled = duration <= 0;
 
     if (status === 'error') {
-      el.message.textContent =
-        '音源が見つかりません。README の手順で public/audio/ に mp3 を置いてください。';
+      setText(
+        el.message,
+        '音源が見つかりません。README の手順で public/audio/ に mp3 を置いてください。',
+      );
       el.root.dataset.state = 'error';
     } else if (status === 'ready') {
-      el.message.textContent = '';
+      setText(el.message, '');
       el.root.dataset.state = 'ready';
     } else {
-      el.message.textContent = '再生ボタンで音源を読み込みます。';
+      setText(el.message, '再生ボタンで音源を読み込みます。');
       el.root.dataset.state = 'loading';
     }
   };
@@ -70,7 +82,7 @@ export function mountTransport(
   const onClick = () => {
     // 自動再生ポリシーで拒否された場合など、play() の reject を握り潰さない
     player.toggle().catch((error: unknown) => {
-      el.message.textContent = '再生できませんでした。もう一度お試しください。';
+      setText(el.message, '再生できませんでした。もう一度お試しください。');
       console.error(error);
     });
   };
@@ -78,7 +90,7 @@ export function mountTransport(
   // input は操作中に連続して飛ぶ。ここでは時間表示のプレビューだけ更新する
   const onInput = () => {
     scrubbing = true;
-    el.time.textContent = `${formatTime(Number(el.seek.value))} / ${formatTime(player.duration)}`;
+    setText(el.time, `${formatTime(Number(el.seek.value))} / ${formatTime(player.duration)}`);
   };
 
   // change は「値の確定」で、ドラッグを離した時もキー操作の後も飛ぶ
@@ -94,19 +106,15 @@ export function mountTransport(
 
   const unsubscribe = player.subscribe(render);
 
-  // 再生中は毎フレーム表示を更新する。timeupdate イベントは 250ms 程度しか
-  // 発火せずカクつくため、歌詞タイムラインと同じ Ticker に乗せる。
-  const untick = ticker.subscribe(() => {
-    if (!player.paused) render();
-  });
-
   render();
 
-  return () => {
-    untick();
-    unsubscribe();
-    el.toggle.removeEventListener('click', onClick);
-    el.seek.removeEventListener('input', onInput);
-    el.seek.removeEventListener('change', onChange);
+  return {
+    render,
+    dispose: () => {
+      unsubscribe();
+      el.toggle.removeEventListener('click', onClick);
+      el.seek.removeEventListener('input', onInput);
+      el.seek.removeEventListener('change', onChange);
+    },
   };
 }

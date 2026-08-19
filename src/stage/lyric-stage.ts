@@ -1,5 +1,6 @@
 import { SplitText } from 'gsap/SplitText';
 import type { LyricLine } from '../domain/lyrics';
+import type { LyricPresenter } from '../domain/ports';
 import { resolveEffect, type EffectTimeline } from './effects';
 
 /**
@@ -8,7 +9,7 @@ import { resolveEffect, type EffectTimeline } from './effects';
  * SplitText は元の要素を作り替えるので、行を差し替えるたびに revert() で
  * 元の姿に戻さないと <div> が積み重なって増え続ける。その後始末をここに閉じ込める。
  */
-export class LyricStage {
+export class LyricStage implements LyricPresenter {
   private readonly root: HTMLElement;
   private split: SplitText | null = null;
   private timeline: EffectTimeline | null = null;

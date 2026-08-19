@@ -8,6 +8,7 @@
 export class Ticker {
   private readonly listeners = new Set<() => void>();
   private frame = 0;
+  private running = false;
 
   subscribe(listener: () => void): () => void {
     this.listeners.add(listener);
@@ -17,15 +18,29 @@ export class Ticker {
   }
 
   start(): void {
-    if (this.frame !== 0) return; // 二重起動を防ぐ
+    if (this.running) return; // 二重起動を防ぐ
+    this.running = true;
+
     const tick = () => {
-      for (const listener of this.listeners) listener();
+      // 次フレームの予約を先に済ませる。購読者の呼び出しより後に置くと、
+      // 誰か 1 人が例外を投げただけでループが二度と再開しなくなる。
       this.frame = requestAnimationFrame(tick);
+
+      for (const listener of this.listeners) {
+        // 1 人の失敗を全体に波及させない。時計は止めてはいけない
+        try {
+          listener();
+        } catch (error) {
+          console.error(error);
+        }
+      }
     };
+
     this.frame = requestAnimationFrame(tick);
   }
 
   stop(): void {
+    this.running = false;
     cancelAnimationFrame(this.frame);
     this.frame = 0;
   }

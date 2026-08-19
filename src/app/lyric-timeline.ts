@@ -1,6 +1,5 @@
 import { activeLineIndexAt, NO_LINE, type LyricSheet } from '../domain/lyrics';
-import type { LyricStage } from '../stage/lyric-stage';
-import type { Playback } from '../stage/playback';
+import type { LyricPresenter, Playback } from '../domain/ports';
 import type { Ticker } from './ticker';
 
 /**
@@ -15,7 +14,7 @@ export function mountLyricTimeline(
   player: Playback,
   ticker: Ticker,
   sheet: LyricSheet,
-  stage: LyricStage,
+  stage: LyricPresenter,
 ): () => void {
   let currentIndex = NO_LINE;
 

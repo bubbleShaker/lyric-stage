@@ -34,6 +34,24 @@ describe('activeLineIndexAt', () => {
   it('空の歌詞でも落ちない', () => {
     expect(activeLineIndexAt([], 0)).toBe(NO_LINE);
   });
+
+  it('time が同じ行が並んだら後の行が勝つ', () => {
+    const same: LyricLine[] = [
+      { time: 5, text: '先' },
+      { time: 5, text: '後' },
+    ];
+    expect(activeLineIndexAt(same, 5)).toBe(1);
+  });
+
+  it('duration が次の行を跨いでも、次の行の開始が優先される', () => {
+    // duration は「早く消す」ためのもので、表示を延長する働きは無い
+    const overlapping: LyricLine[] = [
+      { time: 0, text: '長い', duration: 30 },
+      { time: 10, text: '次' },
+    ];
+    expect(activeLineIndexAt(overlapping, 9.9)).toBe(0);
+    expect(activeLineIndexAt(overlapping, 10)).toBe(1);
+  });
 });
 
 describe('parseLyricSheet', () => {
@@ -60,6 +78,20 @@ describe('parseLyricSheet', () => {
     });
     expect(sheet.lines[0].effect).toBe('typewriter');
     expect(sheet.lines[0].duration).toBe(3);
+  });
+
+  it('行が 0 件でも通る', () => {
+    expect(parseLyricSheet({ title: '無題', lines: [] }).lines).toEqual([]);
+  });
+
+  it('数値でない time / duration を弾く', () => {
+    expect(() => parseLyricSheet({ title: 'x', lines: [{ time: NaN, text: 'A' }] })).toThrow();
+    expect(() =>
+      parseLyricSheet({ title: 'x', lines: [{ time: Infinity, text: 'A' }] }),
+    ).toThrow();
+    expect(() =>
+      parseLyricSheet({ title: 'x', lines: [{ time: 0, text: 'A', duration: NaN }] }),
+    ).toThrow();
   });
 
   it('形が違うデータは弾く', () => {
