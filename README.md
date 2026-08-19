@@ -67,6 +67,7 @@ Actions のチェックアウト設定次第でポインタファイルが公開
 ```bash
 npm install
 npm run dev      # http://localhost:5173/lyric-stage/
+npm test         # 公開する歌詞シートの中身も検証する
 npm run build
 ```
 

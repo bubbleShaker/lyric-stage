@@ -26,6 +26,8 @@ jobs:
           cache: npm
       - uses: actions/configure-pages@v5
       - run: npm ci
+      # 公開する歌詞シートの検証もここに含まれる。壊れた JSON をデプロイしない
+      - run: npm test
       - run: npm run build
       - uses: actions/upload-pages-artifact@v3
         with:

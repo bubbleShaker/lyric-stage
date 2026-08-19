@@ -9,8 +9,9 @@
 |---|---|
 | `public/audio/maou_14_shining_star.mp3` | 魔王魂「シャイニングスター」5.3MB / 276.56 秒 |
 | `public/lyrics/shining-star.json` | 歌詞 51 行 + `time` |
-| `src/app/load-lyric-sheet.ts` | 既定シートを `sample` → `shining-star` に変更 |
-| `src/app/lyric-sheets.test.ts` | 公開する JSON 自体を本番と同じ parser で検証 |
+| `src/work.ts` | 作品固有の値（音源パス・既定シート名）を集めた。app 層は曲を知らないままにする |
+| `src/lyric-sheets.test.ts` | 公開する JSON 自体を本番と同じ parser で検証 |
+| `.github/workflows/deploy.yml` | デプロイ前に `npm test` を通す（壊れた JSON を公開しない） |
 
 ## time をどう決めたか
 

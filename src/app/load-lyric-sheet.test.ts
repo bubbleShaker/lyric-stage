@@ -1,9 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  DEFAULT_SHEET_NAME,
-  isValidSheetName,
-  lyricSheetNameFromLocation,
-} from './load-lyric-sheet';
+import { isValidSheetName, lyricSheetNameFromLocation } from './load-lyric-sheet';
 
 describe('isValidSheetName', () => {
   it('英数字・アンダースコア・ハイフンだけを通す', () => {
@@ -31,16 +27,16 @@ describe('isValidSheetName', () => {
 });
 
 describe('lyricSheetNameFromLocation', () => {
-  it('指定が無ければ本編', () => {
-    expect(lyricSheetNameFromLocation('')).toBe(DEFAULT_SHEET_NAME);
-    expect(lyricSheetNameFromLocation('?other=1')).toBe(DEFAULT_SHEET_NAME);
+  it('指定が無ければ fallback', () => {
+    expect(lyricSheetNameFromLocation('', 'fallback')).toBe('fallback');
+    expect(lyricSheetNameFromLocation('?other=1', 'fallback')).toBe('fallback');
   });
 
-  it('空の指定でも本編に落とす', () => {
-    expect(lyricSheetNameFromLocation('?lyrics=')).toBe(DEFAULT_SHEET_NAME);
+  it('空の指定でも fallback に落とす', () => {
+    expect(lyricSheetNameFromLocation('?lyrics=', 'fallback')).toBe('fallback');
   });
 
   it('指定された名前を返す', () => {
-    expect(lyricSheetNameFromLocation('?lyrics=sample')).toBe('sample');
+    expect(lyricSheetNameFromLocation('?lyrics=sample', 'fallback')).toBe('sample');
   });
 });

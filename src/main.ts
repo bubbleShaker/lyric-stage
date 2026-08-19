@@ -7,6 +7,7 @@ import { assetUrl } from './lib/asset';
 import { AudioPlayer } from './stage/audio-player';
 import { LyricStage } from './stage/lyric-stage';
 import { mountTransport } from './stage/transport';
+import { AUDIO_PATH, DEFAULT_SHEET_NAME } from './work';
 import './style.css';
 
 // GSAP のプラグインは使う前に gsap 本体へ登録する。登録することで gsap 側が
@@ -23,7 +24,7 @@ function required<T extends HTMLElement>(id: string): T {
 // ここは composition root。各層を組み立てて起動するだけで、
 // 演出の中身も歌詞の判定ロジックも持たない。
 const ticker = new Ticker();
-const player = new AudioPlayer(assetUrl('audio/maou_14_shining_star.mp3'));
+const player = new AudioPlayer(assetUrl(AUDIO_PATH));
 const stage = new LyricStage(required<HTMLDivElement>('stage-text'));
 
 const transport = mountTransport(player, {
@@ -39,7 +40,7 @@ const transport = mountTransport(player, {
 ticker.subscribe(transport.render);
 ticker.start();
 
-loadLyricSheet(lyricSheetNameFromLocation(location.search))
+loadLyricSheet(lyricSheetNameFromLocation(location.search, DEFAULT_SHEET_NAME))
   .then((sheet) => {
     mountLyricTimeline(player, ticker, sheet, stage);
   })
