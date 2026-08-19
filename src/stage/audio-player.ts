@@ -1,4 +1,4 @@
-import type { Playback, PlaybackStatus } from './playback';
+import type { Playback, PlaybackStatus } from '../domain/ports';
 
 /**
  * <audio> の薄いラッパ。Playback の実装。

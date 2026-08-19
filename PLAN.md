@@ -28,7 +28,7 @@
 
 - [x] **M0** Vite 雛形 + GitHub Actions で Pages へデプロイ。空のステージが表示される
 - [x] **M1** 音源の再生 UI（再生/停止・シーク・クレジット表示）
-- [ ] **M2** タイムライン基盤。`lyrics.json`（time, text, effect）を読み、`audio.currentTime` に同期して行を出し入れする
+- [x] **M2** タイムライン基盤。`lyrics.json`（time, text, effect）を読み、`audio.currentTime` に同期して行を出し入れする
 - [ ] **M3** 演出プリセット第一弾（fade / typewriter / 一文字ずつ跳ねる）を GSAP SplitText で実装
 - [ ] **M4** 演出プリセット第二弾（グリッチ・ズームイン・縦書き・文字分裂など、参考動画の「刻む」系）
 - [ ] **M5** 背景演出（星空 Canvas、曲の盛り上がりに反応）
@@ -41,10 +41,14 @@
 
 演出が増えても崩れないように、依存の向きを先に決めておく。
 
-- `domain/` — GSAP も DOM も import しない。`LyricLine` 型と「`currentTime` から今表示すべき行を決める」純粋関数。**テストはここだけ書けば足りる**
-- `app/` — `requestAnimationFrame` で `audio.currentTime` を読み、domain の判定結果を presenter に渡すループ
-- `stage/` — GSAP + SplitText による描画、`<audio>` のラッパ。GSAP に依存してよいのはここだけ
+- `domain/` — GSAP も DOM も import しない。`LyricLine` 型、JSON の検証、「`currentTime` から今表示すべき行を決める」純粋関数。外側に求める口（`Playback` / `LyricPresenter`）も `domain/ports.ts` に置く。**依存の矢印を全て内向きに揃えるため**
+- `app/` — `Ticker`（rAF はアプリ全体で 1 本）、歌詞ロード、domain の判定結果を presenter に渡す配線
+- `stage/` — GSAP + SplitText による描画、`<audio>` のラッパ。GSAP に依存してよいのはここだけ。port の実装を提供する
 - `main.ts` — 各層を組み立てて起動するだけ（文言もアニメーション定義も持たない）
+
+決めたこと:
+- **クレジット表記は HTML を正とする。** 歌詞 JSON には `credit` を持たせない（表示位置が固定で、シートごとに変える必要が無いため）
+- 音源パスは当面 `main.ts` にハードコード。複数曲に対応する時に JSON へ移す
 
 演出プリセットは `switch (effect)` で分岐せず、`Record<EffectName, (chars: Element[]) => gsap.core.Timeline>` のレジストリにする。**新しい演出＝ファイルを 1 つ足すだけ**にするため。
 

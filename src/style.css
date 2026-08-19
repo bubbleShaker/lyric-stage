@@ -38,6 +38,13 @@ body {
   text-wrap: balance;
 }
 
+.stage__message {
+  position: absolute;
+  bottom: 6rem;
+  font-size: 0.85rem;
+  color: #ff9c9c;
+}
+
 .credit {
   position: fixed;
   right: 1rem;
