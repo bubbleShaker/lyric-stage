@@ -22,6 +22,9 @@ public/lyrics/*.json
 !public/lyrics/sample.json
 !public/lyrics/shining-star.json
 
+# 歌詞の下書き。public/ に置くと Pages にそのまま公開されてしまうのでリポジトリ直下に置く
+/ss.txt
+
 # Vite は VITE_ 接頭辞の変数をバンドルに埋め込んで公開するため、誤コミットは即露出する
 .env
 .env.*

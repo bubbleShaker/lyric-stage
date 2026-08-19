@@ -10,9 +10,12 @@ export function isValidSheetName(name: string): boolean {
   return /^[\w-]+$/.test(name);
 }
 
-/** URL の ?lyrics=xxx で歌詞ファイルを切り替える。既定は sample */
-export function lyricSheetNameFromLocation(search: string): string {
-  return new URLSearchParams(search).get('lyrics') || 'sample';
+/**
+ * URL の ?lyrics=xxx で歌詞ファイルを切り替える。
+ * 指定が無ければ fallback（作品本編のシート名）を返す。
+ */
+export function lyricSheetNameFromLocation(search: string, fallback: string): string {
+  return new URLSearchParams(search).get('lyrics') || fallback;
 }
 
 /** public/lyrics/<name>.json を読み込む */

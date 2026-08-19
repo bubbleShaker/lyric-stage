@@ -27,16 +27,16 @@ describe('isValidSheetName', () => {
 });
 
 describe('lyricSheetNameFromLocation', () => {
-  it('指定が無ければ sample', () => {
-    expect(lyricSheetNameFromLocation('')).toBe('sample');
-    expect(lyricSheetNameFromLocation('?other=1')).toBe('sample');
+  it('指定が無ければ fallback', () => {
+    expect(lyricSheetNameFromLocation('', 'fallback')).toBe('fallback');
+    expect(lyricSheetNameFromLocation('?other=1', 'fallback')).toBe('fallback');
   });
 
-  it('空の指定でも sample に落とす', () => {
-    expect(lyricSheetNameFromLocation('?lyrics=')).toBe('sample');
+  it('空の指定でも fallback に落とす', () => {
+    expect(lyricSheetNameFromLocation('?lyrics=', 'fallback')).toBe('fallback');
   });
 
   it('指定された名前を返す', () => {
-    expect(lyricSheetNameFromLocation('?lyrics=shining')).toBe('shining');
+    expect(lyricSheetNameFromLocation('?lyrics=sample', 'fallback')).toBe('sample');
   });
 });
