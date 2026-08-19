@@ -12,13 +12,6 @@ dist
 dist-ssr
 *.local
 
-# 楽曲と歌詞は各自で用意する素材。リポジトリには含めない
-# （sample.json だけは動作確認用にコミットする）
-public/audio/*
-!public/audio/.gitkeep
-public/lyrics/*.json
-!public/lyrics/sample.json
-
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
