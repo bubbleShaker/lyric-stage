@@ -1,0 +1,48 @@
+:root {
+  --stage-bg: #05060d;
+  --stage-fg: #f4f6ff;
+  --stage-accent: #7fd7ff;
+
+  color-scheme: dark;
+  font-family: 'Hiragino Kaku Gothic ProN', 'Yu Gothic', 'Noto Sans JP', system-ui, sans-serif;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  min-height: 100dvh;
+  background: var(--stage-bg);
+  color: var(--stage-fg);
+  overflow: hidden;
+}
+
+.stage {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-height: 100dvh;
+  padding: 2rem;
+}
+
+.stage__text {
+  /* clamp で画面幅に追従させる。字幕は行が短いので中央寄せ固定でよい */
+  font-size: clamp(1.75rem, 7vw, 5rem);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  line-height: 1.5;
+  text-align: center;
+  text-wrap: balance;
+}
+
+.credit {
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  font-size: 0.75rem;
+  letter-spacing: 0.05em;
+  opacity: 0.55;
+}
