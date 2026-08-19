@@ -12,6 +12,21 @@ dist
 dist-ssr
 *.local
 
+# 作品を構成する素材だけを明示的に追跡する。
+# 全部追跡にすると、作業中の未加工音源などを git add . で履歴に焼き込む事故が起きる
+# （バイナリは後から消してもヒストリからは消えない）
+public/audio/*
+!public/audio/.gitkeep
+!public/audio/maou_14_shining_star.mp3
+public/lyrics/*.json
+!public/lyrics/sample.json
+!public/lyrics/shining-star.json
+
+# Vite は VITE_ 接頭辞の変数をバンドルに埋め込んで公開するため、誤コミットは即露出する
+.env
+.env.*
+!.env.example
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
