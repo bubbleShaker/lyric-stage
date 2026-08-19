@@ -2,11 +2,12 @@ import gsap from 'gsap';
 import { SplitText } from 'gsap/SplitText';
 import './style.css';
 
-// GSAP のプラグインは使う前に register が要る。これを忘れると本番ビルドで
-// tree-shaking により落とされて「SplitText is not defined」になる。
+// GSAP のプラグインは使う前に gsap 本体へ登録する。登録することで gsap 側が
+// プラグインの存在を知り、tween からその機能を呼べるようになる。
 gsap.registerPlugin(SplitText);
 
-const stageText = document.querySelector<HTMLDivElement>('#stage-text')!;
+const stageText = document.querySelector<HTMLDivElement>('#stage-text');
+if (!stageText) throw new Error('#stage-text が見つかりません');
 
 stageText.textContent = 'lyric stage';
 

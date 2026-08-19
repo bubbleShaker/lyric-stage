@@ -36,6 +36,22 @@
 
 各マイルストーンごとに Issue → ブランチ → reviewer レビュー → PR → マージ。
 
+## レイヤー分け（M2 の入り口で引く線）
+
+演出が増えても崩れないように、依存の向きを先に決めておく。
+
+- `domain/` — GSAP も DOM も import しない。`LyricLine` 型と「`currentTime` から今表示すべき行を決める」純粋関数。**テストはここだけ書けば足りる**
+- `app/` — `requestAnimationFrame` で `audio.currentTime` を読み、domain の判定結果を presenter に渡すループ
+- `stage/` — GSAP + SplitText による描画、`<audio>` のラッパ。GSAP に依存してよいのはここだけ
+- `main.ts` — 各層を組み立てて起動するだけ（文言もアニメーション定義も持たない）
+
+演出プリセットは `switch (effect)` で分岐せず、`Record<EffectName, (chars: Element[]) => gsap.core.Timeline>` のレジストリにする。**新しい演出＝ファイルを 1 つ足すだけ**にするため。
+
+注意点（レビュー指摘）:
+- JS 内の `fetch('/audio/x.mp3')` は Vite が書き換えないので Pages で 404 になる。`import.meta.env.BASE_URL` を前置するユーティリティを M1 で用意する
+- 行を出し入れするたびに SplitText インスタンスの `revert()` を呼ばないと DOM ノードが増え続ける。ライフサイクル管理は stage 層に持たせる
+- クレジット表記を HTML と JSON のどちらを正にするか M2 で決める（現状は HTML にハードコード）
+
 ## データ構造（M2 で確定させる）
 
 ```jsonc
