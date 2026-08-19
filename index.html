@@ -12,7 +12,29 @@
     <main class="stage">
       <div class="stage__text" id="stage-text"></div>
     </main>
-    <footer class="credit">音楽：魔王魂</footer>
+
+    <div class="transport" id="transport" data-state="loading">
+      <button class="transport__toggle" id="transport-toggle" type="button">再生</button>
+      <input
+        class="transport__seek"
+        id="transport-seek"
+        type="range"
+        min="0"
+        max="0"
+        step="0.01"
+        value="0"
+        aria-label="再生位置"
+        disabled
+      />
+      <span class="transport__time" id="transport-time">0:00 / 0:00</span>
+      <p class="transport__message" id="transport-message" role="status"></p>
+    </div>
+
+    <footer class="credit">
+      音楽：<a href="https://maou.audio/14_shining_star/" target="_blank" rel="noopener noreferrer"
+        >魔王魂</a
+      >
+    </footer>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

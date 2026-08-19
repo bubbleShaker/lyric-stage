@@ -46,3 +46,84 @@ body {
   letter-spacing: 0.05em;
   opacity: 0.55;
 }
+
+.credit a {
+  color: inherit;
+}
+
+/* --- 再生コントロール --- */
+
+.transport {
+  position: fixed;
+  left: 50%;
+  bottom: 1.5rem;
+  translate: -50% 0;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 0.75rem;
+  width: min(38rem, calc(100vw - 2rem));
+  padding: 0.75rem 1rem;
+  border: 1px solid rgb(255 255 255 / 0.12);
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.06);
+  backdrop-filter: blur(12px);
+  transition: opacity 0.3s;
+}
+
+/* 演出の邪魔にならないよう、触っていない間は薄くする。
+   タッチ端末は hover が無く薄いままになるので、hover を持つ環境に限定する */
+@media (hover: hover) {
+  .transport[data-state='ready']:not(:hover):not(:focus-within) {
+    opacity: 0.35;
+  }
+}
+
+.transport__toggle {
+  min-width: 4.5rem;
+  padding: 0.4rem 0.9rem;
+  border: none;
+  border-radius: 999px;
+  background: var(--stage-accent);
+  color: #05060d;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.transport__toggle:disabled {
+  background: rgb(255 255 255 / 0.2);
+  color: rgb(255 255 255 / 0.5);
+  cursor: not-allowed;
+}
+
+.transport__seek {
+  width: 100%;
+  accent-color: var(--stage-accent);
+  cursor: pointer;
+}
+
+.transport__time {
+  font-variant-numeric: tabular-nums;
+  font-size: 0.8rem;
+  opacity: 0.8;
+}
+
+.transport__message {
+  /* メッセージだけ 3 カラムすべてにまたがらせる */
+  grid-column: 1 / -1;
+  font-size: 0.75rem;
+  text-align: center;
+  opacity: 0.7;
+}
+
+/* role="status" の要素は display:none にすると読み上げが飛ばないことがあるため、
+   空のときも要素は残したまま隠す */
+.transport__message:empty {
+  visibility: hidden;
+}
+
+.transport[data-state='error'] .transport__message {
+  color: #ff9c9c;
+  opacity: 1;
+}
