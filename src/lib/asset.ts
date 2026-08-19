@@ -10,5 +10,5 @@
  */
 export function assetUrl(path: string): string {
   const base = import.meta.env.BASE_URL; // 例: '/lyric-stage/'（末尾は必ず / になる）
-  return `${base}${path.replace(/^\//, '')}`;
+  return `${base}${path.replace(/^\/+/, '')}`;
 }

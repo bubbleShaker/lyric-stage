@@ -71,9 +71,12 @@ body {
   transition: opacity 0.3s;
 }
 
-/* 演出の邪魔にならないよう、触っていない間は薄くする */
-.transport[data-state='ready']:not(:hover):not(:focus-within) {
-  opacity: 0.35;
+/* 演出の邪魔にならないよう、触っていない間は薄くする。
+   タッチ端末は hover が無く薄いままになるので、hover を持つ環境に限定する */
+@media (hover: hover) {
+  .transport[data-state='ready']:not(:hover):not(:focus-within) {
+    opacity: 0.35;
+  }
 }
 
 .transport__toggle {
@@ -114,8 +117,10 @@ body {
   opacity: 0.7;
 }
 
+/* role="status" の要素は display:none にすると読み上げが飛ばないことがあるため、
+   空のときも要素は残したまま隠す */
 .transport__message:empty {
-  display: none;
+  visibility: hidden;
 }
 
 .transport[data-state='error'] .transport__message {

@@ -1,16 +1,16 @@
+import type { Playback, PlaybackStatus } from './playback';
+
 /**
- * <audio> の薄いラッパ。
+ * <audio> の薄いラッパ。Playback の実装。
  *
  * 演出のマスタークロックはこの currentTime。M2 以降のタイムラインは
  * requestAnimationFrame でここを読み続けて追従する。
  * このクラスは「音を鳴らす」以上のことを知らない（GSAP も歌詞も import しない）。
  */
-export type AudioPlayerStatus = 'idle' | 'ready' | 'error';
-
-export class AudioPlayer {
+export class AudioPlayer implements Playback {
   private readonly el: HTMLAudioElement;
   private readonly listeners = new Set<() => void>();
-  private status: AudioPlayerStatus = 'idle';
+  private status: PlaybackStatus = 'idle';
 
   constructor(src: string) {
     this.el = new Audio();
@@ -20,7 +20,7 @@ export class AudioPlayer {
 
     // 状態が変わりうるイベントをまとめて購読者に転送する
     const notify = () => this.emit();
-    for (const type of ['play', 'pause', 'ended', 'seeked'] as const) {
+    for (const type of ['play', 'pause', 'ended', 'seeked', 'durationchange'] as const) {
       this.el.addEventListener(type, notify);
     }
     this.el.addEventListener('loadedmetadata', () => {
@@ -33,10 +33,11 @@ export class AudioPlayer {
     });
   }
 
-  /** 状態変化の購読。戻り値を呼ぶと解除できる */
   subscribe(listener: () => void): () => void {
     this.listeners.add(listener);
-    return () => this.listeners.delete(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
   }
 
   private emit(): void {
@@ -45,12 +46,6 @@ export class AudioPlayer {
 
   get currentTime(): number {
     return this.el.currentTime;
-  }
-
-  /** 秒数を 0〜duration に収めてから代入する */
-  set currentTime(time: number) {
-    const max = this.duration;
-    this.el.currentTime = Math.min(Math.max(time, 0), max > 0 ? max : time);
   }
 
   get duration(): number {
@@ -62,13 +57,21 @@ export class AudioPlayer {
     return this.el.paused;
   }
 
-  get currentStatus(): AudioPlayerStatus {
+  get currentStatus(): PlaybackStatus {
     return this.status;
+  }
+
+  /** 秒数を 0〜duration に収めてから代入する */
+  seek(time: number): void {
+    const clamped = Math.max(time, 0);
+    const max = this.duration;
+    this.el.currentTime = max > 0 ? Math.min(clamped, max) : clamped;
   }
 
   /**
    * ブラウザは音の自動再生を禁止しているので、必ずクリックなどの
    * ユーザー操作から呼ぶこと。play() は Promise を返し、拒否されると reject する。
+   * 状態の通知は play / pause イベント経由で行われるのでここでは emit しない。
    */
   async toggle(): Promise<void> {
     if (this.el.paused) {
@@ -76,6 +79,5 @@ export class AudioPlayer {
     } else {
       this.el.pause();
     }
-    this.emit();
   }
 }
