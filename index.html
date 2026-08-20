@@ -9,6 +9,10 @@
     <title>lyric-stage — 文字を刻むステージ</title>
   </head>
   <body>
+    <!-- 背景の星空。描くのは src/stage/starfield.ts。
+         装飾でしかないので支援技術からは隠す -->
+    <canvas class="backdrop" id="backdrop" aria-hidden="true"></canvas>
+
     <main class="stage">
       <div class="stage__text" id="stage-text"></div>
       <!-- 歌詞まわりのお知らせ。再生コントロール側のメッセージ欄とは用途を分ける -->
