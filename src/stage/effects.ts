@@ -16,10 +16,45 @@ export interface EffectTarget {
 /**
  * 1 行分の演出。その行の登場アニメーションを組み立てて返す。
  *
- * **root は自由に汚してよい**（クラスの付与、インラインスタイル）。
- * 行が切り替わるときに LyricStage が初期状態へ戻すので、後始末は書かなくてよい。
+ * 副作用は持たない。root のレイアウトを変えたい演出は、自分で DOM を触らず
+ * EffectDef の layout で宣言する（下記）。
  */
 export type Effect = (target: EffectTarget) => gsap.core.Timeline;
+
+/**
+ * 演出が要求する組み方。writing-mode のような「補間できないが行全体を変える」
+ * 指定はアニメーションではないので、演出が自分で当てず宣言だけする。
+ *
+ * 当てるのも外すのも LyricStage の仕事。付ける側と外す側を同じ所に置くと、
+ * 「縦書きの次の行が横書きに戻らない」類の消し忘れが構造的に起きなくなる。
+ */
+export type EffectLayout = 'vertical';
+
+/** レイアウトごとの CSS クラス。中身は src/style.css が持つ */
+export const LAYOUT_CLASS: Record<EffectLayout, string> = {
+  vertical: 'stage__text--vertical',
+};
+
+/** レイアウトの要求を伴う演出。伴わない演出は Effect をそのまま書く */
+export interface EffectDef {
+  readonly layout: EffectLayout;
+  readonly build: Effect;
+}
+
+/**
+ * レジストリに書ける形。
+ *
+ * ほとんどの演出はレイアウトを要求しないので、関数をそのまま書けるようにしている。
+ * 全エントリを { build: ... } で包むと、1 つの例外のために 7 つが読みにくくなる。
+ */
+export type EffectEntry = Effect | EffectDef;
+
+/** どちらの書き方で登録されていても EffectDef の形に揃える */
+function normalize(entry: EffectEntry): { layout: EffectLayout | null; build: Effect } {
+  return typeof entry === 'function'
+    ? { layout: null, build: entry }
+    : { layout: entry.layout, build: entry.build };
+}
 
 /** 演出が返すタイムラインの型（gsap を値として import せずに参照するため） */
 export type EffectTimeline = ReturnType<Effect>;
@@ -51,14 +86,6 @@ export function staggerFor(count: number, preferred: number): number {
   if (count <= 1) return 0;
   return Math.min(preferred, MAX_STAGGER_SPAN / (count - 1));
 }
-
-/**
- * 縦書きのレイアウトを与えるクラス。中身は src/style.css が持つ。
- *
- * 演出（このファイル）は「縦書きにする」という意思だけを示し、
- * どう縦書きにするか（段組み・字間・高さの上限）は CSS 側の責任にする。
- */
-const VERTICAL_CLASS = 'stage__text--vertical';
 
 /**
  * 演出プリセットの一覧。
@@ -206,23 +233,25 @@ export const effects = {
    * 縦書きにして、上から一文字ずつ降ろす。
    *
    * writing-mode は補間できるプロパティではない（レイアウトの指定であって
-   * アニメーションではない）ので、gsap では動かさず CSS クラスの付与で切り替える。
-   * 段組みや字間の調整も込みで style.css の .stage__text--vertical が持つ。
+   * アニメーションではない）ので gsap では動かさず、layout の宣言で
+   * LyricStage に CSS クラスを当てさせる。段組みや字間の調整も込みで
+   * style.css の .stage__text--vertical が持つ。
    *
-   * ここで付けたクラスは自分で外さない。行が切り替わるとき LyricStage が
-   * root を初期状態へ戻す（消し忘れを構造的に無くすため）。
+   * この宣言は SplitText より前に効く。文字への分割は組み方が決まった後で
+   * 行われる必要がある（type: 'lines' を足したとき、横組みで測った行区切りで
+   * 縦組みを表示することになるため）。
    */
-  vertical: ({ root, chars }) => {
-    root.classList.add(VERTICAL_CLASS);
-
-    return gsap.timeline().from(chars, {
-      opacity: 0,
-      // 縦組みなので「上から降りてくる」向きが文字の進行方向と揃う
-      yPercent: -70,
-      duration: 0.5,
-      ease: 'power3.out',
-      stagger: staggerFor(chars.length, 0.05),
-    });
+  vertical: {
+    layout: 'vertical',
+    build: ({ chars }) =>
+      gsap.timeline().from(chars, {
+        opacity: 0,
+        // 縦組みなので「上から降りてくる」向きが文字の進行方向と揃う
+        yPercent: -70,
+        duration: 0.5,
+        ease: 'power3.out',
+        stagger: staggerFor(chars.length, 0.05),
+      }),
   },
 
   /**
@@ -238,7 +267,7 @@ export const effects = {
       duration: 0.6,
       ease: 'expo.out',
     }),
-} satisfies Record<string, Effect>;
+} satisfies Record<string, EffectEntry>;
 
 /** 登録済みの演出名。effects に足せば自動で増える */
 export type EffectName = keyof typeof effects;
@@ -257,13 +286,19 @@ export function isEffectName(name: string): name is EffectName {
   return Object.hasOwn(effects, name);
 }
 
-export function resolveEffect(name: string | undefined): Effect {
-  if (name === undefined) return effects[DEFAULT_EFFECT];
+/**
+ * 演出名から「当てるレイアウト」と「組み立てる関数」を取り出す。
+ *
+ * 呼び出し側（LyricStage）は layout を当ててから build を呼ぶ。
+ * どちらの書き方で登録されていても同じ形で返るので、表示側に分岐は要らない。
+ */
+export function resolveEffect(name: string | undefined): { layout: EffectLayout | null; build: Effect } {
+  if (name === undefined) return normalize(effects[DEFAULT_EFFECT]);
 
   if (!isEffectName(name)) {
     console.warn(`未知の演出名です: ${name}（既定の ${DEFAULT_EFFECT} を使います）`);
-    return effects[DEFAULT_EFFECT];
+    return normalize(effects[DEFAULT_EFFECT]);
   }
 
-  return effects[name];
+  return normalize(effects[name]);
 }

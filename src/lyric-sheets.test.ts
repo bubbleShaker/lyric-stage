@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { parseLyricSheet, type LyricLine } from './domain/lyrics';
-import { effects, isEffectName } from './stage/effects';
+import { effects, isEffectName, resolveEffect } from './stage/effects';
 import { DEFAULT_SHEET_NAME } from './work';
 // Vite の ?raw は対象ファイルを文字列として読み込む。fs を使わずに済むので
 // Node の型定義をアプリ側の tsconfig に持ち込まなくてよい。
@@ -79,8 +79,12 @@ describe(`${DEFAULT_SHEET_NAME}.json`, () => {
     // 定数を書かずにシートから測る。
     const worst = worstCase(sheet.lines);
 
-    for (const [name, effect] of Object.entries(effects)) {
-      const timeline = effect({ root: dummyRoot(), chars: dummyChars(worst.longestText) });
+    for (const name of Object.keys(effects)) {
+      // レジストリには関数と { layout, build } の 2 通りが書けるので resolveEffect で揃える
+      const timeline = resolveEffect(name).build({
+        root: {} as HTMLElement,
+        chars: dummyChars(worst.longestText),
+      });
       expect(timeline.duration(), `${name} が ${worst.shortestGap} 秒に収まらない`).toBeLessThan(
         worst.shortestGap,
       );
@@ -106,9 +110,4 @@ function worstCase(lines: readonly LyricLine[]) {
 /** 演出の長さを測るだけなので、文字要素の代わりにダミーを渡せば足りる */
 function dummyChars(count: number): Element[] {
   return Array.from({ length: count }, () => ({}) as unknown as Element);
-}
-
-/** 行の要素のダミー。縦書きの演出がクラスを付けにくるので受け口だけ用意する */
-function dummyRoot(): HTMLElement {
-  return { classList: { add: () => {} } } as unknown as HTMLElement;
 }
