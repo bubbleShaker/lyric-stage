@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { parseLyricSheet } from './domain/lyrics';
+import { parseLyricSheet, type LyricLine } from './domain/lyrics';
+import { effects, isEffectName } from './stage/effects';
 import { DEFAULT_SHEET_NAME } from './work';
 // Vite の ?raw は対象ファイルを文字列として読み込む。fs を使わずに済むので
 // Node の型定義をアプリ側の tsconfig に持ち込まなくてよい。
@@ -60,4 +61,49 @@ describe(`${DEFAULT_SHEET_NAME}.json`, () => {
   it('歌い出しより前には何も置かれていない', () => {
     expect(sheet.lines[0].time).toBeGreaterThan(10);
   });
+
+  it('知らない演出名が書かれていない', () => {
+    // 未知の名前でも既定の演出に落ちて動いてしまうので、綴りの間違いは
+    // 画面を見ても気付けない。ここで名指しして落とす。
+    // （sample.json は「未知の名前は fade に落ちる」ことを見せる行を意図的に持つので対象外）
+    const unknown = sheet.lines
+      .map((line) => line.effect)
+      .filter((name): name is string => name !== undefined && !isEffectName(name));
+
+    expect(unknown).toStrictEqual([]);
+  });
+
+  it('どの演出も次の行が来る前に出揃う', () => {
+    // 演出の所要時間は文字数で決まり、猶予は行間隔で決まる。どちらも実データ側で
+    // 変わりうる（M6 のタイミング入力ツールで time を詰めたときなど）ので、
+    // 定数を書かずにシートから測る。
+    const worst = worstCase(sheet.lines);
+
+    for (const [name, effect] of Object.entries(effects)) {
+      const timeline = effect(dummyChars(worst.longestText));
+      expect(timeline.duration(), `${name} が ${worst.shortestGap} 秒に収まらない`).toBeLessThan(
+        worst.shortestGap,
+      );
+      timeline.kill();
+    }
+  });
 });
+
+/** 演出にとって最も条件が厳しい組み合わせ（最長の行と最短の猶予）を測る */
+function worstCase(lines: readonly LyricLine[]) {
+  const gaps = lines.map((line, index) => {
+    const untilNext = index + 1 < lines.length ? lines[index + 1].time - line.time : Infinity;
+    // duration が指定されていれば、次の行を待たずにその行は消える
+    return Math.min(untilNext, line.duration ?? Infinity);
+  });
+
+  return {
+    shortestGap: Math.min(...gaps),
+    longestText: Math.max(...lines.map((line) => line.text.length)),
+  };
+}
+
+/** 演出は DOM を触らないので、文字要素の代わりにダミーを渡せば長さを測れる */
+function dummyChars(count: number): Element[] {
+  return Array.from({ length: count }, () => ({}) as unknown as Element);
+}

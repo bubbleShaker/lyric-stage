@@ -6,7 +6,6 @@
     { "time": 5, "text": "切り替わる", "duration": 1.6 },
     { "time": 8, "text": "ここから間が空きます", "duration": 2 },
     { "time": 12, "text": "シークしても追従する", "duration": 3 },
-
     { "time": 17, "text": "ここから演出の見比べ", "duration": 2.5 },
     { "time": 20, "text": "fade はふわりと出る", "effect": "fade", "duration": 2.5 },
     { "time": 23, "text": "typewriter は打ち込まれる", "effect": "typewriter", "duration": 2.5 },

@@ -12,6 +12,12 @@
       Vite のビルド入口は index.html だけなので、このページは dist に入らない
       （＝公開サイトには出ない）。曲の再生位置に縛られず新しい演出を確かめられるので、
       M4 以降で演出を足すときはここで見る。
+
+      注意:
+      - tsconfig の include は src だけなので、このページの中身は型検査もテストも通らない。
+        LyricStage のシグネチャを変えたら、ここも手で直す必要がある
+      - vite.config.ts で複数ページ構成（rollupOptions.input）にすると公開対象に入る。
+        その時はこのページを除外すること
     -->
     <main class="stage">
       <div class="stage__text" id="stage-text"></div>

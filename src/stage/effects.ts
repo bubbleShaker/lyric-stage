@@ -14,6 +14,11 @@ export type EffectTimeline = ReturnType<Effect>;
  *
  * 本編の行間隔は最短 2.25 秒しかないので、文字数の多い行で 1 文字ごとの遅延を
  * 固定にすると、最後の文字が出る前に次の行へ切り替わってしまう。
+ *
+ * 「2.25 秒」は曲に由来する値だが、この定数自体は演出の作り（どの演出でも
+ * 出揃うのは 1 秒以内）を決めるものなので stage 層に置く。曲を差し替えて
+ * 行間隔が縮んだら、src/lyric-sheets.test.ts の「演出が行間隔より早く終わる」
+ * 検査が落ちて気付ける。
  */
 const MAX_STAGGER_SPAN = 0.8;
 
@@ -37,8 +42,12 @@ export function staggerFor(count: number, preferred: number): number {
  *
  * どれも gsap の `.from()` で書いている。`.from()` は「この状態から現在の CSS へ」
  * という向きなので、演出ごとに終了状態（＝素の見た目）を書かなくて済む。
+ *
+ * 型注釈ではなく `satisfies` を付けているのは、Effect であることを確かめつつ
+ * 「どんな名前が登録済みか」を型に残すため。注釈を書くと Record<string, Effect> に
+ * 広がってしまい、既定の演出名を打ち間違えても型検査を通ってしまう。
  */
-export const effects: Record<string, Effect> = {
+export const effects = {
   /** 下からふわりと出る。effect の指定が無いときの既定 */
   fade: (chars) =>
     gsap.timeline().from(chars, {
@@ -79,17 +88,29 @@ export const effects: Record<string, Effect> = {
       ease: 'back.out(2.6)',
       stagger: staggerFor(chars.length, 0.05),
     }),
-};
+} satisfies Record<string, Effect>;
 
-export const DEFAULT_EFFECT = 'fade';
+/** 登録済みの演出名。effects に足せば自動で増える */
+export type EffectName = keyof typeof effects;
+
+/** effect の指定が無いときに使う演出。存在しない名前を書くと型検査で落ちる */
+export const DEFAULT_EFFECT: EffectName = 'fade';
+
+/**
+ * 外から来た文字列が登録済みの演出名かどうか。
+ *
+ * Object.hasOwn で自前のキーだけを見る。単に effects[name] と書くと
+ * 'toString' や '__proto__' のような Object.prototype 由来の値まで拾ってしまい、
+ * 外部 JSON の effect 名で関数でないものを呼び出してしまう。
+ */
+export function isEffectName(name: string): name is EffectName {
+  return Object.hasOwn(effects, name);
+}
 
 export function resolveEffect(name: string | undefined): Effect {
   if (name === undefined) return effects[DEFAULT_EFFECT];
 
-  // Object.hasOwn で自前のキーだけを見る。単に effects[name] と書くと
-  // 'toString' や '__proto__' のような Object.prototype 由来の値まで拾ってしまい、
-  // 外部 JSON の effect 名で関数でないものを呼び出してしまう。
-  if (!Object.hasOwn(effects, name)) {
+  if (!isEffectName(name)) {
     console.warn(`未知の演出名です: ${name}（既定の ${DEFAULT_EFFECT} を使います）`);
     return effects[DEFAULT_EFFECT];
   }

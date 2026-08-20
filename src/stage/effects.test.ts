@@ -2,9 +2,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_EFFECT, effects, resolveEffect, staggerFor } from './effects';
 
 /**
- * 演出は gsap のタイムラインを組み立てるだけで DOM を触らないので、
- * ブラウザ無しで検証できる。gsap は要素でなくただのオブジェクトも
- * トゥイーンできるため、文字要素の代わりにダミーを渡している。
+ * 文字要素の代わりに渡すダミー。gsap は要素でなくただのオブジェクトも
+ * トゥイーンできるので、ブラウザ無しでタイムラインの長さを検証できる。
+ *
+ * ただしダミーには CSS プラグインが働かないため、**ここで検証できるのは
+ * 時間の組み立てだけ**。yPercent の綴りを間違えても、この検証は通ってしまう。
+ * 見た目そのものは effect-preview.html を目で見て確かめる。
  */
 function dummyChars(count: number): Element[] {
   return Array.from({ length: count }, () => ({ opacity: 1 }) as unknown as Element);
@@ -30,18 +33,20 @@ describe('staggerFor', () => {
 });
 
 describe('effects', () => {
-  // 本編の行間隔は最短 2.25 秒。どの演出も、文字数が最も多い行（28 文字）で
-  // それより短く終わらないと、出揃う前に次の行へ切り替わってしまう。
-  const SHORTEST_LINE_INTERVAL = 2.25;
+  // 演出を足すと自動でこの検査の対象になる（Object.entries で引いているため）。
+  // 実際の行間隔に間に合うかどうかは、歌詞シートの実データと突き合わせて
+  // src/lyric-sheets.test.ts で見る。ここでは演出単体の性質だけを押さえる。
+  it.each(Object.entries(effects))('%s は文字数が増えても総時間が伸びない', (_name, effect) => {
+    const short = effect(dummyChars(30));
+    const long = effect(dummyChars(500));
 
-  it.each(Object.keys(effects))('%s は最長の行でも行間隔より早く終わる', (name) => {
-    const timeline = effects[name](dummyChars(28));
-
-    expect(timeline.duration()).toBeGreaterThan(0);
-    expect(timeline.duration()).toBeLessThan(SHORTEST_LINE_INTERVAL);
+    expect(short.duration()).toBeGreaterThan(0);
+    // 文字送りに上限があるので、長い行でも総時間は変わらない
+    expect(long.duration()).toBeCloseTo(short.duration());
 
     // 作りっぱなしにすると gsap のグローバルなタイムラインに残り続ける
-    timeline.kill();
+    short.kill();
+    long.kill();
   });
 });
 
@@ -51,6 +56,8 @@ describe('resolveEffect', () => {
   });
 
   it('名前が無ければ既定の演出を返す', () => {
+    // undefined 同士で通ってしまわないよう、関数が返ることも確かめる
+    expect(typeof resolveEffect(undefined)).toBe('function');
     expect(resolveEffect(undefined)).toBe(effects[DEFAULT_EFFECT]);
   });
 
