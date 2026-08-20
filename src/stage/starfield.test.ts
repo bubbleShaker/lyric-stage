@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { seededRandom } from '../lib/random';
 import type { DrawSurface } from './scaled-canvas';
-import { createStars, starAlpha, Starfield, type Star } from './starfield';
+import { createStars, starAlpha, starRadius, Starfield, type Star } from './starfield';
 
 describe('createStars', () => {
   it('種が同じなら毎回同じ星空になる', () => {
@@ -44,7 +44,20 @@ describe('starAlpha', () => {
   };
 
   it('時刻が進むと明るさが変わる', () => {
-    expect(starAlpha(star, 0)).not.toBeCloseTo(starAlpha(star, 0.7));
+    expect(starAlpha(star, 0, 0)).not.toBeCloseTo(starAlpha(star, 0.7, 0));
+  });
+
+  it('盛り上がるほど明るいが、1 は超えない', () => {
+    // globalAlpha は 1 を超える値を代入ごと無視するので、超えさせてはいけない
+    for (const generated of createStars(200, seededRandom(7))) {
+      for (let time = 0; time < 5; time += 0.1) {
+        const quiet = starAlpha(generated, time, 0);
+        const loud = starAlpha(generated, time, 1);
+
+        expect(loud).toBeGreaterThanOrEqual(quiet);
+        expect(loud).toBeLessThanOrEqual(1);
+      }
+    }
   });
 
   it('消えも飛び出しもしない（0 より大きく、一番明るい時の値以下）', () => {
@@ -52,11 +65,32 @@ describe('starAlpha', () => {
     // 生成された全ての星で見る。速さや瞬きの深さを変えた時に壊れてくれる
     for (const generated of createStars(200, seededRandom(7))) {
       for (let time = 0; time < 20; time += 0.05) {
-        const alpha = starAlpha(generated, time);
+        const alpha = starAlpha(generated, time, 0);
         expect(alpha).toBeGreaterThan(0);
         expect(alpha).toBeLessThanOrEqual(generated.peakAlpha);
       }
     }
+  });
+});
+
+describe('starRadius', () => {
+  const star: Star = {
+    x: 0.5,
+    y: 0.5,
+    radius: 1.2,
+    peakAlpha: 0.8,
+    phase: 0,
+    speed: 1,
+    color: '#fff',
+  };
+
+  it('静かなら元の大きさのまま', () => {
+    expect(starRadius(star, 0)).toBe(star.radius);
+  });
+
+  it('盛り上がると大きくなる（控えめに）', () => {
+    expect(starRadius(star, 1)).toBeGreaterThan(star.radius);
+    expect(starRadius(star, 1)).toBeLessThan(star.radius * 2);
   });
 });
 
@@ -71,15 +105,15 @@ class FakeContext {
   fillStyle = '';
   /** 描き直した回数。「描かなかった」ことを見るために数える */
   clears = 0;
-  readonly drawn: { x: number; y: number; alpha: number }[] = [];
+  readonly drawn: { x: number; y: number; radius: number; alpha: number }[] = [];
 
   clearRect(): void {
     this.clears += 1;
     this.drawn.length = 0;
   }
   beginPath(): void {}
-  arc(x: number, y: number): void {
-    this.drawn.push({ x, y, alpha: this.globalAlpha });
+  arc(x: number, y: number, radius: number): void {
+    this.drawn.push({ x, y, radius, alpha: this.globalAlpha });
   }
   fill(): void {}
 }
@@ -116,7 +150,7 @@ class FakeSurface implements DrawSurface {
 describe('Starfield', () => {
   it('大きさが決まるまで描かない（ResizeObserver の初回通知は非同期に来る）', () => {
     const surface = new FakeSurface(0, 0, false);
-    const starfield = new Starfield(surface, () => false);
+    const starfield = new Starfield(surface, () => false, () => 0);
 
     starfield.render(0);
     expect(surface.fake.clears).toBe(0);
@@ -128,7 +162,7 @@ describe('Starfield', () => {
 
   it('時刻が変われば描き直す', () => {
     const surface = new FakeSurface();
-    const starfield = new Starfield(surface, () => false);
+    const starfield = new Starfield(surface, () => false, () => 0);
 
     starfield.render(1);
     const first = surface.fake.drawn.map((star) => star.alpha);
@@ -139,7 +173,7 @@ describe('Starfield', () => {
 
   it('同じ時刻なら描き直さない', () => {
     const surface = new FakeSurface();
-    const starfield = new Starfield(surface, () => false);
+    const starfield = new Starfield(surface, () => false, () => 0);
 
     starfield.render(1);
     starfield.render(1);
@@ -148,7 +182,7 @@ describe('Starfield', () => {
 
   it('描画面が作り直されたら、同じ時刻でも描き直す', () => {
     const surface = new FakeSurface();
-    const starfield = new Starfield(surface, () => false);
+    const starfield = new Starfield(surface, () => false, () => 0);
 
     starfield.render(3);
     const before = surface.fake.drawn[0].x;
@@ -163,7 +197,7 @@ describe('Starfield', () => {
 
   it('リサイズしても星の数と並びは変わらない', () => {
     const surface = new FakeSurface();
-    const starfield = new Starfield(surface, () => false);
+    const starfield = new Starfield(surface, () => false, () => 0);
 
     starfield.render(3);
     const before = surface.fake.drawn.map((star) => ({
@@ -187,7 +221,7 @@ describe('Starfield', () => {
 
   it('動きを減らす設定では、時刻が進んでも星は瞬かない', () => {
     const surface = new FakeSurface();
-    const starfield = new Starfield(surface, () => true);
+    const starfield = new Starfield(surface, () => true, () => 0);
 
     starfield.render(1);
     // 星は消さない。動かない点でも星空は星空
@@ -200,7 +234,7 @@ describe('Starfield', () => {
 
   it('動きを減らす設定では、2 フレーム目以降は描画そのものを飛ばす', () => {
     const surface = new FakeSurface();
-    const starfield = new Starfield(surface, () => true);
+    const starfield = new Starfield(surface, () => true, () => 0);
 
     starfield.render(1);
     expect(surface.fake.clears).toBe(1);
@@ -210,10 +244,51 @@ describe('Starfield', () => {
     expect(surface.fake.clears).toBe(1);
   });
 
+  it('盛り上がると星は明るく大きくなる（位置は動かない）', () => {
+    const quiet = new FakeSurface();
+    new Starfield(quiet, () => false, () => 0).render(5);
+
+    const loud = new FakeSurface();
+    new Starfield(loud, () => false, () => 1).render(5);
+
+    quiet.fake.drawn.forEach((star, index) => {
+      const excited = loud.fake.drawn[index];
+      expect(excited.alpha).toBeGreaterThan(star.alpha);
+      expect(excited.radius).toBeGreaterThan(star.radius);
+      expect(excited.x).toBe(star.x);
+      expect(excited.y).toBe(star.y);
+    });
+  });
+
+  it('強さが変われば、同じ時刻でも描き直す', () => {
+    const surface = new FakeSurface();
+    let level = 0;
+    const starfield = new Starfield(surface, () => false, () => level);
+
+    starfield.render(5);
+    level = 0.7;
+    starfield.render(5);
+
+    expect(surface.fake.clears).toBe(2);
+  });
+
+  it('動きを減らす設定では、音が鳴っていても反応しない', () => {
+    const surface = new FakeSurface();
+    const starfield = new Starfield(surface, () => true, () => 1);
+
+    starfield.render(5);
+    const drawn = surface.fake.drawn.map((star) => star.alpha);
+
+    // 音での明滅も「動き」。時刻と同じく強さも 0 に畳む
+    const reference = new FakeSurface();
+    new Starfield(reference, () => false, () => 0).render(0);
+    expect(drawn).toEqual(reference.fake.drawn.map((star) => star.alpha));
+  });
+
   it('曲の途中で設定を変えても次のフレームから効く', () => {
     const surface = new FakeSurface();
     let reduced = false;
-    const starfield = new Starfield(surface, () => reduced);
+    const starfield = new Starfield(surface, () => reduced, () => 0);
 
     starfield.render(12);
     const moving = surface.fake.drawn.map((star) => star.alpha);
@@ -225,7 +300,7 @@ describe('Starfield', () => {
 
     // 落とし先は「時刻 0 の星空」。減らさない設定で 0 秒を描いたものと一致する
     const reference = new FakeSurface();
-    new Starfield(reference, () => false).render(0);
+    new Starfield(reference, () => false, () => 0).render(0);
     expect(still).toEqual(reference.fake.drawn.map((star) => star.alpha));
   });
 });
