@@ -267,6 +267,22 @@ export const effects = {
       duration: 0.6,
       ease: 'expo.out',
     }),
+
+  /**
+   * 何も動かさず、行ごと静かに現れる。
+   *
+   * 「動きを減らす」設定のときに他の演出の代わりに使われる（REDUCED_MOTION_EFFECT）。
+   * 位置も大きさも変えず、文字ごとの時間差も付けない。fade は控えめとはいえ
+   * yPercent: 40 の移動があるので、動きを減らす設定への答えとしては半端になる。
+   *
+   * シートから直接指定してもよい（静かに出したい行のために）。
+   */
+  calm: ({ root }) =>
+    gsap.timeline().from(root, {
+      opacity: 0,
+      duration: 0.4,
+      ease: 'power1.out',
+    }),
 } satisfies Record<string, EffectEntry>;
 
 /** 登録済みの演出名。effects に足せば自動で増える */
@@ -274,6 +290,14 @@ export type EffectName = keyof typeof effects;
 
 /** effect の指定が無いときに使う演出。存在しない名前を書くと型検査で落ちる */
 export const DEFAULT_EFFECT: EffectName = 'fade';
+
+/**
+ * 「動きを減らす」設定のときに、シートの指定に代えて使う演出。
+ *
+ * zoom / shatter / glitch / zoomLine は画面の広い範囲が急に動くので、
+ * 前庭系の症状（めまい・吐き気）を誘発しうる部類にあたる。
+ */
+export const REDUCED_MOTION_EFFECT: EffectName = 'calm';
 
 /**
  * 外から来た文字列が登録済みの演出名かどうか。
@@ -291,14 +315,44 @@ export function isEffectName(name: string): name is EffectName {
  *
  * 呼び出し側（LyricStage）は layout を当ててから build を呼ぶ。
  * どちらの書き方で登録されていても同じ形で返るので、表示側に分岐は要らない。
+ *
+ * reducedMotion が真なら build だけを calm に差し替える。**layout は落とさない** —
+ * writing-mode は動きではなくレイアウトの指定なので、動きを減らす設定でも
+ * 縦書きは縦書きのまま読めるべき。ここで一緒に落とすと、縦書きを前提に
+ * 決めた文字サイズや段組み（style.css）ごと外れてしまう。
+ *
+ * 設定を読むのは呼び出し側の仕事。この関数は「読んだ結果をどう反映するか」だけを持ち、
+ * window にも matchMedia にも触らないので、ブラウザ無しでテストできる。
  */
-export function resolveEffect(name: string | undefined): { layout: EffectLayout | null; build: Effect } {
-  if (name === undefined) return normalize(effects[DEFAULT_EFFECT]);
+export function resolveEffect(
+  name: string | undefined,
+  { reducedMotion = false }: ResolveOptions = {},
+): { layout: EffectLayout | null; build: Effect } {
+  const entry = lookupEffect(name);
 
-  if (!isEffectName(name)) {
-    console.warn(`未知の演出名です: ${name}（既定の ${DEFAULT_EFFECT} を使います）`);
-    return normalize(effects[DEFAULT_EFFECT]);
+  if (entry === null) {
+    // 落とし先を実際に使う名前で書く。動きを減らす設定では calm が使われるので、
+    // ここで既定の fade を名乗ると、綴りの間違いを調べている人を誤導する
+    const fallback = reducedMotion ? REDUCED_MOTION_EFFECT : DEFAULT_EFFECT;
+    console.warn(`未知の演出名です: ${name}（${fallback} を使います）`);
   }
 
-  return normalize(effects[name]);
+  const resolved = normalize(entry ?? effects[DEFAULT_EFFECT]);
+
+  return reducedMotion
+    ? { layout: resolved.layout, build: normalize(effects[REDUCED_MOTION_EFFECT]).build }
+    : resolved;
+}
+
+/** resolveEffect の任意指定。真偽値を裸で並べると呼び出し側で意味が読めないため */
+export interface ResolveOptions {
+  /** OS の「視差効果を減らす」設定が有効か */
+  readonly reducedMotion?: boolean;
+}
+
+/** 名前からレジストリの登録を引く。未指定は既定、未知の名前は null（警告は呼び出し側） */
+function lookupEffect(name: string | undefined): EffectEntry | null {
+  if (name === undefined) return effects[DEFAULT_EFFECT];
+
+  return isEffectName(name) ? effects[name] : null;
 }
