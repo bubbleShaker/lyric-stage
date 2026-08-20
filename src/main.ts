@@ -7,6 +7,7 @@ import { assetUrl } from './lib/asset';
 import { systemReducedMotion } from './lib/reduced-motion';
 import { AudioPlayer } from './stage/audio-player';
 import { LyricStage } from './stage/lyric-stage';
+import { Starfield } from './stage/starfield';
 import { mountTransport } from './stage/transport';
 import { AUDIO_PATH, DEFAULT_SHEET_NAME } from './work';
 import './style.css';
@@ -27,8 +28,11 @@ function required<T extends HTMLElement>(id: string): T {
 const ticker = new Ticker();
 const player = new AudioPlayer(assetUrl(AUDIO_PATH));
 
-// OS の「視差効果を減らす」設定。読み方だけを渡し、いつ読むかは LyricStage が決める
-const stage = new LyricStage(required<HTMLDivElement>('stage-text'), systemReducedMotion());
+// OS の「視差効果を減らす」設定。読み方だけを渡し、いつ読むかは受け取った側が決める。
+// 文字も背景も動くので、同じ設定を両方へ渡す
+const prefersReducedMotion = systemReducedMotion();
+const stage = new LyricStage(required<HTMLDivElement>('stage-text'), prefersReducedMotion);
+const backdrop = new Starfield(required<HTMLCanvasElement>('backdrop'), prefersReducedMotion);
 
 const transport = mountTransport(player, {
   root: required('transport'),
@@ -41,6 +45,8 @@ const transport = mountTransport(player, {
 // 毎フレームの駆動はここで一括して行う（rAF はアプリ全体で 1 本）。
 // 購読解除の関数は捨てている。ページの寿命 = アプリの寿命なので破棄しない。
 ticker.subscribe(transport.render);
+// 背景の時計も曲の再生位置。シークすれば星の瞬きも一緒に飛ぶ
+ticker.subscribe(() => backdrop.render(player.currentTime));
 ticker.start();
 
 loadLyricSheet(lyricSheetNameFromLocation(location.search, DEFAULT_SHEET_NAME))

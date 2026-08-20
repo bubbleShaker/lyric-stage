@@ -23,6 +23,21 @@ body {
   overflow: hidden;
 }
 
+/* 背景の星空。中身は Canvas に描くので、ここは置き場所だけを決める。
+   z-index: -1 でも body の背景色より手前に来る（背景色は root に伝播して
+   一番下に敷かれ、負の z-index の子はその上に描かれる）。
+   動きを減らす設定への対応は JS 側（Starfield が ReducedMotionQuery を読む）。
+   CSS のアニメーションは持たないので @media (prefers-reduced-motion) は要らない */
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  width: 100%;
+  height: 100%;
+  /* クリックやドラッグは手前の再生コントロールへ通す */
+  pointer-events: none;
+}
+
 .stage {
   position: relative;
   display: grid;
