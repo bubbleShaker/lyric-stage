@@ -17,6 +17,9 @@ body {
   min-height: 100dvh;
   background: var(--stage-bg);
   color: var(--stage-fg);
+  /* shatter 演出（src/stage/effects.ts）は文字を行の外まで飛ばすので、
+     これを外すとはみ出した文字でスクロールバーが出る。
+     html 側に overflow を書くとこの hidden は伝播しなくなるので注意 */
   overflow: hidden;
 }
 
