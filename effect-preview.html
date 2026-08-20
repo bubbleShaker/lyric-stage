@@ -7,7 +7,8 @@
   <body>
     <!--
       演出だけを音源抜きで見比べるための開発用ページ。`npm run dev` で
-      /effect-preview.html を開き、コンソールから play('文字', 'bounce') と叩く。
+      /lyric-stage/effect-preview.html を開き、コンソールから play('文字', 'bounce') と叩く。
+      （vite.config.ts の base が /lyric-stage/ なので、dev サーバーでもこの前置きが要る）
 
       Vite のビルド入口は index.html だけなので、このページは dist に入らない
       （＝公開サイトには出ない）。曲の再生位置に縛られず新しい演出を確かめられるので、
@@ -35,6 +36,10 @@
 
       /** 1 行を指定の演出で表示する。effect を省くと既定の演出になる */
       window.play = (text, effect) => stage.show({ time: 0, text, effect });
+
+      // 演出は一瞬で終わるので、コマ送りで見たいときのために gsap を出しておく。
+      // gsap.globalTimeline.pause() で全体を止め、.time(秒) で任意のコマに飛べる
+      window.gsap = gsap;
 
       console.info(`play('文字', '演出名') で試せます。演出名: ${Object.keys(effects).join(' / ')}`);
     </script>

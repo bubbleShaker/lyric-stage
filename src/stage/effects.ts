@@ -20,7 +20,7 @@ export type EffectTimeline = ReturnType<Effect>;
  * 行間隔が縮んだら、src/lyric-sheets.test.ts の「演出が行間隔より早く終わる」
  * 検査が落ちて気付ける。
  */
-const MAX_STAGGER_SPAN = 0.8;
+export const MAX_STAGGER_SPAN = 0.8;
 
 /**
  * 1 文字ごとの遅延を決める。
@@ -87,6 +87,82 @@ export const effects = {
       duration: 0.5,
       ease: 'back.out(2.6)',
       stagger: staggerFor(chars.length, 0.05),
+    }),
+
+  /**
+   * 信号が乱れたように、ずれた残像を残して定位置に収まる。
+   *
+   * 2 本のトゥイーンを同じ時刻（第 3 引数の 0）から重ねている。
+   * 1 本目が文字そのものの位置ずれ、2 本目が RGB がずれた残像。
+   */
+  glitch: (chars) =>
+    gsap
+      .timeline()
+      .from(chars, {
+        opacity: 0,
+        // 値に関数を書くと gsap が対象ごとに呼ぶので、文字 1 つずつ違うずれ方になる。
+        // ここで gsap.utils.random(-40, 40) と直に書くと、全文字が同じ値になってしまう
+        x: () => gsap.utils.random(-40, 40),
+        skewX: () => gsap.utils.random(-30, 30),
+        duration: 0.3,
+        // steps(4) は滑らかに動かさず 4 段階で飛ばすイージング。
+        // 連続していない動きがデジタルなノイズに見える
+        ease: 'steps(4)',
+        stagger: staggerFor(chars.length, 0.03),
+      })
+      .fromTo(
+        chars,
+        // 残像は素の見た目に無い（＝影が付いていない）ので .from() では書けない。
+        // 始点と終点の両方を、影の数と単位を揃えて明示する
+        { textShadow: '0.06em 0 0 rgba(255, 48, 96, 0.9), -0.06em 0 0 rgba(0, 224, 255, 0.9)' },
+        {
+          // 終点のずれ幅をゼロちょうどにしない。gsap は影のような複合文字列を
+          // 「並んだ数値の列」として補間するが、負のゼロ（-0em）だけ読み違えて
+          // 桁が変わり、左右のずれが非対称になる。0.001em は 1px の 1/100 未満なので
+          // 見た目はゼロと変わらないまま、この読み違いを避けられる
+          textShadow: '0.001em 0 0 rgba(255, 48, 96, 0), -0.001em 0 0 rgba(0, 224, 255, 0)',
+          duration: 0.45,
+          ease: 'power2.out',
+          stagger: staggerFor(chars.length, 0.03),
+        },
+        0,
+      ),
+
+  /**
+   * 画面手前から一気に縮んで着地する。
+   *
+   * expo.out は最初だけ猛烈に速く、あとはほぼ止まって見えるイージング。
+   * この急ブレーキが「拍に当たって止まる」手触りになる。
+   */
+  zoom: (chars) =>
+    gsap.timeline().from(chars, {
+      opacity: 0,
+      scale: 3.4,
+      transformOrigin: '50% 50%',
+      duration: 0.5,
+      ease: 'expo.out',
+      stagger: staggerFor(chars.length, 0.03),
+    }),
+
+  /**
+   * 散らばった破片が集まって行になる（文字が割れて飛ぶ演出の逆再生）。
+   *
+   * 行の外まで飛ばすので、はみ出した文字で横スクロールが出ないよう
+   * body の overflow: hidden に頼っている。
+   */
+  shatter: (chars) =>
+    gsap.timeline().from(chars, {
+      opacity: 0,
+      x: () => gsap.utils.random(-180, 180),
+      y: () => gsap.utils.random(-140, 140),
+      rotation: () => gsap.utils.random(-120, 120),
+      scale: 0.3,
+      duration: 0.7,
+      ease: 'power4.out',
+      // 数値でなくオブジェクトを渡すと順序を指定できる。'random' は左から順ではなく
+      // ばらばらの順に着地させる指定で、破片が寄り集まる感じになる。
+      // 合計の長さは each × (文字数 - 1) のままなので、上限の考え方は変わらない
+      stagger: { each: staggerFor(chars.length, 0.03), from: 'random' },
     }),
 } satisfies Record<string, Effect>;
 

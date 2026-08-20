@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { DEFAULT_EFFECT, effects, resolveEffect, staggerFor } from './effects';
+import { DEFAULT_EFFECT, effects, MAX_STAGGER_SPAN, resolveEffect, staggerFor } from './effects';
 
 /**
  * 文字要素の代わりに渡すダミー。gsap は要素でなくただのオブジェクトも
@@ -36,17 +36,22 @@ describe('effects', () => {
   // 演出を足すと自動でこの検査の対象になる（Object.entries で引いているため）。
   // 実際の行間隔に間に合うかどうかは、歌詞シートの実データと突き合わせて
   // src/lyric-sheets.test.ts で見る。ここでは演出単体の性質だけを押さえる。
-  it.each(Object.entries(effects))('%s は文字数が増えても総時間が伸びない', (_name, effect) => {
-    const short = effect(dummyChars(30));
-    const long = effect(dummyChars(500));
+  it.each(Object.entries(effects))('%s は文字数が増えても総時間が頭打ちになる', (_name, effect) => {
+    // 文字が 2 つなら staggerFor は希望どおりの間隔を返すが、掛かる回数が 1 回なので
+    // 文字送りはほぼ効かない。ここを「トゥイーン単体の長さ」の目安として使う
+    const minimal = effect(dummyChars(2));
+    const huge = effect(dummyChars(500));
 
-    expect(short.duration()).toBeGreaterThan(0);
-    // 文字送りに上限があるので、長い行でも総時間は変わらない
-    expect(long.duration()).toBeCloseTo(short.duration());
+    expect(minimal.duration()).toBeGreaterThan(0);
+    // 文字送りの合計には上限があるので、文字が何個あっても
+    // 総時間は「トゥイーン単体の長さ + 上限」を超えない。
+    // 「長い行と短い行の総時間が一致すること」で確かめると、希望の間隔が狭い演出
+    // （短い行では上限に届かない）を足したときに、作りは正しいのに落ちてしまう
+    expect(huge.duration()).toBeLessThanOrEqual(minimal.duration() + MAX_STAGGER_SPAN + 0.001);
 
     // 作りっぱなしにすると gsap のグローバルなタイムラインに残り続ける
-    short.kill();
-    long.kill();
+    minimal.kill();
+    huge.kill();
   });
 });
 
