@@ -1,5 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { DEFAULT_EFFECT, effects, MAX_STAGGER_SPAN, resolveEffect, staggerFor } from './effects';
+import {
+  DEFAULT_EFFECT,
+  effects,
+  LAYOUT_CLASS,
+  MAX_STAGGER_SPAN,
+  resolveEffect,
+  staggerFor,
+} from './effects';
 
 /**
  * 文字要素の代わりに渡すダミー。gsap は要素でなくただのオブジェクトも
@@ -11,6 +18,17 @@ import { DEFAULT_EFFECT, effects, MAX_STAGGER_SPAN, resolveEffect, staggerFor } 
  */
 function dummyChars(count: number): Element[] {
   return Array.from({ length: count }, () => ({ opacity: 1 }) as unknown as Element);
+}
+
+/**
+ * 演出に渡す一式。文字数だけ指定すれば足りる。
+ *
+ * root がただの空オブジェクトで済むのは、演出が DOM を触らないため
+ * （レイアウトの切り替えは EffectDef の layout で宣言し、当てるのは LyricStage）。
+ * gsap は要素でなくただのオブジェクトもトゥイーンできるので、これで長さは測れる。
+ */
+function dummyTarget(count: number) {
+  return { root: {} as HTMLElement, chars: dummyChars(count) };
 }
 
 describe('staggerFor', () => {
@@ -36,14 +54,18 @@ describe('effects', () => {
   // 演出を足すと自動でこの検査の対象になる（Object.entries で引いているため）。
   // 実際の行間隔に間に合うかどうかは、歌詞シートの実データと突き合わせて
   // src/lyric-sheets.test.ts で見る。ここでは演出単体の性質だけを押さえる。
-  it.each(Object.entries(effects))('%s は文字数が増えても総時間が頭打ちになる', (_name, effect) => {
+  it.each(Object.keys(effects))('%s は文字数が増えても総時間が頭打ちになる', (name) => {
+    // レジストリには関数と { layout, build } の 2 通りが書けるので、
+    // 表を直接引かず resolveEffect で形を揃えてから取り出す
+    const { build } = resolveEffect(name);
+
     // 文字が 1 つなら staggerFor は 0 を返すので、文字送りが一切乗らない。
     // ＝トゥイーン単体の長さそのもの。2 つにすると希望の間隔が丸ごと 1 回分
     // 混ざり、そのぶん下の上限が緩んでしまう
-    const single = effect(dummyChars(1));
-    const huge = effect(dummyChars(500));
+    const single = build(dummyTarget(1));
+    const huge = build(dummyTarget(500));
     // 500 で頭打ちなら、その 4 倍でも変わらないはず
-    const huger = effect(dummyChars(2000));
+    const huger = build(dummyTarget(2000));
 
     expect(single.duration()).toBeGreaterThan(0);
 
@@ -63,6 +85,40 @@ describe('effects', () => {
     huge.kill();
     huger.kill();
   });
+
+  it('vertical は縦書きのレイアウトを要求する', () => {
+    // 縦書きの見た目は CSS 側にあるので検証できないが、
+    // 「演出がレイアウトの切り替えを要求したこと」までは確かめられる
+    expect(resolveEffect('vertical').layout).toBe('vertical');
+    expect(LAYOUT_CLASS.vertical).toBe('stage__text--vertical');
+  });
+
+  it('レイアウトを要求しない演出は layout が null になる', () => {
+    // ここが null でないと LyricStage が余計なクラスを付けてしまう
+    for (const name of ['fade', 'typewriter', 'bounce', 'glitch', 'zoom', 'shatter', 'zoomLine']) {
+      expect(resolveEffect(name).layout, name).toBeNull();
+    }
+  });
+
+  it('演出は DOM を触らない', () => {
+    // レイアウトの切り替えは宣言に寄せたので、演出が root を汚すことはもう無い。
+    // 触りにいったら「root は空オブジェクト」なので TypeError で落ちる
+    for (const name of Object.keys(effects)) {
+      const timeline = resolveEffect(name).build(dummyTarget(5));
+      expect(timeline.duration()).toBeGreaterThan(0);
+      timeline.kill();
+    }
+  });
+
+  it('zoomLine は文字が 1 つも無くても組み立てられる', () => {
+    // 行全体を動かす演出なので chars に依らない。
+    // 文字を触る前提で書かれていたら、ここで落ちる
+    const timeline = resolveEffect('zoomLine').build(dummyTarget(0));
+
+    expect(timeline.duration()).toBeGreaterThan(0);
+
+    timeline.kill();
+  });
 });
 
 describe('resolveEffect', () => {
@@ -72,20 +128,30 @@ describe('resolveEffect', () => {
 
   it('名前が無ければ既定の演出を返す', () => {
     // undefined 同士で通ってしまわないよう、関数が返ることも確かめる
-    expect(typeof resolveEffect(undefined)).toBe('function');
-    expect(resolveEffect(undefined)).toBe(effects[DEFAULT_EFFECT]);
+    expect(typeof resolveEffect(undefined).build).toBe('function');
+    expect(resolveEffect(undefined).build).toBe(effects[DEFAULT_EFFECT]);
   });
 
   it('登録済みの名前はその演出を返す', () => {
-    expect(resolveEffect('typewriter')).toBe(effects.typewriter);
-    expect(resolveEffect('bounce')).toBe(effects.bounce);
+    expect(resolveEffect('typewriter').build).toBe(effects.typewriter);
+    expect(resolveEffect('bounce').build).toBe(effects.bounce);
+    // { layout, build } で登録した演出も、同じ形で取り出せる
+    expect(resolveEffect('vertical').build).toBe(effects.vertical.build);
   });
 
   it('未知の名前は警告して既定の演出に落とす', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
-    expect(resolveEffect('存在しない演出')).toBe(effects[DEFAULT_EFFECT]);
+    expect(resolveEffect('存在しない演出').build).toBe(effects[DEFAULT_EFFECT]);
     expect(warn).toHaveBeenCalledOnce();
+  });
+
+  it('未知の名前ではレイアウトも当てない', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    // 既定は fade なので縦書きにはならない。ここが漏れると
+    // 綴りを間違えた行だけ組み方が変わる、という分かりにくい不具合になる
+    expect(resolveEffect('存在しない演出').layout).toBeNull();
   });
 
   it('Object.prototype 由来の名前を演出として拾わない', () => {
@@ -93,7 +159,7 @@ describe('resolveEffect', () => {
 
     // 外部 JSON にこう書かれても、関数でないものを呼び出さないこと
     for (const name of ['__proto__', 'toString', 'constructor', 'hasOwnProperty']) {
-      expect(resolveEffect(name)).toBe(effects[DEFAULT_EFFECT]);
+      expect(resolveEffect(name).build).toBe(effects[DEFAULT_EFFECT]);
     }
   });
 });

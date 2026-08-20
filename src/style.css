@@ -29,6 +29,12 @@ body {
   place-items: center;
   min-height: 100dvh;
   padding: 2rem;
+
+  /* 画面下に固定の .transport（実高さ + bottom で約 105px）が居るので、
+     その手前で歌詞が止まるよう下だけ厚く空ける。ここで一括して避けることで、
+     演出ごとに避け方を考えなくて済む。
+     代償として歌詞の中心は画面の中央よりやや上になる */
+  padding-bottom: 8rem;
 }
 
 .stage__text {
@@ -39,6 +45,30 @@ body {
   line-height: 1.5;
   text-align: center;
   text-wrap: balance;
+}
+
+/* 縦書きの演出（src/stage/effects.ts の vertical）が付けるクラス。
+   演出側は「縦書きにする」意思だけを持ち、どう組むかはここが決める */
+.stage__text--vertical {
+  writing-mode: vertical-rl;
+
+  /* 縦組みでは高さがインライン方向（＝行の伸びる向き）になるので、
+     高さを絞ると 1 段に収まらないぶんが右から左へ段になって折り返す。
+     本編の最長行は 28 文字あり、絞らないと画面外へ流れていく。
+
+     3 つめは .stage の内側の高さ（100dvh から上下の padding 2rem + 8rem を引いた分）。
+     ここを max-height: 100% と書くと、grid の中では百分率の解決先が定まらず
+     max-height ごと無効になって高さが青天井になる。実測で確かめたので calc で書く */
+  max-height: min(70dvh, 32rem, calc(100dvh - 10rem));
+
+  /* 横組みの文字サイズは幅だけで決まるが、縦組みは高さが行の伸びる向きなので
+     画面が低いと 1 段に数文字しか入らず段だらけになる。高さにも追従させる */
+  font-size: clamp(1.5rem, min(7vw, 8dvh), 5rem);
+
+  /* 横組み前提の指定を縦組み用に上書きする。
+     text-wrap: balance は行の長さを揃える指定で、段組みでは狙いが合わない */
+  text-wrap: initial;
+  letter-spacing: 0.12em;
 }
 
 .stage__message {
