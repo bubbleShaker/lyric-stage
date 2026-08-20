@@ -1,10 +1,25 @@
 import gsap from 'gsap';
 
 /**
- * 1 行分の演出。SplitText が分解した文字要素を受け取り、
- * その行の登場アニメーションを組み立てて返す。
+ * 演出が触ってよいもの。
+ *
+ * 引数を並べず 1 個のオブジェクトにしているのは、SplitText が words / lines も
+ * 作れるため。後で足すときに、それを使わない既存の演出を書き換えずに済む。
  */
-export type Effect = (chars: Element[]) => gsap.core.Timeline;
+export interface EffectTarget {
+  /** 行そのものの要素。縦書きのようにレイアウトを変える演出が使う */
+  readonly root: HTMLElement;
+  /** SplitText が分解した 1 文字ずつの要素 */
+  readonly chars: Element[];
+}
+
+/**
+ * 1 行分の演出。その行の登場アニメーションを組み立てて返す。
+ *
+ * **root は自由に汚してよい**（クラスの付与、インラインスタイル）。
+ * 行が切り替わるときに LyricStage が初期状態へ戻すので、後始末は書かなくてよい。
+ */
+export type Effect = (target: EffectTarget) => gsap.core.Timeline;
 
 /** 演出が返すタイムラインの型（gsap を値として import せずに参照するため） */
 export type EffectTimeline = ReturnType<Effect>;
@@ -38,6 +53,14 @@ export function staggerFor(count: number, preferred: number): number {
 }
 
 /**
+ * 縦書きのレイアウトを与えるクラス。中身は src/style.css が持つ。
+ *
+ * 演出（このファイル）は「縦書きにする」という意思だけを示し、
+ * どう縦書きにするか（段組み・字間・高さの上限）は CSS 側の責任にする。
+ */
+const VERTICAL_CLASS = 'stage__text--vertical';
+
+/**
  * 演出プリセットの一覧。
  *
  * 表示側は switch で分岐せず、この表を引くだけにする。
@@ -52,7 +75,7 @@ export function staggerFor(count: number, preferred: number): number {
  */
 export const effects = {
   /** 下からふわりと出る。effect の指定が無いときの既定 */
-  fade: (chars) =>
+  fade: ({ chars }) =>
     gsap.timeline().from(chars, {
       opacity: 0,
       yPercent: 40,
@@ -67,7 +90,7 @@ export const effects = {
    * 文字自体はほぼ瞬時に現れる（duration が短い）。等間隔で置かれていく
    * リズムそのものがタイプライターらしさなので、ease は付けない。
    */
-  typewriter: (chars) =>
+  typewriter: ({ chars }) =>
     gsap.timeline().from(chars, {
       opacity: 0,
       duration: 0.01,
@@ -81,7 +104,7 @@ export const effects = {
    * back.out は目標値を一度追い越してから戻るイージング。この行き過ぎが
    * 跳ね返りに見える。足元を軸に潰れて伸びるよう transformOrigin を下端に置く。
    */
-  bounce: (chars) =>
+  bounce: ({ chars }) =>
     gsap.timeline().from(chars, {
       opacity: 0,
       yPercent: 90,
@@ -98,7 +121,7 @@ export const effects = {
    * 2 本のトゥイーンを同じ時刻（第 3 引数の 0）から重ねている。
    * 1 本目が文字そのものの位置ずれ、2 本目が RGB がずれた残像。
    */
-  glitch: (chars) =>
+  glitch: ({ chars }) =>
     gsap
       .timeline()
       .from(chars, {
@@ -145,7 +168,7 @@ export const effects = {
    * expo.out は最初だけ猛烈に速く、あとはほぼ止まって見えるイージング。
    * この急ブレーキが「拍に当たって止まる」手触りになる。
    */
-  zoom: (chars) =>
+  zoom: ({ chars }) =>
     gsap.timeline().from(chars, {
       opacity: 0,
       scale: 3.4,
@@ -164,7 +187,7 @@ export const effects = {
    * 書いているのは、文字サイズが clamp(1.75rem, 7vw, 5rem) で 28px〜80px まで
    * 変わるため。px 固定だと狭い画面で飛びすぎ、広い画面で控えめになってしまう。
    */
-  shatter: (chars) =>
+  shatter: ({ chars }) =>
     gsap.timeline().from(chars, {
       opacity: 0,
       xPercent: () => gsap.utils.random(-260, 260),
@@ -177,6 +200,43 @@ export const effects = {
       // ばらばらの順に着地させる指定で、破片が寄り集まる感じになる。
       // 合計の長さは each × (文字数 - 1) のままなので、上限の考え方は変わらない
       stagger: { each: staggerFor(chars.length, 0.03), from: 'random' },
+    }),
+
+  /**
+   * 縦書きにして、上から一文字ずつ降ろす。
+   *
+   * writing-mode は補間できるプロパティではない（レイアウトの指定であって
+   * アニメーションではない）ので、gsap では動かさず CSS クラスの付与で切り替える。
+   * 段組みや字間の調整も込みで style.css の .stage__text--vertical が持つ。
+   *
+   * ここで付けたクラスは自分で外さない。行が切り替わるとき LyricStage が
+   * root を初期状態へ戻す（消し忘れを構造的に無くすため）。
+   */
+  vertical: ({ root, chars }) => {
+    root.classList.add(VERTICAL_CLASS);
+
+    return gsap.timeline().from(chars, {
+      opacity: 0,
+      // 縦組みなので「上から降りてくる」向きが文字の進行方向と揃う
+      yPercent: -70,
+      duration: 0.5,
+      ease: 'power3.out',
+      stagger: staggerFor(chars.length, 0.05),
+    });
+  },
+
+  /**
+   * 行全体が手前から迫って着地する。
+   *
+   * 文字ごとに拡大する zoom と違い、行が 1 枚の板として飛び込んでくる。
+   * chars を一切使わないので、行の要素を受け取れるようになって初めて書けた演出。
+   */
+  zoomLine: ({ root }) =>
+    gsap.timeline().from(root, {
+      opacity: 0,
+      scale: 6,
+      duration: 0.6,
+      ease: 'expo.out',
     }),
 } satisfies Record<string, Effect>;
 

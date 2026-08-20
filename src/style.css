@@ -41,6 +41,22 @@ body {
   text-wrap: balance;
 }
 
+/* 縦書きの演出（src/stage/effects.ts の vertical）が付けるクラス。
+   演出側は「縦書きにする」意思だけを持ち、どう組むかはここが決める */
+.stage__text--vertical {
+  writing-mode: vertical-rl;
+
+  /* 縦組みでは高さがインライン方向（＝行の伸びる向き）になるので、
+     高さを絞ると 1 段に収まらないぶんが右から左へ段になって折り返す。
+     本編の最長行は 28 文字あり、絞らないと画面外へ流れていく */
+  max-height: min(70dvh, 32rem);
+
+  /* 横組み前提の指定を縦組み用に上書きする。
+     text-wrap: balance は行の長さを揃える指定で、段組みでは狙いが合わない */
+  text-wrap: initial;
+  letter-spacing: 0.12em;
+}
+
 .stage__message {
   position: absolute;
   bottom: 6rem;

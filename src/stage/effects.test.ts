@@ -13,6 +13,25 @@ function dummyChars(count: number): Element[] {
   return Array.from({ length: count }, () => ({ opacity: 1 }) as unknown as Element);
 }
 
+/**
+ * 行の要素の代わりに渡すダミー。演出が root に対してすることは
+ * 「クラスを付ける」「gsap でトゥイーンする」の 2 つなので、そのぶんだけ用意する。
+ *
+ * 付いたクラスを見られるようにしてあるのは、縦書きの演出が本当に
+ * クラスを付けたかを確かめるため（見た目は検証できないが、意思は検証できる）。
+ */
+function dummyRoot(): HTMLElement & { classList: { added: string[] } } {
+  const added: string[] = [];
+  return {
+    classList: { added, add: (name: string) => added.push(name) },
+  } as unknown as HTMLElement & { classList: { added: string[] } };
+}
+
+/** 演出に渡す一式。文字数だけ指定すれば足りる */
+function dummyTarget(count: number) {
+  return { root: dummyRoot(), chars: dummyChars(count) };
+}
+
 describe('staggerFor', () => {
   it('文字が 1 つ以下なら遅延は無い', () => {
     expect(staggerFor(0, 0.08)).toBe(0);
@@ -40,10 +59,10 @@ describe('effects', () => {
     // 文字が 1 つなら staggerFor は 0 を返すので、文字送りが一切乗らない。
     // ＝トゥイーン単体の長さそのもの。2 つにすると希望の間隔が丸ごと 1 回分
     // 混ざり、そのぶん下の上限が緩んでしまう
-    const single = effect(dummyChars(1));
-    const huge = effect(dummyChars(500));
+    const single = effect(dummyTarget(1));
+    const huge = effect(dummyTarget(500));
     // 500 で頭打ちなら、その 4 倍でも変わらないはず
-    const huger = effect(dummyChars(2000));
+    const huger = effect(dummyTarget(2000));
 
     expect(single.duration()).toBeGreaterThan(0);
 
@@ -62,6 +81,27 @@ describe('effects', () => {
     single.kill();
     huge.kill();
     huger.kill();
+  });
+
+  it('vertical は行の要素に縦書きのクラスを付ける', () => {
+    // 縦書きの見た目は CSS 側にあるので検証できないが、
+    // 「演出がレイアウトの切り替えを要求したこと」までは確かめられる
+    const target = dummyTarget(5);
+    const timeline = effects.vertical(target);
+
+    expect(target.root.classList.added).toContain('stage__text--vertical');
+
+    timeline.kill();
+  });
+
+  it('zoomLine は文字が 1 つも無くても組み立てられる', () => {
+    // 行全体を動かす演出なので chars に依らない。
+    // 文字を触る前提で書かれていたら、ここで落ちる
+    const timeline = effects.zoomLine(dummyTarget(0));
+
+    expect(timeline.duration()).toBeGreaterThan(0);
+
+    timeline.kill();
   });
 });
 

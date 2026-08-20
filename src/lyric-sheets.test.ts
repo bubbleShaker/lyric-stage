@@ -80,7 +80,7 @@ describe(`${DEFAULT_SHEET_NAME}.json`, () => {
     const worst = worstCase(sheet.lines);
 
     for (const [name, effect] of Object.entries(effects)) {
-      const timeline = effect(dummyChars(worst.longestText));
+      const timeline = effect({ root: dummyRoot(), chars: dummyChars(worst.longestText) });
       expect(timeline.duration(), `${name} が ${worst.shortestGap} 秒に収まらない`).toBeLessThan(
         worst.shortestGap,
       );
@@ -103,7 +103,12 @@ function worstCase(lines: readonly LyricLine[]) {
   };
 }
 
-/** 演出は DOM を触らないので、文字要素の代わりにダミーを渡せば長さを測れる */
+/** 演出の長さを測るだけなので、文字要素の代わりにダミーを渡せば足りる */
 function dummyChars(count: number): Element[] {
   return Array.from({ length: count }, () => ({}) as unknown as Element);
+}
+
+/** 行の要素のダミー。縦書きの演出がクラスを付けにくるので受け口だけ用意する */
+function dummyRoot(): HTMLElement {
+  return { classList: { add: () => {} } } as unknown as HTMLElement;
 }
