@@ -1,6 +1,6 @@
+import type { IntensityQuery } from '../lib/intensity';
 import { seededRandom } from '../lib/random';
 import type { ReducedMotionQuery } from '../lib/reduced-motion';
-import type { IntensityQuery } from './loudness';
 import type { DrawSurface } from './scaled-canvas';
 
 /**

@@ -38,23 +38,25 @@ describe('bassLevel', () => {
 });
 
 describe('toIntensity', () => {
-  // 窓の位置は本編の mp3 の実測に合わせてある（イントロ 0.73 / サビ 0.91 / ラスサビ 0.95）
+  // 幅そのもの（本編は 0.85〜0.98）は曲ごとの実測値で src/work.ts が持つ。
+  // ここで検査するのは曲に依らない性質だけ
+  const range = { quiet: 0.2, loud: 0.8 };
+
   it('静かな側は 0 に張り付く', () => {
-    expect(toIntensity(0)).toBe(0);
-    // イントロの生の値。低音は鳴っているが、この曲の中では静かな側
-    expect(toIntensity(0.73)).toBe(0);
+    expect(toIntensity(0, range)).toBe(0);
+    expect(toIntensity(0.2, range)).toBe(0);
   });
 
   it('大きい側は 1 で頭打ちになる', () => {
-    expect(toIntensity(0.98)).toBe(1);
-    expect(toIntensity(1)).toBe(1);
+    expect(toIntensity(0.8, range)).toBe(1);
+    expect(toIntensity(1, range)).toBe(1);
   });
 
   it('間は単調に増える', () => {
-    const middle = toIntensity(0.91);
+    const middle = toIntensity(0.5, range);
     expect(middle).toBeGreaterThan(0);
     expect(middle).toBeLessThan(1);
-    expect(toIntensity(0.95)).toBeGreaterThan(middle);
+    expect(toIntensity(0.6, range)).toBeGreaterThan(middle);
   });
 });
 
@@ -74,12 +76,13 @@ describe('smoothLevel', () => {
     expect(value).toBeGreaterThan(0.99);
   });
 
-  it('静かになれば 0 へ戻る', () => {
+  it('静かになれば **厳密に 0** へ戻る', () => {
+    // 指数の減衰は 0 に漸近するだけなので、そのままだと「前回と違う強さ」が
+    // 何分も続き、止まった絵を毎フレーム描き直すことになる
     let value = 1;
     for (let i = 0; i < 300; i += 1) value = smoothLevel(value, 0);
 
-    expect(value).toBeLessThan(0.01);
-    expect(value).toBeGreaterThanOrEqual(0);
+    expect(value).toBe(0);
   });
 
   it('拍の合間の一瞬の落ち込みでは暗転しない', () => {
@@ -128,11 +131,18 @@ function fakeAudio() {
   const resume = vi.fn();
   let created = 0;
 
+  let attachedTo: unknown = null;
+  const close = vi.fn();
+
   const context = {
     sampleRate: 44100,
     destination,
     resume,
-    createMediaElementSource: () => source,
+    close,
+    createMediaElementSource: (el: unknown) => {
+      attachedTo = el;
+      return source;
+    },
     createAnalyser: () => analyser,
   };
 
@@ -141,6 +151,10 @@ function fakeAudio() {
     analyser,
     destination,
     resume,
+    close,
+    get attachedTo() {
+      return attachedTo;
+    },
     get created() {
       return created;
     },
@@ -153,18 +167,28 @@ function fakeAudio() {
 
 const media = {} as HTMLMediaElement;
 
+/** 偽の解析器は低音を 0 か 255 で返すので、幅は 0〜1 をそのまま使う */
+const RANGE = { quiet: 0, loud: 1 };
+
 describe('createLoudness', () => {
   it('解析を挿しても音が消えない（destination まで繋ぐ）', () => {
     const audio = fakeAudio();
-    createLoudness(media, audio.factory).start();
+    createLoudness(media, audio.factory, RANGE).start();
 
     expect(audio.source.connectedTo).toEqual([audio.analyser]);
     expect(audio.analyser.connectedTo).toEqual([audio.destination]);
   });
 
+  it('渡された要素そのものを解析する', () => {
+    const audio = fakeAudio();
+    createLoudness(media, audio.factory, RANGE).start();
+
+    expect(audio.attachedTo).toBe(media);
+  });
+
   it('始めるまでは静かなまま', () => {
     const audio = fakeAudio();
-    const loudness = createLoudness(media, audio.factory);
+    const loudness = createLoudness(media, audio.factory, RANGE);
 
     loudness.sample();
     expect(loudness.level()).toBe(0);
@@ -173,7 +197,7 @@ describe('createLoudness', () => {
 
   it('2 回目の start では作り直さず、再開だけする', () => {
     const audio = fakeAudio();
-    const loudness = createLoudness(media, audio.factory);
+    const loudness = createLoudness(media, audio.factory, RANGE);
 
     loudness.start();
     loudness.start();
@@ -184,7 +208,7 @@ describe('createLoudness', () => {
 
   it('鳴っている間は強さが上がり、止めば戻る', () => {
     const audio = fakeAudio();
-    const loudness = createLoudness(media, audio.factory);
+    const loudness = createLoudness(media, audio.factory, RANGE);
     loudness.start();
 
     audio.analyser.bass = 255;
@@ -198,9 +222,13 @@ describe('createLoudness', () => {
   });
 
   it('AudioContext を作れない環境でも落ちず、静かなままになる', () => {
-    const loudness = createLoudness(media, () => {
-      throw new Error('AudioContext は使えません');
-    });
+    const loudness = createLoudness(
+      media,
+      () => {
+        throw new Error('AudioContext は使えません');
+      },
+      RANGE,
+    );
 
     expect(() => {
       loudness.start();
@@ -208,5 +236,44 @@ describe('createLoudness', () => {
 
     loudness.sample();
     expect(loudness.level()).toBe(0);
+  });
+
+  it('一度失敗したら作り直さない（押すたびに AudioContext を作らない）', () => {
+    let attempts = 0;
+    const loudness = createLoudness(
+      media,
+      () => {
+        attempts += 1;
+        throw new Error('AudioContext は使えません');
+      },
+      RANGE,
+    );
+
+    loudness.start();
+    loudness.start();
+    loudness.start();
+
+    // Chrome はページあたり数個で new AudioContext() 自体が投げるようになる
+    expect(attempts).toBe(1);
+  });
+
+  it('途中で失敗したら、作りかけの AudioContext を閉じる', () => {
+    const audio = fakeAudio();
+    const broken = {
+      ...audio,
+      factory: () => {
+        const context = audio.factory();
+        return {
+          ...context,
+          createMediaElementSource: () => {
+            throw new Error('この要素は既に別の AudioContext に繋がっています');
+          },
+        } as unknown as AudioContext;
+      },
+    };
+
+    createLoudness(media, broken.factory, RANGE).start();
+
+    expect(audio.close).toHaveBeenCalledTimes(1);
   });
 });

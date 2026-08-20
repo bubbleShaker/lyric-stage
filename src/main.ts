@@ -11,7 +11,7 @@ import { createLoudness, systemAudioContext } from './stage/loudness';
 import { ScaledCanvas, systemPixelRatio } from './stage/scaled-canvas';
 import { Starfield } from './stage/starfield';
 import { mountTransport } from './stage/transport';
-import { AUDIO_PATH, DEFAULT_SHEET_NAME } from './work';
+import { AUDIO_PATH, DEFAULT_SHEET_NAME, LOUDNESS_RANGE } from './work';
 import './style.css';
 
 // GSAP のプラグインは使う前に gsap 本体へ登録する。登録することで gsap 側が
@@ -33,7 +33,7 @@ const ticker = new Ticker();
 // 同じ音を別々の側面から使うため、どちらか一方の持ち物にはしない
 const media = new Audio();
 const player = new AudioPlayer(media, assetUrl(AUDIO_PATH));
-const loudness = createLoudness(media, systemAudioContext);
+const loudness = createLoudness(media, systemAudioContext, LOUDNESS_RANGE);
 
 // OS の「視差効果を減らす」設定。読み方だけを渡し、いつ読むかは受け取った側が決める。
 // 文字も背景も動くので、同じ設定を両方へ渡す
