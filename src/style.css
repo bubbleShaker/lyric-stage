@@ -32,6 +32,12 @@ body {
   position: fixed;
   inset: 0;
   z-index: -1;
+
+  /* この 2 行を外さないこと。canvas は width / height 属性（実ピクセル数）が
+     固有の大きさとしてレイアウトに効くので、CSS で大きさを固定しておかないと、
+     ResizeObserver の中で解像度を合わせた結果がまた観測を呼ぶ堂々巡りになる
+     （"ResizeObserver loop completed with undelivered notifications"）。
+     解像度を合わせているのは src/stage/scaled-canvas.ts */
   width: 100%;
   height: 100%;
   /* クリックやドラッグは手前の再生コントロールへ通す */

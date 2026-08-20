@@ -7,6 +7,7 @@ import { assetUrl } from './lib/asset';
 import { systemReducedMotion } from './lib/reduced-motion';
 import { AudioPlayer } from './stage/audio-player';
 import { LyricStage } from './stage/lyric-stage';
+import { ScaledCanvas, systemPixelRatio } from './stage/scaled-canvas';
 import { Starfield } from './stage/starfield';
 import { mountTransport } from './stage/transport';
 import { AUDIO_PATH, DEFAULT_SHEET_NAME } from './work';
@@ -32,7 +33,6 @@ const player = new AudioPlayer(assetUrl(AUDIO_PATH));
 // 文字も背景も動くので、同じ設定を両方へ渡す
 const prefersReducedMotion = systemReducedMotion();
 const stage = new LyricStage(required<HTMLDivElement>('stage-text'), prefersReducedMotion);
-const backdrop = new Starfield(required<HTMLCanvasElement>('backdrop'), prefersReducedMotion);
 
 const transport = mountTransport(player, {
   root: required('transport'),
@@ -45,8 +45,19 @@ const transport = mountTransport(player, {
 // 毎フレームの駆動はここで一括して行う（rAF はアプリ全体で 1 本）。
 // 購読解除の関数は捨てている。ページの寿命 = アプリの寿命なので破棄しない。
 ticker.subscribe(transport.render);
-// 背景の時計も曲の再生位置。シークすれば星の瞬きも一緒に飛ぶ
-ticker.subscribe(() => backdrop.render(player.currentTime));
+
+// 背景は装飾。canvas を塞ぐブラウザや context を作れない状況でも、
+// 歌詞と音（作品の本体）は動かなければならないので、失敗をここで受け止める。
+// 星が出ないことより、真っ黒な画面に死んだ再生コントロールだけが残る方が悪い
+try {
+  const canvas = new ScaledCanvas(required<HTMLCanvasElement>('backdrop'), systemPixelRatio);
+  const backdrop = new Starfield(canvas, prefersReducedMotion);
+  // 背景の時計も曲の再生位置。シークすれば星の瞬きも一緒に飛ぶ
+  ticker.subscribe(() => backdrop.render(player.currentTime));
+} catch (error) {
+  console.warn('背景の星空を出せませんでした。歌詞と音はそのまま動きます', error);
+}
+
 ticker.start();
 
 loadLyricSheet(lyricSheetNameFromLocation(location.search, DEFAULT_SHEET_NAME))

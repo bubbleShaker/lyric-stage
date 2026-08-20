@@ -1,5 +1,6 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { seededRandom } from '../lib/random';
+import type { DrawSurface } from './scaled-canvas';
 import { createStars, starAlpha, Starfield, type Star } from './starfield';
 
 describe('createStars', () => {
@@ -46,11 +47,15 @@ describe('starAlpha', () => {
     expect(starAlpha(star, 0)).not.toBeCloseTo(starAlpha(star, 0.7));
   });
 
-  it('消えも飛び出しもしない（0 以上、一番明るい時の値以下）', () => {
-    for (let time = 0; time < 20; time += 0.05) {
-      const alpha = starAlpha(star, time);
-      expect(alpha).toBeGreaterThan(0);
-      expect(alpha).toBeLessThanOrEqual(star.peakAlpha);
+  it('消えも飛び出しもしない（0 より大きく、一番明るい時の値以下）', () => {
+    // 実際に描かれるのは createStars が作る星なので、手書きの 1 個ではなく
+    // 生成された全ての星で見る。速さや瞬きの深さを変えた時に壊れてくれる
+    for (const generated of createStars(200, seededRandom(7))) {
+      for (let time = 0; time < 20; time += 0.05) {
+        const alpha = starAlpha(generated, time);
+        expect(alpha).toBeGreaterThan(0);
+        expect(alpha).toBeLessThanOrEqual(generated.peakAlpha);
+      }
     }
   });
 });
@@ -58,13 +63,12 @@ describe('starAlpha', () => {
 /**
  * Canvas の代わりに渡す偽物。描いた星を記録するだけ。
  *
- * DOM 無しで Starfield の判断（いつ描くか・どの解像度で描くか）だけを検証する。
+ * DOM 無しで Starfield の判断（いつ描くか）だけを検証する。
  * 星が実際にどう見えるかはここでは分からないので、それは目で確かめる。
  */
 class FakeContext {
   globalAlpha = 1;
   fillStyle = '';
-  transform: number[] | null = null;
   /** 描き直した回数。「描かなかった」ことを見るために数える */
   clears = 0;
   readonly drawn: { x: number; y: number; alpha: number }[] = [];
@@ -73,9 +77,6 @@ class FakeContext {
     this.clears += 1;
     this.drawn.length = 0;
   }
-  setTransform(...args: number[]): void {
-    this.transform = args;
-  }
   beginPath(): void {}
   arc(x: number, y: number): void {
     this.drawn.push({ x, y, alpha: this.globalAlpha });
@@ -83,134 +84,148 @@ class FakeContext {
   fill(): void {}
 }
 
-/** ResizeObserver を差し替えるための偽物。テストから任意の大きさを流し込める */
-class FakeResizeObserver {
-  static instances: FakeResizeObserver[] = [];
-  private readonly callback: (entries: { contentRect: { width: number; height: number } }[]) => void;
+/** 大きさと版をテストから動かせる描画面 */
+class FakeSurface implements DrawSurface {
+  readonly fake = new FakeContext();
+  width: number;
+  height: number;
+  ready: boolean;
+  version = 0;
 
-  constructor(callback: (entries: { contentRect: { width: number; height: number } }[]) => void) {
-    this.callback = callback;
-    FakeResizeObserver.instances.push(this);
+  constructor(width = 800, height = 600, ready = true) {
+    this.width = width;
+    this.height = height;
+    this.ready = ready;
   }
 
-  /** 本物も購読した時点で 1 度鳴るので、それに合わせる */
-  observe(): void {
-    this.emit(800, 600);
+  get context(): CanvasRenderingContext2D {
+    return this.fake as unknown as CanvasRenderingContext2D;
   }
-  disconnect(): void {}
-  emit(width: number, height: number): void {
-    this.callback([{ contentRect: { width, height } }]);
-  }
-}
 
-function fakeCanvas() {
-  const context = new FakeContext();
-  const canvas = {
-    width: 0,
-    height: 0,
-    getContext: () => context,
-  } as unknown as HTMLCanvasElement;
-  return { canvas, context };
+  sync(): void {}
+
+  /** 描画面が作り直された（＝中身が消えた）ことにする */
+  resize(width: number, height: number): void {
+    this.width = width;
+    this.height = height;
+    this.ready = true;
+    this.version += 1;
+  }
 }
 
 describe('Starfield', () => {
-  beforeEach(() => {
-    FakeResizeObserver.instances = [];
-    vi.stubGlobal('ResizeObserver', FakeResizeObserver);
-    vi.stubGlobal('devicePixelRatio', 2);
-  });
+  it('大きさが決まるまで描かない（ResizeObserver の初回通知は非同期に来る）', () => {
+    const surface = new FakeSurface(0, 0, false);
+    const starfield = new Starfield(surface, () => false);
 
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
+    starfield.render(0);
+    expect(surface.fake.clears).toBe(0);
 
-  it('表示倍率を掛けた実ピクセルで描画面を用意する', () => {
-    const { canvas, context } = fakeCanvas();
-    new Starfield(canvas, () => false);
-
-    expect(canvas.width).toBe(1600);
-    expect(canvas.height).toBe(1200);
-    // 以降 CSS ピクセルで描けるよう、拡大率は変換行列に入れる
-    expect(context.transform).toEqual([2, 0, 0, 2, 0, 0]);
-  });
-
-  it('リサイズすると新しい大きさで描き直す', () => {
-    const { canvas, context } = fakeCanvas();
-    const starfield = new Starfield(canvas, () => false);
-    starfield.render(3);
-    const before = context.drawn[0].x;
-
-    FakeResizeObserver.instances[0].emit(400, 300);
-    expect(canvas.width).toBe(800);
-
-    // 大きさが変わった後は、同じ時刻でも描き直す（描画面が消えているため）
-    starfield.render(3);
-    expect(context.drawn[0].x).toBeCloseTo(before / 2);
-  });
-
-  it('画面をまたいで表示倍率が変わったら追従する', () => {
-    const { canvas } = fakeCanvas();
-    const starfield = new Starfield(canvas, () => false);
-
-    vi.stubGlobal('devicePixelRatio', 1);
-    starfield.render(1);
-
-    expect(canvas.width).toBe(800);
+    surface.resize(800, 600);
+    starfield.render(0);
+    expect(surface.fake.clears).toBe(1);
   });
 
   it('時刻が変われば描き直す', () => {
-    const { canvas, context } = fakeCanvas();
-    const starfield = new Starfield(canvas, () => false);
+    const surface = new FakeSurface();
+    const starfield = new Starfield(surface, () => false);
 
     starfield.render(1);
-    const first = context.drawn.map((star) => star.alpha);
+    const first = surface.fake.drawn.map((star) => star.alpha);
     starfield.render(1.5);
-    const second = context.drawn.map((star) => star.alpha);
 
-    expect(second).not.toEqual(first);
+    expect(surface.fake.drawn.map((star) => star.alpha)).not.toEqual(first);
+  });
+
+  it('同じ時刻なら描き直さない', () => {
+    const surface = new FakeSurface();
+    const starfield = new Starfield(surface, () => false);
+
+    starfield.render(1);
+    starfield.render(1);
+    expect(surface.fake.clears).toBe(1);
+  });
+
+  it('描画面が作り直されたら、同じ時刻でも描き直す', () => {
+    const surface = new FakeSurface();
+    const starfield = new Starfield(surface, () => false);
+
+    starfield.render(3);
+    const before = surface.fake.drawn[0].x;
+
+    surface.resize(400, 300);
+    starfield.render(3);
+
+    expect(surface.fake.clears).toBe(2);
+    // 星は作り直さない。同じ空が新しい大きさに合わせて描き直されるだけ
+    expect(surface.fake.drawn[0].x).toBeCloseTo(before / 2);
+  });
+
+  it('リサイズしても星の数と並びは変わらない', () => {
+    const surface = new FakeSurface();
+    const starfield = new Starfield(surface, () => false);
+
+    starfield.render(3);
+    const before = surface.fake.drawn.map((star) => ({
+      x: star.x / surface.width,
+      y: star.y / surface.height,
+    }));
+
+    surface.resize(1920, 1080);
+    starfield.render(3);
+    const after = surface.fake.drawn.map((star) => ({
+      x: star.x / surface.width,
+      y: star.y / surface.height,
+    }));
+
+    expect(after.length).toBe(before.length);
+    after.forEach((star, index) => {
+      expect(star.x).toBeCloseTo(before[index].x);
+      expect(star.y).toBeCloseTo(before[index].y);
+    });
   });
 
   it('動きを減らす設定では、時刻が進んでも星は瞬かない', () => {
-    const { canvas, context } = fakeCanvas();
-    const starfield = new Starfield(canvas, () => true);
+    const surface = new FakeSurface();
+    const starfield = new Starfield(surface, () => true);
 
     starfield.render(1);
     // 星は消さない。動かない点でも星空は星空
-    expect(context.drawn.length).toBeGreaterThan(0);
-    const first = context.drawn.map((star) => star.alpha);
+    expect(surface.fake.drawn.length).toBeGreaterThan(0);
+    const first = surface.fake.drawn.map((star) => star.alpha);
 
     starfield.render(30);
-    expect(context.drawn.map((star) => star.alpha)).toEqual(first);
+    expect(surface.fake.drawn.map((star) => star.alpha)).toEqual(first);
   });
 
   it('動きを減らす設定では、2 フレーム目以降は描画そのものを飛ばす', () => {
-    const { canvas, context } = fakeCanvas();
-    const starfield = new Starfield(canvas, () => true);
+    const surface = new FakeSurface();
+    const starfield = new Starfield(surface, () => true);
 
     starfield.render(1);
-    expect(context.clears).toBe(1);
+    expect(surface.fake.clears).toBe(1);
 
     starfield.render(2);
     starfield.render(30);
-    expect(context.clears).toBe(1);
+    expect(surface.fake.clears).toBe(1);
   });
 
   it('曲の途中で設定を変えても次のフレームから効く', () => {
-    const { canvas, context } = fakeCanvas();
+    const surface = new FakeSurface();
     let reduced = false;
-    const starfield = new Starfield(canvas, () => reduced);
+    const starfield = new Starfield(surface, () => reduced);
 
     starfield.render(12);
-    const moving = context.drawn.map((star) => star.alpha);
+    const moving = surface.fake.drawn.map((star) => star.alpha);
 
     reduced = true;
     starfield.render(12.02);
-    const still = context.drawn.map((star) => star.alpha);
+    const still = surface.fake.drawn.map((star) => star.alpha);
     expect(still).not.toEqual(moving);
 
     // 落とし先は「時刻 0 の星空」。減らさない設定で 0 秒を描いたものと一致する
-    const reference = fakeCanvas();
-    new Starfield(reference.canvas, () => false).render(0);
-    expect(still).toEqual(reference.context.drawn.map((star) => star.alpha));
+    const reference = new FakeSurface();
+    new Starfield(reference, () => false).render(0);
+    expect(still).toEqual(reference.fake.drawn.map((star) => star.alpha));
   });
 });
