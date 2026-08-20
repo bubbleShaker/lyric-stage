@@ -1,3 +1,4 @@
+import type { IntensityQuery } from '../lib/intensity';
 import { seededRandom } from '../lib/random';
 import type { ReducedMotionQuery } from '../lib/reduced-motion';
 import type { DrawSurface } from './scaled-canvas';
@@ -63,10 +64,30 @@ export function createStars(count: number, random: () => number): Star[] {
   });
 }
 
-/** その時刻における星の不透明度 */
-export function starAlpha(star: Star, time: number): number {
+/**
+ * 盛り上がりが star をどれだけ持ち上げるか。
+ *
+ * 明るさも大きさも控えめ。星の位置は動かさない（星が流れると歌詞から目が離れる）。
+ */
+const GLOW_GAIN = 0.6;
+const SWELL_GAIN = 0.5;
+
+/**
+ * その時刻における星の不透明度。
+ *
+ * @param intensity 曲の盛り上がり（0〜1）。強いほど明るい
+ */
+export function starAlpha(star: Star, time: number, intensity: number): number {
   const twinkle = 1 - TWINKLE_DEPTH + TWINKLE_DEPTH * Math.sin(star.phase + time * star.speed);
-  return star.peakAlpha * twinkle;
+
+  // Canvas の globalAlpha は 1 を超える値を「クランプ」せず**代入ごと無視する**ので、
+  // ここで抑える。無視されると直前の星の不透明度で描かれ、原因が追いにくい
+  return Math.min(1, star.peakAlpha * twinkle * (1 + intensity * GLOW_GAIN));
+}
+
+/** その盛り上がりにおける星の半径 */
+export function starRadius(star: Star, intensity: number): number {
+  return star.radius * (1 + intensity * SWELL_GAIN);
 }
 
 /** 星の数。画面の広さに依らず固定にして、リサイズで空が作り替わらないようにする */
@@ -79,11 +100,13 @@ const STAR_SEED = 0x5eed;
 interface DrawnFrame {
   readonly time: number;
   readonly version: number;
+  readonly intensity: number;
 }
 
 export class Starfield {
   private readonly surface: DrawSurface;
   private readonly prefersReducedMotion: ReducedMotionQuery;
+  private readonly intensity: IntensityQuery;
   private readonly stars: Star[];
   private lastDrawn: DrawnFrame | null = null;
 
@@ -92,10 +115,17 @@ export class Starfield {
    *
    * LyricStage と同じ形。背景も動くので同じ設定に従う必要があり、
    * 既定値を置くと新しい所で組み立てた時に渡し忘れても静かに無効になる。
+   * 盛り上がりの強さも同じ理由で必須にする（渡し忘れると背景が音に反応しなくなるが、
+   * 画面を見ても「静かな曲だから」と区別がつかない）。
    */
-  constructor(surface: DrawSurface, prefersReducedMotion: ReducedMotionQuery) {
+  constructor(
+    surface: DrawSurface,
+    prefersReducedMotion: ReducedMotionQuery,
+    intensity: IntensityQuery,
+  ) {
     this.surface = surface;
     this.prefersReducedMotion = prefersReducedMotion;
+    this.intensity = intensity;
     this.stars = createStars(STAR_COUNT, seededRandom(STAR_SEED));
   }
 
@@ -113,33 +143,39 @@ export class Starfield {
     if (!this.surface.ready) return;
 
     // 設定は毎フレーム読む。曲の途中で変えてもそのまま効く。
-    // 動きを減らす時は時刻を 0 に畳む（星は消さない。動かない点でも星空は星空で、
-    // 背景ごと消すと作品が別物になる）
-    const drawTime = this.prefersReducedMotion() ? 0 : time;
+    // 動きを減らす時は時刻も強さも 0 に畳む（音での明滅も「動き」）。
+    // 星は消さない。動かない点でも星空は星空で、背景ごと消すと作品が別物になる
+    const reduced = this.prefersReducedMotion();
+    const drawTime = reduced ? 0 : time;
+    const level = reduced ? 0 : this.intensity();
 
-    // 描き直すかどうかは**描画の入力すべて**で決める。今の入力は時刻と描画面の版だけ
-    // （M5-2 で盛り上がりの強さが入力に加わったら、ここにも足すこと。
-    // 足し忘れると、時刻が同じフレームで強さの変化が黙って捨てられる）。
+    // 描き直すかどうかは**描画の入力すべて**で決める。入力が増えたらここにも足すこと
+    // （足し忘れると、時刻が同じフレームで強さの変化が黙って捨てられる）。
     //
-    // 時刻を畳んだ結果、動きを減らす設定では 2 フレーム目以降が前回と同じになり、
+    // 畳んだ結果、動きを減らす設定では 2 フレーム目以降が前回と同じ入力になり、
     // 描画そのものが飛ぶ。同じ絵を 60 回/秒 描き続けずに済む
-    if (this.lastDrawn?.time === drawTime && this.lastDrawn.version === this.surface.version) {
+    const drawn = this.lastDrawn;
+    if (
+      drawn?.time === drawTime &&
+      drawn.version === this.surface.version &&
+      drawn.intensity === level
+    ) {
       return;
     }
 
-    this.draw(drawTime);
-    this.lastDrawn = { time: drawTime, version: this.surface.version };
+    this.draw(drawTime, level);
+    this.lastDrawn = { time: drawTime, version: this.surface.version, intensity: level };
   }
 
-  private draw(time: number): void {
+  private draw(time: number, intensity: number): void {
     const { context, width, height } = this.surface;
     context.clearRect(0, 0, width, height);
 
     for (const star of this.stars) {
-      context.globalAlpha = starAlpha(star, time);
+      context.globalAlpha = starAlpha(star, time, intensity);
       context.fillStyle = star.color;
       context.beginPath();
-      context.arc(star.x * width, star.y * height, star.radius, 0, Math.PI * 2);
+      context.arc(star.x * width, star.y * height, starRadius(star, intensity), 0, Math.PI * 2);
       context.fill();
     }
 

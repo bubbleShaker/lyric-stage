@@ -6,14 +6,17 @@ import type { Playback, PlaybackStatus } from '../domain/ports';
  * 演出のマスタークロックはこの currentTime。M2 以降のタイムラインは
  * requestAnimationFrame でここを読み続けて追従する。
  * このクラスは「音を鳴らす」以上のことを知らない（GSAP も歌詞も import しない）。
+ *
+ * **要素は外から受け取る。** 同じ音を別の側面から使う人（M5-2 の音の解析）が
+ * 居るため。要素を持つのは composition root で、ここは再生の制御だけを受け持つ。
  */
 export class AudioPlayer implements Playback {
   private readonly el: HTMLAudioElement;
   private readonly listeners = new Set<() => void>();
   private status: PlaybackStatus = 'idle';
 
-  constructor(src: string) {
-    this.el = new Audio();
+  constructor(media: HTMLAudioElement, src: string) {
+    this.el = media;
     // metadata だけ先読みして再生時間を得る。曲全体を先読みしないので初期表示が速い
     this.el.preload = 'metadata';
     this.el.src = src;
