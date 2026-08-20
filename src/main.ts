@@ -4,6 +4,7 @@ import { loadLyricSheet, lyricSheetNameFromLocation } from './app/load-lyric-she
 import { mountLyricTimeline } from './app/lyric-timeline';
 import { Ticker } from './app/ticker';
 import { assetUrl } from './lib/asset';
+import { systemReducedMotion } from './lib/reduced-motion';
 import { AudioPlayer } from './stage/audio-player';
 import { LyricStage } from './stage/lyric-stage';
 import { mountTransport } from './stage/transport';
@@ -25,7 +26,9 @@ function required<T extends HTMLElement>(id: string): T {
 // 演出の中身も歌詞の判定ロジックも持たない。
 const ticker = new Ticker();
 const player = new AudioPlayer(assetUrl(AUDIO_PATH));
-const stage = new LyricStage(required<HTMLDivElement>('stage-text'));
+
+// OS の「視差効果を減らす」設定。読み方だけを渡し、いつ読むかは LyricStage が決める
+const stage = new LyricStage(required<HTMLDivElement>('stage-text'), systemReducedMotion());
 
 const transport = mountTransport(player, {
   root: required('transport'),
