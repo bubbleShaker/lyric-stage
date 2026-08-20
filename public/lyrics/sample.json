@@ -6,6 +6,16 @@
     { "time": 5, "text": "切り替わる", "duration": 1.6 },
     { "time": 8, "text": "ここから間が空きます", "duration": 2 },
     { "time": 12, "text": "シークしても追従する", "duration": 3 },
-    { "time": 18, "text": "この行は最後まで残る" }
+    { "time": 17, "text": "ここから演出の見比べ", "duration": 2.5 },
+    { "time": 20, "text": "fade はふわりと出る", "effect": "fade", "duration": 2.5 },
+    { "time": 23, "text": "typewriter は打ち込まれる", "effect": "typewriter", "duration": 2.5 },
+    { "time": 26, "text": "bounce は跳ねて出る", "effect": "bounce", "duration": 2.5 },
+    {
+      "time": 29,
+      "text": "文字数が多い行でも行が変わる前に出揃うことを確かめる",
+      "effect": "typewriter",
+      "duration": 3
+    },
+    { "time": 33, "text": "知らない演出名は fade に落ちる", "effect": "存在しない演出" }
   ]
 }
