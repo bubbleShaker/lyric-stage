@@ -3,209 +3,261 @@
   "lines": [
     {
       "time": 18.98,
-      "text": "ただ風に揺られて"
+      "text": "ただ風に揺られて",
+      "effect": "fade"
     },
     {
       "time": 21.99,
-      "text": "何も考えずに"
+      "text": "何も考えずに",
+      "effect": "fade"
     },
     {
       "time": 24.99,
-      "text": "ただ雲を眺めて"
+      "text": "ただ雲を眺めて",
+      "effect": "fade"
     },
     {
       "time": 28.75,
-      "text": "過ごすのもいいよね"
+      "text": "過ごすのもいいよね",
+      "effect": "fade"
     },
     {
       "time": 32.51,
-      "text": "誰しも何かしら"
+      "text": "誰しも何かしら",
+      "effect": "typewriter"
     },
     {
       "time": 34.76,
-      "text": "使命を抱えてる"
+      "text": "使命を抱えてる",
+      "effect": "typewriter"
     },
     {
       "time": 37.02,
-      "text": "ただそれだけのこと"
+      "text": "ただそれだけのこと",
+      "effect": "typewriter"
     },
     {
       "time": 40.77,
-      "text": "悩むのはもうやめた"
+      "text": "悩むのはもうやめた",
+      "effect": "bounce"
     },
     {
       "time": 44.53,
-      "text": "さざなみの音に癒やされてく"
+      "text": "さざなみの音に癒やされてく",
+      "effect": "vertical"
     },
     {
       "time": 50.54,
-      "text": "軌跡を運ぶ風の音"
+      "text": "軌跡を運ぶ風の音",
+      "effect": "fade"
     },
     {
       "time": 53.55,
-      "text": "時を閉じ込めて"
+      "text": "時を閉じ込めて",
+      "effect": "typewriter"
     },
     {
       "time": 56.55,
-      "text": "シャイニングスター綴れば"
+      "text": "シャイニングスター綴れば",
+      "effect": "zoomLine"
     },
     {
       "time": 61.06,
-      "text": "夢に眠る幻が掌に降り注ぐ"
+      "text": "夢に眠る幻が掌に降り注ぐ",
+      "effect": "shatter"
     },
     {
       "time": 64.82,
-      "text": "新たな世界へ"
+      "text": "新たな世界へ",
+      "effect": "zoom"
     },
     {
       "time": 68.57,
-      "text": "I'll believe of my sensation"
+      "text": "I'll believe of my sensation",
+      "effect": "glitch"
     },
     {
       "time": 71.58,
-      "text": "果てしない道の向こうで"
+      "text": "果てしない道の向こうで",
+      "effect": "fade"
     },
     {
       "time": 74.58,
-      "text": "瞼の裏に映る"
+      "text": "瞼の裏に映る",
+      "effect": "fade"
     },
     {
       "time": 77.59,
-      "text": "一滴の光"
+      "text": "一滴の光",
+      "effect": "zoom"
     },
     {
       "time": 80.6,
       "text": "トキメキを感じて",
+      "effect": "bounce",
       "duration": 6.0
     },
     {
       "time": 100.13,
-      "text": "貴方が触れる全て"
+      "text": "貴方が触れる全て",
+      "effect": "fade"
     },
     {
       "time": 103.14,
-      "text": "幸せであるように"
+      "text": "幸せであるように",
+      "effect": "fade"
     },
     {
       "time": 106.14,
-      "text": "今生きる喜びを"
+      "text": "今生きる喜びを",
+      "effect": "typewriter"
     },
     {
       "time": 109.15,
-      "text": "忘れてしまわないよう"
+      "text": "忘れてしまわないよう",
+      "effect": "typewriter"
     },
     {
       "time": 112.15,
-      "text": "月の光 隠す雲は揺らぎ"
+      "text": "月の光 隠す雲は揺らぎ",
+      "effect": "vertical"
     },
     {
       "time": 118.16,
-      "text": "自由の翼は今も"
+      "text": "自由の翼は今も",
+      "effect": "fade"
     },
     {
       "time": 121.92,
-      "text": "大空を翔る"
+      "text": "大空を翔る",
+      "effect": "bounce"
     },
     {
       "time": 125.68,
-      "text": "シャイニングスター綴れば"
+      "text": "シャイニングスター綴れば",
+      "effect": "zoomLine"
     },
     {
       "time": 128.68,
-      "text": "無限のイマジネーション"
+      "text": "無限のイマジネーション",
+      "effect": "shatter"
     },
     {
       "time": 131.69,
-      "text": "魔法が使えるような"
+      "text": "魔法が使えるような",
+      "effect": "typewriter"
     },
     {
       "time": 134.69,
-      "text": "世界が広がる"
+      "text": "世界が広がる",
+      "effect": "zoom"
     },
     {
       "time": 137.7,
-      "text": "I'll believe of my sensation"
+      "text": "I'll believe of my sensation",
+      "effect": "glitch"
     },
     {
       "time": 140.71,
-      "text": "今も降り募る想いよ"
+      "text": "今も降り募る想いよ",
+      "effect": "fade"
     },
     {
       "time": 143.71,
-      "text": "切なさやトキメキが"
+      "text": "切なさやトキメキが",
+      "effect": "fade"
     },
     {
       "time": 146.72,
-      "text": "心の真ん中で"
+      "text": "心の真ん中で",
+      "effect": "zoom"
     },
     {
       "time": 149.72,
       "text": "熱いメロディになる",
+      "effect": "bounce",
       "duration": 6.0
     },
     {
       "time": 179.78,
-      "text": "シャイニングスター綴れば"
+      "text": "シャイニングスター綴れば",
+      "effect": "zoomLine"
     },
     {
       "time": 182.79,
-      "text": "無限のイマジネーション"
+      "text": "無限のイマジネーション",
+      "effect": "shatter"
     },
     {
       "time": 185.79,
-      "text": "魔法が使えるような"
+      "text": "魔法が使えるような",
+      "effect": "typewriter"
     },
     {
       "time": 188.79,
-      "text": "世界が広がる"
+      "text": "世界が広がる",
+      "effect": "zoom"
     },
     {
       "time": 191.8,
-      "text": "I'll believe of my sensation"
+      "text": "I'll believe of my sensation",
+      "effect": "glitch"
     },
     {
       "time": 194.8,
-      "text": "今も降り募る想いよ"
+      "text": "今も降り募る想いよ",
+      "effect": "fade"
     },
     {
       "time": 197.81,
-      "text": "切なさやトキメキが輝き出す"
+      "text": "切なさやトキメキが輝き出す",
+      "effect": "vertical"
     },
     {
       "time": 203.82,
-      "text": "シャイニングスター綴れば"
+      "text": "シャイニングスター綴れば",
+      "effect": "zoomLine"
     },
     {
       "time": 206.83,
-      "text": "夢に眠る幻が掌に降り注ぐ"
+      "text": "夢に眠る幻が掌に降り注ぐ",
+      "effect": "shatter"
     },
     {
       "time": 212.09,
-      "text": "新たな世界へ"
+      "text": "新たな世界へ",
+      "effect": "zoom"
     },
     {
       "time": 217.35,
-      "text": "I'll believe of my sensation"
+      "text": "I'll believe of my sensation",
+      "effect": "glitch"
     },
     {
       "time": 220.35,
-      "text": "果てしない道の向こうで"
+      "text": "果てしない道の向こうで",
+      "effect": "fade"
     },
     {
       "time": 223.36,
-      "text": "瞼の裏に映る"
+      "text": "瞼の裏に映る",
+      "effect": "fade"
     },
     {
       "time": 226.36,
-      "text": "一滴の光"
+      "text": "一滴の光",
+      "effect": "zoom"
     },
     {
       "time": 229.37,
-      "text": "トキメキを感じて"
+      "text": "トキメキを感じて",
+      "effect": "bounce"
     },
     {
       "time": 235.38,
-      "text": "LaLaLa"
+      "text": "LaLaLa",
+      "effect": "bounce",
+      "duration": 6.0
     }
   ]
 }

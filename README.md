@@ -33,6 +33,21 @@ https://bubbleshaker.github.io/lyric-stage/?lyrics=sample
 
 `?lyrics=` は制作中に別のシートを試すための切り替えです。
 
+### `effect` に書ける演出
+
+| 名前 | 見え方 |
+|---|---|
+| `fade` | 下からふわりと出る（`effect` を省いたときの既定） |
+| `typewriter` | 1 文字ずつ等間隔に打ち込まれる |
+| `bounce` | 1 文字ずつ跳ねて出る |
+| `glitch` | ずれた残像を残して定位置に収まる |
+| `zoom` | 文字が手前から縮んで着地する |
+| `zoomLine` | 行全体が 1 枚の板として迫って着地する |
+| `shatter` | 散らばった破片が集まって行になる |
+| `vertical` | 縦書きにして上から降ろす（ラテン文字は横倒しになるので日本語の行向け） |
+
+知らない名前を書いた行は `fade` で表示されます（コンソールに警告が出ます）。
+
 ## time はどう決めたか
 
 `shining-star.json` の各行の `time` は、公式 MV
