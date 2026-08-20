@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <title>演出プレビュー（開発用）</title>
+  </head>
+  <body>
+    <!--
+      演出だけを音源抜きで見比べるための開発用ページ。`npm run dev` で
+      /effect-preview.html を開き、コンソールから play('文字', 'bounce') と叩く。
+
+      Vite のビルド入口は index.html だけなので、このページは dist に入らない
+      （＝公開サイトには出ない）。曲の再生位置に縛られず新しい演出を確かめられるので、
+      M4 以降で演出を足すときはここで見る。
+    -->
+    <main class="stage">
+      <div class="stage__text" id="stage-text"></div>
+    </main>
+    <script type="module">
+      import gsap from 'gsap';
+      import { SplitText } from 'gsap/SplitText';
+      import { effects } from './src/stage/effects.ts';
+      import { LyricStage } from './src/stage/lyric-stage.ts';
+      import './src/style.css';
+
+      gsap.registerPlugin(SplitText);
+
+      const stage = new LyricStage(document.getElementById('stage-text'));
+
+      /** 1 行を指定の演出で表示する。effect を省くと既定の演出になる */
+      window.play = (text, effect) => stage.show({ time: 0, text, effect });
+
+      console.info(`play('文字', '演出名') で試せます。演出名: ${Object.keys(effects).join(' / ')}`);
+    </script>
+  </body>
+</html>
