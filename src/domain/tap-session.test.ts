@@ -3,6 +3,7 @@ import { parseLyricSheet, type LyricSheet } from './lyrics';
 import {
   moveCursorTo,
   NO_PENDING,
+  OrderConflictError,
   orderProblems,
   startSession,
   tapIn,
@@ -134,6 +135,30 @@ describe('tapOut', () => {
     expect(toSheet(session).lines[0].duration).toBe(3);
   });
 
+  it('飛んだ先で取り消した後も働かない（取り消し先が前の収録へ落ちない）', () => {
+    // 3 行録った後、2 行目から録り直そうとして叩き間違え、取り消した場面
+    let session = moveCursorTo(tapOut(tappedAll(11, 21, 31), 33), 1);
+    session = undo(tapIn(session, 22));
+
+    expect(tapOut(session, 25)).toBe(session);
+    // 触っていない 1 行目に間が空いていないこと
+    expect(orderProblems(session)).toEqual([]);
+    expect(toSheet(session).lines[0]).toEqual({ time: 11, text: 'いち', effect: 'fade' });
+  });
+
+  it('NaN や Infinity は記録しない', () => {
+    const session = tapIn(startSession(sheet), 11);
+
+    expect(tapOut(session, NaN)).toBe(session);
+    expect(tapOut(session, Infinity)).toBe(session);
+  });
+
+  it('終了を取り消した後、叩き直せる', () => {
+    const session = undo(tapOut(tapIn(startSession(sheet), 11), 14));
+
+    expect(toSheet(tapOut(session, 15)).lines[0].duration).toBe(4);
+  });
+
   it('丸めて 0 になるほど短い区間は間として書き出さない', () => {
     const session = tapOut(tapIn(startSession(sheet), 11), 11.001);
 
@@ -175,6 +200,14 @@ describe('undo', () => {
     const session = moveCursorTo(tappedAll(11, 21), 0);
 
     expect(undo(session)).toBe(session);
+  });
+
+  it('飛んだ地点より前へは遡らない（前回の収録の成果を消さない）', () => {
+    let session = tapIn(moveCursorTo(tappedAll(11, 21, 31), 2), 32);
+    session = undo(undo(session));
+
+    // 消えるのは録り直した 3 行目だけ。2 行目の 21 秒は残る
+    expect(toSheet(session).lines.map((line) => line.time)).toEqual([11, 21, 30]);
   });
 });
 
@@ -232,6 +265,34 @@ describe('orderProblems', () => {
     ]);
   });
 
+  it('前の行の終了と次の行の開始がぴったり同じなら食い込みではない', () => {
+    // 10 + 1.12 は浮動小数では 11.120000000000001 になる。
+    // 丸めずに比べると、隙間なく続く正しい並びを食い込みと読み違える
+    const closed: LyricSheet = {
+      title: '境界',
+      lines: [
+        { time: 10, text: 'まえ' },
+        { time: 11.12, text: 'あと' },
+      ],
+    };
+    const session = tapOut(tapIn(startSession(closed), 10), 11.12);
+
+    expect(orderProblems(session)).toEqual([]);
+  });
+
+  it('録り直しで前の行を追い越したら、その後ろの行を挙げる', () => {
+    // tapIn は前の行しか見ないので、飛んだ先で後ろの行を追い越す経路は残る
+    const session = tapIn(moveCursorTo(tappedAll(11, 21, 31), 1), 35);
+
+    expect(orderProblems(session)).toEqual([{ index: 2, reason: 'previous-later' }]);
+  });
+
+  it('録っていない行を挟んでいても、隣り合う行どうしで見る', () => {
+    const session = tapIn(moveCursorTo(tapIn(startSession(sheet), 11), 2), 19);
+
+    expect(orderProblems(session)).toEqual([{ index: 2, reason: 'previous-later' }]);
+  });
+
   it('録り直せば解消する', () => {
     const session = tapIn(startSession(sheet), 25);
 
@@ -264,7 +325,21 @@ describe('toSheet', () => {
   it('衝突が残っていたら書き出さず、録り直す行を伝える', () => {
     const session = tapIn(startSession(sheet), 25);
 
-    expect(() => toSheet(session)).toThrow(/2 行目「に」/);
+    // 文面ではなく構造で受け取る（何行目とどう書くかは画面側の関心）
+    expect(() => toSheet(session)).toThrow(OrderConflictError);
+    try {
+      toSheet(session);
+    } catch (error) {
+      expect((error as OrderConflictError).problems).toEqual([
+        { index: 1, reason: 'previous-later' },
+      ]);
+    }
+  });
+
+  it('食い込みでも書き出さない', () => {
+    const session = tapOut(tapIn(startSession(sheet), 11), 21);
+
+    expect(() => toSheet(session)).toThrow(OrderConflictError);
   });
 
   it('秒数は 10ms の刻みに丸める', () => {
@@ -302,6 +377,16 @@ describe('toSheet', () => {
 
   it('1 行も叩いていなければ元のシートと同じ', () => {
     expect(toSheet(startSession(sheet))).toEqual(sheet);
+  });
+
+  it('飛び飛びに録った結果も書き出せる（間の行は元の値のまま）', () => {
+    const session = tapOut(tapIn(moveCursorTo(tapIn(startSession(sheet), 11), 2), 32), 38);
+
+    expect(toSheet(session).lines).toEqual([
+      { time: 11, text: 'いち', effect: 'fade' },
+      { time: 20, text: 'に', effect: 'bounce' },
+      { time: 32, text: 'さん', effect: 'zoom', duration: 6 },
+    ]);
   });
 
   it('元のシートの行と同じオブジェクトを返さない（書き換えが波及しない）', () => {
