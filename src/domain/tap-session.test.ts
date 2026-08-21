@@ -5,9 +5,11 @@ import {
   NO_PENDING,
   OrderConflictError,
   orderProblems,
+  resumeSession,
   startSession,
   tapIn,
   tapOut,
+  TapDraftError,
   toSheet,
   undo,
 } from './tap-session';
@@ -402,5 +404,81 @@ describe('toSheet', () => {
     const written = toSheet(startSession(sheet));
 
     expect(written.lines[0]).not.toBe(sheet.lines[0]);
+  });
+});
+
+describe('resumeSession', () => {
+  /** 保存されるのは takes だけ。JSON を通すので未収録の行は null になる */
+  const draft = [{ time: 11 }, { time: 21, end: 25 }, null];
+
+  it('録った時刻をそのまま引き継ぐ', () => {
+    const session = resumeSession(sheet, draft);
+
+    expect(toSheet(session).lines).toEqual([
+      { time: 11, text: 'いち', effect: 'fade' },
+      { time: 21, text: 'に', effect: 'bounce', duration: 4 },
+      { time: 30, text: 'さん', effect: 'zoom', duration: 6 },
+    ]);
+  });
+
+  it('カーソルは最後に録った行の次に置く', () => {
+    expect(resumeSession(sheet, draft).cursor).toBe(2);
+    expect(resumeSession(sheet, [null, null, null]).cursor).toBe(0);
+  });
+
+  it('再開直後は終了も取り消しも働かない（まず開始を叩く）', () => {
+    const session = resumeSession(sheet, draft);
+
+    expect(session.pending).toBe(NO_PENDING);
+    expect(tapOut(session, 40)).toBe(session);
+    expect(undo(session)).toBe(session);
+  });
+
+  it('取り消しは復元した分へ遡らない', () => {
+    // 再開して 1 行録り、2 回取り消す。1 回目でその行が消え、
+    // 2 回目は下書きから復元した行に届かない
+    const session = tapIn(resumeSession(sheet, draft), 31);
+    const undone = undo(undo(session));
+
+    expect(undone.takes[2]).toBeUndefined();
+    expect(undone.takes[1]).toEqual({ time: 21, end: 25 });
+  });
+
+  it('飛び飛びの下書きも読める', () => {
+    const session = resumeSession(sheet, [null, { time: 21 }, null]);
+
+    expect(session.cursor).toBe(2);
+    expect(session.takes[0]).toBeUndefined();
+  });
+
+  it('逆行した時刻は弾かず、衝突として画面に出せる形で通す', () => {
+    // 弾くと収録の成果がまるごと消える。通せば録り直せる
+    const session = resumeSession(sheet, [{ time: 25 }, { time: 21 }, null]);
+
+    expect(orderProblems(session)).toEqual([{ index: 1, reason: 'previous-later' }]);
+  });
+
+  it('読んだ値をそのまま持たない（余計なプロパティを内側へ入れない）', () => {
+    const session = resumeSession(sheet, [{ time: 11, note: 'メモ' }, null, null]);
+
+    expect(session.takes[0]).toEqual({ time: 11 });
+  });
+
+  describe('形が違う下書きは読まない', () => {
+    const cases: [string, unknown][] = [
+      ['配列ではない', { takes: [] }],
+      ['行数が合わない', [{ time: 11 }]],
+      ['time が無い', [{ end: 12 }, null, null]],
+      ['time が数値ではない', [{ time: '11' }, null, null]],
+      ['time が負', [{ time: -1 }, null, null]],
+      ['time が NaN', [{ time: Number.NaN }, null, null]],
+      ['end が開始より前', [{ time: 11, end: 10 }, null, null]],
+      ['end が開始と同じ', [{ time: 11, end: 11 }, null, null]],
+      ['要素がオブジェクトではない', [11, null, null]],
+    ];
+
+    it.each(cases)('%s', (_name, raw) => {
+      expect(() => resumeSession(sheet, raw)).toThrow(TapDraftError);
+    });
   });
 });

@@ -10,20 +10,23 @@ import type { LyricSheet } from '../domain/lyrics';
 import type { Playback } from '../domain/ports';
 import {
   moveCursorTo,
+  resumeSession,
   startSession,
   tapIn,
   tapOut,
   undo,
   type TapSession,
 } from '../domain/tap-session';
+import type { DraftStore } from './tap-draft';
 import { commandForKey, isTextEntry, type TapCommand } from './tap-keys';
-import { buildView, exportText, formatSeconds, type TapRow } from './tap-view';
+import { buildView, exportText, formatSeconds, recordedCount, type TapRow } from './tap-view';
 
 export interface TapToolElements {
   list: HTMLElement;
   hint: HTMLElement;
   progress: HTMLElement;
   exportButton: HTMLButtonElement;
+  discardButton: HTMLButtonElement;
   output: HTMLTextAreaElement;
 }
 
@@ -43,9 +46,18 @@ const IGNORED: Record<Exclude<TapCommand, 'toggle'>, string> = {
   undo: '取り消せる打鍵がありません',
 };
 
+/**
+ * 破棄は 2 段階にする。**`window.confirm()` は使わない。**
+ * この道具は Space と Backspace を横取りしているので、ネイティブのダイアログに
+ * キー操作の主導権が移ると、閉じた後にどちらが効いているのか読みにくい。
+ */
+const DISCARD_LABEL = '下書きを破棄';
+const DISCARD_ARMED_LABEL = '本当に破棄？（もう一度押す）';
+
 export function mountTapTool(
   sheet: LyricSheet,
   player: Playback,
+  store: DraftStore,
   el: TapToolElements,
 ): TapToolHandle {
   let session = startSession(sheet);
@@ -53,6 +65,52 @@ export function mountTapTool(
   let exported: TapSession | undefined;
   /** 今カーソルが載っている行。ここが変わった時だけ画面を追従させる */
   let scrolledTo = -1;
+  /** 一度だけ出す知らせ（再開・破棄・保存の失敗）。次の描き直しで消える */
+  let notice = '';
+  /** 保存先に下書きが在るか。破棄ボタンを出すかの判断 */
+  let hasDraft = false;
+  /** 下書きを保存できているか。一度失敗したら以後も失敗するので、諦めて知らせる */
+  let saving = true;
+  /** 破棄ボタンが身構えているか（次のクリックで実行） */
+  let armed = false;
+
+  // **自動で再開する。** 「再開しますか」と聞く形にすると、押し忘れて上から
+  // 録り直し、下書きを上書きするという同じ事故が形を変えて残る
+  try {
+    const raw = store.load();
+    if (raw !== undefined) {
+      session = resumeSession(sheet, raw);
+      hasDraft = true;
+      notice = `下書きから再開しました（${recordedCount(session)} 行）。`;
+    }
+  } catch (error) {
+    // 壊れた下書きでも道具は起動する。**こちらからは消さない** —
+    // 手で直せば救えるかもしれない唯一の控えを、勝手に捨てない
+    hasDraft = true;
+    notice = '下書きを読めませんでした（詳細はコンソール）。最初から録るか、破棄してください。';
+    console.error(error);
+  }
+
+  const saveDraft = () => {
+    if (!saving) return;
+
+    try {
+      store.save(session);
+      hasDraft = true;
+    } catch (error) {
+      // 容量や設定が理由なら次も失敗する。毎打鍵で投げ続けさせない
+      saving = false;
+      notice = '下書きを保存できません（詳細はコンソール）。閉じると収録は失われます。';
+      console.error(error);
+    }
+  };
+
+  /** 破棄ボタンの見た目。身構えているかどうかがラベルに出る */
+  const setArmed = (next: boolean) => {
+    armed = next;
+    el.discardButton.textContent = next ? DISCARD_ARMED_LABEL : DISCARD_LABEL;
+    el.discardButton.dataset.armed = String(next);
+  };
 
   /**
    * 操作を適用する。**無視された打鍵は同じセッションが返る**ので、
@@ -64,10 +122,15 @@ export function mountTapTool(
       return;
     }
     session = next;
+    saveDraft();
     render();
   };
 
   const run = (command: TapCommand) => {
+    // 収録に戻ったなら破棄の身構えは解く（打鍵が無視されても解けるよう、
+    // 描き直しではなくここで）
+    if (armed) setArmed(false);
+
     const now = player.currentTime;
     if (command === 'toggle') {
       player.toggle().catch((error: unknown) => {
@@ -112,7 +175,34 @@ export function mountTapTool(
     const row = target.closest<HTMLElement>('[data-index]');
     if (!row) return;
 
+    if (armed) setArmed(false);
     apply(moveCursorTo(session, Number(row.dataset.index)), '');
+  };
+
+  /**
+   * 下書きを捨てて最初から録り直す。1 回目のクリックで身構え、2 回目で実行する。
+   *
+   * 消せなかったときに「破棄しました」と出さない。次に開いたときに
+   * 消したはずの下書きから再開することになり、何が起きたのか分からなくなる。
+   */
+  const onDiscard = () => {
+    if (!armed) {
+      setArmed(true);
+      return;
+    }
+
+    try {
+      store.clear();
+      hasDraft = false;
+      session = startSession(sheet);
+      notice = '下書きを破棄しました。最初から録れます。';
+    } catch (error) {
+      notice = '下書きを消せませんでした（詳細はコンソール）。';
+      console.error(error);
+    }
+
+    setArmed(false);
+    render();
   };
 
   const onExport = () => {
@@ -150,9 +240,12 @@ export function mountTapTool(
   const render = () => {
     const view = buildView(session);
 
-    el.hint.textContent = view.hint;
+    // 知らせは案内の前に足す。案内（次に何を叩くか）は消さない
+    el.hint.textContent = notice ? `${notice}${view.hint}` : view.hint;
+    notice = '';
     el.progress.textContent = `${view.recorded} / ${view.total} 行`;
     el.exportButton.disabled = !view.canExport;
+    el.discardButton.disabled = !hasDraft;
 
     // 書き出した後に録り直したら、textarea の中身はもう実測と違う。**消す。**
     // 残すと、見た目は正しい JSON なので気づけないまま古い値を貼ってしまう
@@ -175,7 +268,9 @@ export function mountTapTool(
   document.addEventListener('keydown', onKeyDown);
   el.list.addEventListener('click', onListClick);
   el.exportButton.addEventListener('click', onExport);
+  el.discardButton.addEventListener('click', onDiscard);
 
+  setArmed(false);
   render();
 
   return {
@@ -183,6 +278,7 @@ export function mountTapTool(
       document.removeEventListener('keydown', onKeyDown);
       el.list.removeEventListener('click', onListClick);
       el.exportButton.removeEventListener('click', onExport);
+      el.discardButton.removeEventListener('click', onDiscard);
     },
   };
 }

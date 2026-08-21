@@ -45,6 +45,16 @@ export interface TapView {
   hint: string;
 }
 
+/**
+ * 今のセッションで時刻を持っている行の数。
+ *
+ * 下書きから再開したときの知らせ（「N 行」）も同じ数を使うので、
+ * 「録った行とは何か」の決まりが 2 か所に分かれないようにここに出してある。
+ */
+export function recordedCount(session: TapSession): number {
+  return session.takes.filter((take) => take !== undefined).length;
+}
+
 /** 12.3 → "12.30"。表示の桁を揃えると、行が並んだときに読み取りやすい */
 export function formatSeconds(seconds: number): string {
   return seconds.toFixed(2);
@@ -83,7 +93,7 @@ export function buildView(session: TapSession): TapView {
 
   return {
     rows,
-    recorded: session.takes.filter((take) => take !== undefined).length,
+    recorded: recordedCount(session),
     total: lines.length,
     problems,
     // 衝突が残っている間は書き出させない。toSheet の例外は最後の砦で、
