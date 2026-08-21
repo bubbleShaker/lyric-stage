@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { parseLyricSheet, type LyricSheet } from './lyrics';
 import {
+  draftOf,
   moveCursorTo,
   NO_PENDING,
   OrderConflictError,
   orderProblems,
   resumeSession,
+  sheetFingerprint,
   startSession,
   tapIn,
   tapOut,
@@ -408,8 +410,12 @@ describe('toSheet', () => {
 });
 
 describe('resumeSession', () => {
-  /** 保存されるのは takes だけ。JSON を通すので未収録の行は null になる */
-  const draft = [{ time: 11 }, { time: 21, end: 25 }, null];
+  /** 下書きの形。JSON を通すので未収録の行は null になる */
+  function draftOfTakes(takes: unknown[], sheetOf: LyricSheet = sheet) {
+    return { version: 1, sheet: sheetFingerprint(sheetOf), takes };
+  }
+
+  const draft = draftOfTakes([{ time: 11 }, { time: 21, end: 25 }, null]);
 
   it('録った時刻をそのまま引き継ぐ', () => {
     const session = resumeSession(sheet, draft);
@@ -423,7 +429,7 @@ describe('resumeSession', () => {
 
   it('カーソルは最後に録った行の次に置く', () => {
     expect(resumeSession(sheet, draft).cursor).toBe(2);
-    expect(resumeSession(sheet, [null, null, null]).cursor).toBe(0);
+    expect(resumeSession(sheet, draftOfTakes([null, null, null])).cursor).toBe(0);
   });
 
   it('再開直後は終了も取り消しも働かない（まず開始を叩く）', () => {
@@ -445,7 +451,7 @@ describe('resumeSession', () => {
   });
 
   it('飛び飛びの下書きも読める', () => {
-    const session = resumeSession(sheet, [null, { time: 21 }, null]);
+    const session = resumeSession(sheet, draftOfTakes([null, { time: 21 }, null]));
 
     expect(session.cursor).toBe(2);
     expect(session.takes[0]).toBeUndefined();
@@ -453,32 +459,77 @@ describe('resumeSession', () => {
 
   it('逆行した時刻は弾かず、衝突として画面に出せる形で通す', () => {
     // 弾くと収録の成果がまるごと消える。通せば録り直せる
-    const session = resumeSession(sheet, [{ time: 25 }, { time: 21 }, null]);
+    const session = resumeSession(sheet, draftOfTakes([{ time: 25 }, { time: 21 }, null]));
 
     expect(orderProblems(session)).toEqual([{ index: 1, reason: 'previous-later' }]);
   });
 
   it('読んだ値をそのまま持たない（余計なプロパティを内側へ入れない）', () => {
-    const session = resumeSession(sheet, [{ time: 11, note: 'メモ' }, null, null]);
+    const session = resumeSession(sheet, draftOfTakes([{ time: 11, note: 'メモ' }, null, null]));
 
     expect(session.takes[0]).toEqual({ time: 11 });
   });
 
   describe('形が違う下書きは読まない', () => {
     const cases: [string, unknown][] = [
-      ['配列ではない', { takes: [] }],
-      ['行数が合わない', [{ time: 11 }]],
-      ['time が無い', [{ end: 12 }, null, null]],
-      ['time が数値ではない', [{ time: '11' }, null, null]],
-      ['time が負', [{ time: -1 }, null, null]],
-      ['time が NaN', [{ time: Number.NaN }, null, null]],
-      ['end が開始より前', [{ time: 11, end: 10 }, null, null]],
-      ['end が開始と同じ', [{ time: 11, end: 11 }, null, null]],
-      ['要素がオブジェクトではない', [11, null, null]],
+      ['オブジェクトではない', [{ time: 11 }, null, null]],
+      ['版が違う', { version: 2, sheet: sheetFingerprint(sheet), takes: [null, null, null] }],
+      ['takes が配列ではない', draftOfTakes(undefined as unknown as unknown[])],
+      ['行数が合わない', draftOfTakes([{ time: 11 }])],
+      ['time が無い', draftOfTakes([{ end: 12 }, null, null])],
+      ['time が数値ではない', draftOfTakes([{ time: '11' }, null, null])],
+      ['time が負', draftOfTakes([{ time: -1 }, null, null])],
+      ['time が NaN', draftOfTakes([{ time: Number.NaN }, null, null])],
+      ['end が開始より前', draftOfTakes([{ time: 11, end: 10 }, null, null])],
+      ['end が開始と同じ', draftOfTakes([{ time: 11, end: 11 }, null, null])],
+      ['要素がオブジェクトではない', draftOfTakes([11, null, null])],
     ];
 
     it.each(cases)('%s', (_name, raw) => {
       expect(() => resumeSession(sheet, raw)).toThrow(TapDraftError);
     });
+
+    it('歌詞が書き換えられたシートの下書きは読まない', () => {
+      // 行数は同じでも中身が違う。**1 行足して 1 行消した**シートに
+      // 古い時刻がそのまま載るのを防ぐ
+      const edited: LyricSheet = {
+        ...sheet,
+        lines: [sheet.lines[0], { ...sheet.lines[1], text: 'に（直した）' }, sheet.lines[2]],
+      };
+
+      expect(() => resumeSession(edited, draft)).toThrow(TapDraftError);
+    });
+  });
+});
+
+describe('draftOf', () => {
+  it('書き出した下書きがそのまま読み戻せる', () => {
+    const session = tapOut(tapIn(startSession(sheet), 11), 15);
+    // JSON を通す（未収録の行が null になる経路も含めて確かめる）
+    const stored: unknown = JSON.parse(JSON.stringify(draftOf(session)));
+
+    expect(toSheet(resumeSession(sheet, stored))).toEqual(toSheet(session));
+  });
+});
+
+describe('sheetFingerprint', () => {
+  it('歌詞が同じなら同じ、変われば変わる', () => {
+    const same: LyricSheet = { ...sheet, lines: sheet.lines.map((line) => ({ ...line })) };
+    const edited: LyricSheet = {
+      ...sheet,
+      lines: [...sheet.lines.slice(0, 2), { ...sheet.lines[2], text: 'し' }],
+    };
+
+    expect(sheetFingerprint(same)).toBe(sheetFingerprint(sheet));
+    expect(sheetFingerprint(edited)).not.toBe(sheetFingerprint(sheet));
+  });
+
+  it('時刻を録り直しても変わらない（下書きは録るたびに無効にならない）', () => {
+    const retimed: LyricSheet = {
+      ...sheet,
+      lines: sheet.lines.map((line) => ({ ...line, time: line.time + 1 })),
+    };
+
+    expect(sheetFingerprint(retimed)).toBe(sheetFingerprint(sheet));
   });
 });

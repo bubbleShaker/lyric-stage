@@ -111,6 +111,11 @@ export function startSession(source: LyricSheet): TapSession {
   };
 }
 
+/** 今のセッションで時刻を持っている行の数 */
+export function recordedCount(session: TapSession): number {
+  return session.takes.filter((take) => take !== undefined).length;
+}
+
 /** 保存した下書きが読めなかったときの例外 */
 export class TapDraftError extends Error {
   constructor(message: string) {
@@ -119,8 +124,52 @@ export class TapDraftError extends Error {
   }
 }
 
+/** 下書きの形。今の版は 1 */
+const DRAFT_VERSION = 1;
+
 /**
- * 保存した下書き（takes）から収録を再開する。
+ * 収録途中の下書き。**保存されるのはこの形。**
+ *
+ * 持たせるのは `takes` と、それがどのシートのものかという印だけ。
+ * `cursor` / `pending` / `runStart` は `resumeSession` が導出する。
+ */
+export interface TapDraft {
+  readonly version: number;
+  /** どのシートを録っていたか（下記 sheetFingerprint） */
+  readonly sheet: string;
+  readonly takes: readonly (Take | undefined)[];
+}
+
+/**
+ * シートの指紋。歌詞が書き換われば合わなくなる値。
+ *
+ * 行数だけでは足りない。**1 行足して 1 行消したシート**には古い時刻が
+ * そのまま載ってしまい、行数が合っているぶん気づけない。
+ * 狙うのは取り違えの検出だけなので、短いハッシュ（FNV-1a）で足りる。
+ */
+export function sheetFingerprint(sheet: LyricSheet): string {
+  const text = `${sheet.title}\n${sheet.lines.map((line) => line.text).join('\n')}`;
+
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+
+  return (hash >>> 0).toString(16);
+}
+
+/** 今の収録を下書きの形にする */
+export function draftOf(session: TapSession): TapDraft {
+  return {
+    version: DRAFT_VERSION,
+    sheet: sheetFingerprint(session.source),
+    takes: session.takes,
+  };
+}
+
+/**
+ * 保存した下書きから収録を再開する。
  *
  * **セッションを外から手組みさせないための入口。** TapSession は
  * `runStart <= pending < cursor` と `[runStart, cursor)` に穴が無いことを
@@ -138,11 +187,11 @@ export class TapDraftError extends Error {
  * **手で書き換えられる外部入力**だから。`parseLyricSheet` と同じ立場。
  */
 export function resumeSession(source: LyricSheet, raw: unknown): TapSession {
-  const takes = parseTakes(raw, source.lines.length);
+  const takes = parseDraft(raw, source);
 
   let cursor = 0;
   for (let index = takes.length - 1; index >= 0; index -= 1) {
-    if (takes[index]) {
+    if (takes[index] !== undefined) {
       cursor = index + 1;
       break;
     }
@@ -156,17 +205,28 @@ export function resumeSession(source: LyricSheet, raw: unknown): TapSession {
 /**
  * 下書きの形を確かめる。
  *
- * 確かめるのは**形だけ**で、時刻の逆行や食い込みは弾かない。弾くと
- * 収録の成果がまるごと失われるが、通せば `orderProblems` が衝突として
- * 拾い、画面から録り直せる（下書きを守ることの方が大事）。
+ * 確かめるのは**形と、どのシートのものか**だけで、時刻の逆行や食い込みは
+ * 弾かない。弾くと収録の成果がまるごと失われるが、通せば `orderProblems` が
+ * 衝突として拾い、画面から録り直せる（下書きを守ることの方が大事）。
  */
-function parseTakes(raw: unknown, lineCount: number): (Take | undefined)[] {
-  if (!Array.isArray(raw)) throw new TapDraftError('配列ではありません');
-  if (raw.length !== lineCount) {
-    throw new TapDraftError(`行数が合いません（下書き ${raw.length} / シート ${lineCount}）`);
+function parseDraft(raw: unknown, source: LyricSheet): (Take | undefined)[] {
+  if (typeof raw !== 'object' || raw === null) throw new TapDraftError('オブジェクトではありません');
+
+  const { version, sheet, takes } = raw as Record<string, unknown>;
+
+  if (version !== DRAFT_VERSION) throw new TapDraftError(`版が違います（${String(version)}）`);
+  if (sheet !== sheetFingerprint(source)) {
+    // 同じ名前のシートでも、歌詞が書き換わっていれば別物として扱う
+    throw new TapDraftError('別のシート、または歌詞が書き換えられたシートのものです');
+  }
+  if (!Array.isArray(takes)) throw new TapDraftError('takes が配列ではありません');
+  if (takes.length !== source.lines.length) {
+    throw new TapDraftError(
+      `行数が合いません（下書き ${takes.length} / シート ${source.lines.length}）`,
+    );
   }
 
-  return raw.map((value, index) => parseTake(value, index));
+  return takes.map((value, index) => parseTake(value, index));
 }
 
 function parseTake(value: unknown, index: number): Take | undefined {

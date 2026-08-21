@@ -9,7 +9,14 @@
  * `resumeSession` が導出する（TapSession の不変条件を外から手組みさせないため）。
  */
 
-import type { TapSession } from '../domain/tap-session';
+import type { LyricSheet } from '../domain/lyrics';
+import {
+  draftOf,
+  recordedCount,
+  resumeSession,
+  startSession,
+  type TapSession,
+} from '../domain/tap-session';
 
 /**
  * `localStorage` のうち、この道具が使う部分だけ。
@@ -38,19 +45,23 @@ export interface DraftStore {
 }
 
 /**
- * 下書きの中身。`takes` の配列そのもの。
+ * 下書きの中身。形を決めるのは domain（`draftOf`）で、ここは文字にするだけ。
  *
  * JSON の配列は `undefined` を書けないので、未収録の行は `null` になる
  * （`resumeSession` はどちらも未収録として読む）。
  */
 export function draftText(session: TapSession): string {
-  return JSON.stringify(session.takes);
+  return JSON.stringify(draftOf(session));
 }
 
 /**
  * 保存先の名前。**シートごとに分ける。**
  * 本編と `?lyrics=sample` の下書きが混ざると、行数が合っているぶん
- * 気づかないまま別の曲の時刻を読み込むことになる。
+ * 気づかないまま別の曲の時刻を読み込むことになる（中身の指紋は
+ * `resumeSession` が見るので、ここは置き場所を分けるだけ）。
+ *
+ * 名前は `?lyrics=` から来るが、`loadLyricSheet` の検証を通ったものしか
+ * 渡らない（この道具は `tap-main.ts` がシートを読めた後に組み立てる）。
  */
 export function draftKey(sheetName: string): string {
   return `lyric-stage:tap-draft:${sheetName}`;
@@ -84,3 +95,113 @@ export const noDraftStore: DraftStore = {
   save: () => {},
   clear: () => {},
 };
+
+/**
+ * 収録と下書きの噛み合わせ。**DOM を触らない。**
+ *
+ * 「読めなかったら自動保存を止める」「保存に失敗したら知らせ続ける」
+ * といった判断は、画面の組み立てに混ぜると検査できないまま増える。
+ * 実際、下書きが読めないときに**最初の 1 打鍵が上書きしてしまう**という
+ * 不具合はここが画面側に散っていたときに生まれた。
+ */
+export interface DraftState {
+  readonly session: TapSession;
+  /** 一度だけ出す知らせ（再開・破棄）。出したら noticeShown で落とす */
+  readonly notice: string;
+  /** 下書きが守られていないことの知らせ。**直るまで消さない** */
+  readonly trouble: string;
+  /** 保存先に下書きが在るか（破棄ボタンを押せるか） */
+  readonly hasDraft: boolean;
+  /** 自動保存が生きているか。止まっている間は保存先に触らない */
+  readonly saving: boolean;
+  /** この遷移で起きた不具合。呼び出し側がコンソールへ出す */
+  readonly error?: unknown;
+}
+
+const READ_TROUBLE =
+  '下書きを読めませんでした（壊れているか、歌詞シートが書き換えられています）。' +
+  '元の下書きを残すため自動保存は止めています。破棄すると最初から録り直せます。';
+
+const SAVE_TROUBLE = '下書きを保存できません（詳細はコンソール）。この画面を閉じると収録は失われます。';
+
+/**
+ * 下書きがあれば読んで収録を始める。**自動で再開する。**
+ *
+ * 「再開しますか」と聞く形にすると、押し忘れて上から録り直し、
+ * 下書きを上書きするという、塞ごうとしている事故が形を変えて残る。
+ */
+export function openDraft(sheet: LyricSheet, store: DraftStore): DraftState {
+  const empty: DraftState = {
+    session: startSession(sheet),
+    notice: '',
+    trouble: '',
+    hasDraft: false,
+    saving: true,
+  };
+
+  try {
+    const raw = store.load();
+    if (raw === undefined) return empty;
+
+    const session = resumeSession(sheet, raw);
+    return {
+      ...empty,
+      session,
+      hasDraft: true,
+      notice: `下書きから再開しました（${recordedCount(session)} 行）。`,
+    };
+  } catch (error) {
+    // 読めない下書きは**こちらからは消さない**（手で直せば救えるかもしれない
+    // 唯一の控えを勝手に捨てない）。ただし消さないだけでは足りず、
+    // **自動保存も止めないと最初の 1 打鍵が上から書いて同じことになる。**
+    // 捨てるかどうかは破棄（＝人の意思）に委ねる
+    return { ...empty, hasDraft: true, saving: false, trouble: READ_TROUBLE, error };
+  }
+}
+
+/** 収録が進んだ状態にして、下書きに残す */
+export function keepDraft(store: DraftStore, state: DraftState, session: TapSession): DraftState {
+  const next: DraftState = { ...state, session, error: undefined };
+
+  if (!state.saving) return next;
+  // 何も録っていないうちは下書きを作らない（行をクリックしただけで
+  // 中身の無い下書きが残り、次に開くと「0 行から再開」になる）
+  if (!state.hasDraft && recordedCount(session) === 0) return next;
+
+  try {
+    store.save(session);
+    return { ...next, hasDraft: true };
+  } catch (error) {
+    // 容量や設定が理由なら次も失敗する。毎打鍵で投げ続けさせない
+    return { ...next, saving: false, trouble: SAVE_TROUBLE, error };
+  }
+}
+
+/**
+ * 下書きを捨てて最初から録り直す。
+ *
+ * 消せなかったときに「破棄しました」と出さない。次に開いたときに
+ * 消したはずの下書きから再開することになり、何が起きたのか分からなくなる。
+ */
+export function discardDraft(store: DraftStore, state: DraftState): DraftState {
+  try {
+    store.clear();
+  } catch (error) {
+    return { ...state, trouble: '下書きを消せませんでした（詳細はコンソール）。', error };
+  }
+
+  return {
+    session: startSession(state.session.source),
+    notice: '下書きを破棄しました。最初から録れます。',
+    // 読めない下書きを守るために止めていた自動保存は、捨てた今こそ戻す
+    trouble: '',
+    hasDraft: false,
+    saving: true,
+  };
+}
+
+/** 一度きりの知らせを出し終えた状態 */
+export function noticeShown(state: DraftState): DraftState {
+  if (state.notice === '') return state;
+  return { ...state, notice: '' };
+}

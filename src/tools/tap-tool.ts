@@ -2,24 +2,24 @@
  * 収録画面の組み立て。DOM を触るのはこのファイルだけ。
  *
  * 記録の判断（何を記録してよいか、どこが衝突しているか）は domain の
- * TapSession が持ち、見せ方の判断は tap-view が持つ。ここは
- * 「キーを操作に変える」「値を要素に映す」だけを受け持つ。
+ * TapSession が持ち、見せ方の判断は tap-view、下書きとの噛み合わせは
+ * tap-draft が持つ。ここは「キーを操作に変える」「値を要素に映す」だけを
+ * 受け持つ。判断をこちらに混ぜると、DOM 越しでしか検査できなくなる。
  */
 
 import type { LyricSheet } from '../domain/lyrics';
 import type { Playback } from '../domain/ports';
+import { moveCursorTo, tapIn, tapOut, undo, type TapSession } from '../domain/tap-session';
 import {
-  moveCursorTo,
-  resumeSession,
-  startSession,
-  tapIn,
-  tapOut,
-  undo,
-  type TapSession,
-} from '../domain/tap-session';
-import type { DraftStore } from './tap-draft';
+  discardDraft,
+  keepDraft,
+  noticeShown,
+  openDraft,
+  type DraftState,
+  type DraftStore,
+} from './tap-draft';
 import { commandForKey, isTextEntry, type TapCommand } from './tap-keys';
-import { buildView, exportText, formatSeconds, recordedCount, type TapRow } from './tap-view';
+import { buildView, exportText, formatSeconds, type TapRow } from './tap-view';
 
 export interface TapToolElements {
   list: HTMLElement;
@@ -60,49 +60,21 @@ export function mountTapTool(
   store: DraftStore,
   el: TapToolElements,
 ): TapToolHandle {
-  let session = startSession(sheet);
+  /** 収録と下書きの噛み合わせ。判断は tap-draft が持ち、ここは映すだけ */
+  let draft = openDraft(sheet, store);
+  // 起動時の読み込み失敗もコンソールへ（以降の遷移は adopt が受け持つ）
+  if (draft.error !== undefined) console.error(draft.error);
   /** 今 textarea に出ている JSON を作ったときのセッション */
   let exported: TapSession | undefined;
   /** 今カーソルが載っている行。ここが変わった時だけ画面を追従させる */
   let scrolledTo = -1;
-  /** 一度だけ出す知らせ（再開・破棄・保存の失敗）。次の描き直しで消える */
-  let notice = '';
-  /** 保存先に下書きが在るか。破棄ボタンを出すかの判断 */
-  let hasDraft = false;
-  /** 下書きを保存できているか。一度失敗したら以後も失敗するので、諦めて知らせる */
-  let saving = true;
   /** 破棄ボタンが身構えているか（次のクリックで実行） */
   let armed = false;
 
-  // **自動で再開する。** 「再開しますか」と聞く形にすると、押し忘れて上から
-  // 録り直し、下書きを上書きするという同じ事故が形を変えて残る
-  try {
-    const raw = store.load();
-    if (raw !== undefined) {
-      session = resumeSession(sheet, raw);
-      hasDraft = true;
-      notice = `下書きから再開しました（${recordedCount(session)} 行）。`;
-    }
-  } catch (error) {
-    // 壊れた下書きでも道具は起動する。**こちらからは消さない** —
-    // 手で直せば救えるかもしれない唯一の控えを、勝手に捨てない
-    hasDraft = true;
-    notice = '下書きを読めませんでした（詳細はコンソール）。最初から録るか、破棄してください。';
-    console.error(error);
-  }
-
-  const saveDraft = () => {
-    if (!saving) return;
-
-    try {
-      store.save(session);
-      hasDraft = true;
-    } catch (error) {
-      // 容量や設定が理由なら次も失敗する。毎打鍵で投げ続けさせない
-      saving = false;
-      notice = '下書きを保存できません（詳細はコンソール）。閉じると収録は失われます。';
-      console.error(error);
-    }
+  /** 下書きの状態を進める。この遷移で起きた不具合はここでだけ書き出す */
+  const adopt = (next: DraftState) => {
+    if (next !== draft && next.error !== undefined) console.error(next.error);
+    draft = next;
   };
 
   /** 破棄ボタンの見た目。身構えているかどうかがラベルに出る */
@@ -113,16 +85,25 @@ export function mountTapTool(
   };
 
   /**
+   * 案内の欄に出す。**下書きの警告（trouble）は必ず前に残す。**
+   * 打鍵や書き出しのたびに丸ごと上書きすると、
+   * 「守られていない」ことの知らせだけが流れて消えてしまう。
+   */
+  const showHint = (message: string) => {
+    el.hint.textContent = `${draft.trouble}${message}`;
+    el.hint.dataset.trouble = String(draft.trouble !== '');
+  };
+
+  /**
    * 操作を適用する。**無視された打鍵は同じセッションが返る**ので、
    * その時は描き直さず、代わりに理由を出す（domain が不変で作られていることの実利）。
    */
   const apply = (next: TapSession, ignored: string) => {
-    if (next === session) {
-      if (ignored) el.hint.textContent = ignored;
+    if (next === draft.session) {
+      if (ignored) showHint(ignored);
       return;
     }
-    session = next;
-    saveDraft();
+    adopt(keepDraft(store, draft, next));
     render();
   };
 
@@ -134,15 +115,15 @@ export function mountTapTool(
     const now = player.currentTime;
     if (command === 'toggle') {
       player.toggle().catch((error: unknown) => {
-        el.hint.textContent = '再生できませんでした';
+        showHint('再生できませんでした');
         console.error(error);
       });
       return;
     }
 
-    if (command === 'in') apply(tapIn(session, now), IGNORED.in);
-    else if (command === 'out') apply(tapOut(session, now), IGNORED.out);
-    else apply(undo(session), IGNORED.undo);
+    if (command === 'in') apply(tapIn(draft.session, now), IGNORED.in);
+    else if (command === 'out') apply(tapOut(draft.session, now), IGNORED.out);
+    else apply(undo(draft.session), IGNORED.undo);
   };
 
   const onKeyDown = (event: KeyboardEvent) => {
@@ -176,80 +157,74 @@ export function mountTapTool(
     if (!row) return;
 
     if (armed) setArmed(false);
-    apply(moveCursorTo(session, Number(row.dataset.index)), '');
+    apply(moveCursorTo(draft.session, Number(row.dataset.index)), '');
   };
 
-  /**
-   * 下書きを捨てて最初から録り直す。1 回目のクリックで身構え、2 回目で実行する。
-   *
-   * 消せなかったときに「破棄しました」と出さない。次に開いたときに
-   * 消したはずの下書きから再開することになり、何が起きたのか分からなくなる。
-   */
+  /** 下書きの破棄。1 回目のクリックで身構え、2 回目で実行する */
   const onDiscard = () => {
     if (!armed) {
       setArmed(true);
       return;
     }
 
-    try {
-      store.clear();
-      hasDraft = false;
-      session = startSession(sheet);
-      notice = '下書きを破棄しました。最初から録れます。';
-    } catch (error) {
-      notice = '下書きを消せませんでした（詳細はコンソール）。';
-      console.error(error);
-    }
-
+    adopt(discardDraft(store, draft));
     setArmed(false);
     render();
   };
 
   const onExport = () => {
+    // 書き出しも「収録に戻った」うちに入る。ここで解かないと、身構えたまま
+    // 書き出した後の 1 クリックが、身構えるつもりのまま破棄になる
+    if (armed) setArmed(false);
+
     try {
-      el.output.value = exportText(session);
-      exported = session;
+      el.output.value = exportText(draft.session);
+      exported = draft.session;
 
       // **焦点は移さない。** readonly の textarea に焦点を移すと Space も
       // Backspace も横取りされ、収録が続けられなくなる（画面上は無反応に見える）。
       // クリップボードは安全な文脈でないと存在しないので、無い場合も案内を出す
       const manual = '下の JSON を選択してコピーし、歌詞シートに貼ってください';
       if (!navigator.clipboard) {
-        el.hint.textContent = manual;
+        showHint(manual);
         return;
       }
 
       void navigator.clipboard
         .writeText(el.output.value)
         .then(() => {
-          el.hint.textContent = 'クリップボードに入れました。歌詞シートに貼ってください';
+          showHint('クリップボードに入れました。歌詞シートに貼ってください');
         })
         .catch(() => {
-          el.hint.textContent = manual;
+          showHint(manual);
         });
     } catch (error) {
       // ボタンは衝突がある間 disabled なので、ここに来るのは組み方を誤ったとき。
       // 「textarea に出ているものは exported のもの」を例外の道でも崩さない
       el.output.value = '';
       exported = undefined;
-      el.hint.textContent = '書き出せませんでした（詳細はコンソール）';
+      showHint('書き出せませんでした（詳細はコンソール）');
       console.error(error);
     }
   };
 
   const render = () => {
-    const view = buildView(session);
+    const view = buildView(draft.session);
 
-    // 知らせは案内の前に足す。案内（次に何を叩くか）は消さない
-    el.hint.textContent = notice ? `${notice}${view.hint}` : view.hint;
-    notice = '';
+    // 破棄の身構えを解く経路はここに集める（描き直しに至らない
+    // 打鍵・書き出しの側でも解いているのは、そちらが render を呼ばないため）
+    if (armed) setArmed(false);
+
+    // 一度きりの知らせは案内の前に足す。案内（次に何を叩くか）は消さない
+    showHint(`${draft.notice}${view.hint}`);
+    draft = noticeShown(draft);
     el.progress.textContent = `${view.recorded} / ${view.total} 行`;
     el.exportButton.disabled = !view.canExport;
-    el.discardButton.disabled = !hasDraft;
+    el.discardButton.disabled = !draft.hasDraft;
 
     // 書き出した後に録り直したら、textarea の中身はもう実測と違う。**消す。**
     // 残すと、見た目は正しい JSON なので気づけないまま古い値を貼ってしまう
-    if (exported !== undefined && exported !== session) {
+    if (exported !== undefined && exported !== draft.session) {
       el.output.value = '';
       exported = undefined;
     }

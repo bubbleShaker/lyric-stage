@@ -10,6 +10,7 @@ import {
   NO_PENDING,
   orderProblems,
   previewLines,
+  recordedCount,
   toSheet,
   type OrderProblem,
   type TapSession,
@@ -43,16 +44,6 @@ export interface TapView {
   canExport: boolean;
   /** 次に何を叩けばよいかの案内 */
   hint: string;
-}
-
-/**
- * 今のセッションで時刻を持っている行の数。
- *
- * 下書きから再開したときの知らせ（「N 行」）も同じ数を使うので、
- * 「録った行とは何か」の決まりが 2 か所に分かれないようにここに出してある。
- */
-export function recordedCount(session: TapSession): number {
-  return session.takes.filter((take) => take !== undefined).length;
 }
 
 /** 12.3 → "12.30"。表示の桁を揃えると、行が並んだときに読み取りやすい */
