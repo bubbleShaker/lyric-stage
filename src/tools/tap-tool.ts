@@ -31,12 +31,16 @@ export interface TapToolHandle {
   dispose(): void;
 }
 
-/** 打鍵が無視されたときの言い訳。無反応のままだと収録中に原因が分からない */
-const IGNORED: Record<TapCommand, string> = {
+/**
+ * 打鍵が無視されたときの言い訳。無反応のままだと収録中に原因が分からない。
+ *
+ * 記録に関わるものだけを持つ（`toggle` は再生の操作でセッションを変えない）。
+ * キーを増やしたときに「これは記録系か」を型が聞いてくれる形にしてある。
+ */
+const IGNORED: Record<Exclude<TapCommand, 'toggle'>, string> = {
   in: '記録しませんでした。前に録った時刻より後で叩いてください（全ての行を録り終えている場合も記録されません）',
   out: '終了を記録しませんでした。先に Space でこの行の開始を叩いてください',
   undo: '取り消せる打鍵がありません',
-  toggle: '',
 };
 
 export function mountTapTool(
@@ -81,17 +85,21 @@ export function mountTapTool(
   const onKeyDown = (event: KeyboardEvent) => {
     // 修飾キー付きの打鍵はブラウザ側の操作（再読み込みなど）なので触らない
     if (event.ctrlKey || event.metaKey || event.altKey) return;
-    // 押しっぱなしの自動リピートは収録ではない。再生中は currentTime が進み続けるので、
-    // 弾かないと逆行のガードを素通りして数十行がまとめて焼かれる
-    if (event.repeat) return;
     if (isTextEntry(event.target)) return;
 
     const command = commandForKey(event.key);
     if (!command) return;
 
     // Space での画面送り、Backspace での「戻る」、
-    // 焦点のあるボタンの再実行（再生ボタンを押した後の Space）を止める
+    // 焦点のあるボタンの再実行（再生ボタンを押した後の Space）を止める。
+    // **リピートを弾くより先に止める。** 後にすると、押しっぱなしの間だけ
+    // 既定の動作が生き返り、収録は 1 行で止まるのにページだけスクロールする
     event.preventDefault();
+
+    // 押しっぱなしの自動リピートは収録ではない。再生中は currentTime が進み続けるので、
+    // 弾かないと逆行のガードを素通りして数十行がまとめて焼かれる
+    if (event.repeat) return;
+
     run(command);
   };
 
@@ -111,18 +119,29 @@ export function mountTapTool(
     try {
       el.output.value = exportText(session);
       exported = session;
+
       // **焦点は移さない。** readonly の textarea に焦点を移すと Space も
-      // Backspace も横取りされ、収録が続けられなくなる（画面上は無反応に見える）
+      // Backspace も横取りされ、収録が続けられなくなる（画面上は無反応に見える）。
+      // クリップボードは安全な文脈でないと存在しないので、無い場合も案内を出す
+      const manual = '下の JSON を選択してコピーし、歌詞シートに貼ってください';
+      if (!navigator.clipboard) {
+        el.hint.textContent = manual;
+        return;
+      }
+
       void navigator.clipboard
-        ?.writeText(el.output.value)
+        .writeText(el.output.value)
         .then(() => {
           el.hint.textContent = 'クリップボードに入れました。歌詞シートに貼ってください';
         })
         .catch(() => {
-          el.hint.textContent = '下の JSON を選択してコピーし、歌詞シートに貼ってください';
+          el.hint.textContent = manual;
         });
     } catch (error) {
-      // ボタンは衝突がある間 disabled なので、ここに来るのは組み方を誤ったとき
+      // ボタンは衝突がある間 disabled なので、ここに来るのは組み方を誤ったとき。
+      // 「textarea に出ているものは exported のもの」を例外の道でも崩さない
+      el.output.value = '';
+      exported = undefined;
       el.hint.textContent = '書き出せませんでした（詳細はコンソール）';
       console.error(error);
     }
