@@ -58,9 +58,14 @@ export interface OrderProblem {
    * 衝突している行の番号。**常に後ろ側の行**を指す。
    * 原因が前の行の打ち間違いであることも多いので、画面では前後どちらも見せる
    */
-  index: number;
-  /** previous-later: 前の行と同時か、前の行より前にある / overlap: 前の行の表示に食い込む */
-  reason: 'previous-later' | 'overlap';
+  readonly index: number;
+  /**
+   * previous-later: 前の行と同時か、前の行より前にある / overlap: 前の行の表示に食い込む。
+   *
+   * 性質は違う。previous-later は LyricSheet の不変条件（昇順）そのものの破れで、
+   * overlap は読み込めはするが「間」が嘘になる品質の話。今は同じ強さで止めている
+   */
+  readonly reason: 'previous-later' | 'overlap';
 }
 
 /**

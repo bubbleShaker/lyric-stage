@@ -340,6 +340,13 @@ describe('toSheet', () => {
     const session = tapOut(tapIn(startSession(sheet), 11), 21);
 
     expect(() => toSheet(session)).toThrow(OrderConflictError);
+    // 例外が持つ中身は orderProblems と同じであり続ける
+    try {
+      toSheet(session);
+    } catch (error) {
+      expect((error as OrderConflictError).problems).toEqual(orderProblems(session));
+      expect((error as OrderConflictError).problems).toEqual([{ index: 1, reason: 'overlap' }]);
+    }
   });
 
   it('秒数は 10ms の刻みに丸める', () => {
@@ -380,12 +387,14 @@ describe('toSheet', () => {
   });
 
   it('飛び飛びに録った結果も書き出せる（間の行は元の値のまま）', () => {
-    const session = tapOut(tapIn(moveCursorTo(tapIn(startSession(sheet), 11), 2), 32), 38);
+    // 3 行目の長さは 5 秒に録り直す（元シートの 6 秒と違う値にして、
+    // 元の duration を残す実装に戻ったら落ちるようにする）
+    const session = tapOut(tapIn(moveCursorTo(tapIn(startSession(sheet), 11), 2), 32), 37);
 
     expect(toSheet(session).lines).toEqual([
       { time: 11, text: 'いち', effect: 'fade' },
       { time: 20, text: 'に', effect: 'bounce' },
-      { time: 32, text: 'さん', effect: 'zoom', duration: 6 },
+      { time: 32, text: 'さん', effect: 'zoom', duration: 5 },
     ]);
   });
 
