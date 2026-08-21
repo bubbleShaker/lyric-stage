@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import type { LyricSheet } from '../domain/lyrics';
-import { moveCursorTo, startSession, tapIn, tapOut } from '../domain/tap-session';
-import { buildView, formatSeconds } from './tap-view';
+import { parseLyricSheet, type LyricSheet } from '../domain/lyrics';
+import {
+  moveCursorTo,
+  OrderConflictError,
+  startSession,
+  tapIn,
+  tapOut,
+} from '../domain/tap-session';
+import { buildView, exportText, formatSeconds } from './tap-view';
 
 const sheet: LyricSheet = {
   title: 'テスト',
@@ -64,6 +70,33 @@ describe('buildView', () => {
 
   it('衝突しているときは、それを最初に伝える', () => {
     expect(buildView(tapIn(startSession(sheet), 25)).hint).toContain('衝突');
+  });
+});
+
+describe('exportText', () => {
+  it('書き出した文字列が、そのまま歌詞シートとして読み直せる', () => {
+    const session = tapOut(tapIn(tapIn(startSession(sheet), 11.004), 21.5), 27.006);
+    const written = exportText(session);
+
+    expect(parseLyricSheet(JSON.parse(written))).toEqual({
+      title: 'テスト',
+      lines: [
+        { time: 11, text: 'いち', effect: 'fade' },
+        { time: 21.5, text: 'に', effect: 'bounce', duration: 5.51 },
+        { time: 30, text: 'さん', effect: 'zoom', duration: 6 },
+      ],
+    });
+  });
+
+  it('人が読める形で、末尾に改行がある（ファイルに貼るため）', () => {
+    const written = exportText(startSession(sheet));
+
+    expect(written).toContain('\n  "lines": [');
+    expect(written.endsWith('\n')).toBe(true);
+  });
+
+  it('衝突が残っていれば書き出さない', () => {
+    expect(() => exportText(tapIn(startSession(sheet), 25))).toThrow(OrderConflictError);
   });
 });
 

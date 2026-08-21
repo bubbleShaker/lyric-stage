@@ -4,7 +4,7 @@ import { loadLyricSheet, lyricSheetNameFromLocation } from './app/load-lyric-she
 import { mountLyricTimeline } from './app/lyric-timeline';
 import { Ticker } from './app/ticker';
 import { assetUrl } from './lib/asset';
-import { requiredElement as required } from './lib/dom';
+import { requiredElement } from './lib/dom';
 import { systemReducedMotion } from './lib/reduced-motion';
 import { AudioPlayer } from './stage/audio-player';
 import { LyricStage } from './stage/lyric-stage';
@@ -32,16 +32,16 @@ const loudness = createLoudness(media, systemAudioContext, LOUDNESS_RANGE);
 // OS の「視差効果を減らす」設定。読み方だけを渡し、いつ読むかは受け取った側が決める。
 // 文字も背景も動くので、同じ設定を両方へ渡す
 const prefersReducedMotion = systemReducedMotion();
-const stage = new LyricStage(required<HTMLDivElement>('stage-text'), prefersReducedMotion);
+const stage = new LyricStage(requiredElement<HTMLDivElement>('stage-text'), prefersReducedMotion);
 
-const toggle = required<HTMLButtonElement>('transport-toggle');
+const toggle = requiredElement<HTMLButtonElement>('transport-toggle');
 
 const transport = mountTransport(player, {
-  root: required('transport'),
+  root: requiredElement('transport'),
   toggle,
-  seek: required<HTMLInputElement>('transport-seek'),
-  time: required('transport-time'),
-  message: required('transport-message'),
+  seek: requiredElement<HTMLInputElement>('transport-seek'),
+  time: requiredElement('transport-time'),
+  message: requiredElement('transport-message'),
 });
 
 // AudioContext はユーザー操作を起点にしないと動き出せない（音の自動再生と同じ制限）。
@@ -67,7 +67,7 @@ ticker.subscribe(loudness.sample);
 // 歌詞と音（作品の本体）は動かなければならないので、失敗をここで受け止める。
 // 星が出ないことより、真っ黒な画面に死んだ再生コントロールだけが残る方が悪い
 try {
-  const canvas = new ScaledCanvas(required<HTMLCanvasElement>('backdrop'), systemPixelRatio);
+  const canvas = new ScaledCanvas(requiredElement<HTMLCanvasElement>('backdrop'), systemPixelRatio);
   const backdrop = new Starfield(canvas, prefersReducedMotion, loudness.level);
   // 背景の時計も曲の再生位置。シークすれば星の瞬きも一緒に飛ぶ
   ticker.subscribe(() => backdrop.render(player.currentTime));
@@ -84,6 +84,6 @@ loadLyricSheet(lyricSheetNameFromLocation(location.search, DEFAULT_SHEET_NAME))
   .catch((error: unknown) => {
     // 再生コントロール側のメッセージ欄とは別の場所に出す。
     // あちらは毎フレーム書き換わるので、書いてもすぐ消えてしまう。
-    required('stage-message').textContent = '歌詞ファイルを読み込めませんでした。';
+    requiredElement('stage-message').textContent = '歌詞ファイルを読み込めませんでした。';
     console.error(error);
   });

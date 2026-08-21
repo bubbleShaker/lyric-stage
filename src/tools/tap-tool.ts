@@ -13,13 +13,11 @@ import {
   startSession,
   tapIn,
   tapOut,
-  toSheet,
   undo,
   type TapSession,
 } from '../domain/tap-session';
 import { commandForKey, isTextEntry, type TapCommand } from './tap-keys';
-import { buildView, formatSeconds, type TapRow } from './tap-view';
-import './tap-tool.css';
+import { buildView, exportText, formatSeconds, type TapRow } from './tap-view';
 
 export interface TapToolElements {
   list: HTMLElement;
@@ -33,33 +31,59 @@ export interface TapToolHandle {
   dispose(): void;
 }
 
+/** 打鍵が無視されたときの言い訳。無反応のままだと収録中に原因が分からない */
+const IGNORED: Record<TapCommand, string> = {
+  in: '記録しませんでした。前に録った時刻より後で叩いてください（全ての行を録り終えている場合も記録されません）',
+  out: '終了を記録しませんでした。先に Space でこの行の開始を叩いてください',
+  undo: '取り消せる打鍵がありません',
+  toggle: '',
+};
+
 export function mountTapTool(
   sheet: LyricSheet,
   player: Playback,
   el: TapToolElements,
 ): TapToolHandle {
   let session = startSession(sheet);
+  /** 今 textarea に出ている JSON を作ったときのセッション */
+  let exported: TapSession | undefined;
+  /** 今カーソルが載っている行。ここが変わった時だけ画面を追従させる */
+  let scrolledTo = -1;
 
   /**
    * 操作を適用する。**無視された打鍵は同じセッションが返る**ので、
-   * その時は描き直さない（domain が不変で作られていることの実利）。
+   * その時は描き直さず、代わりに理由を出す（domain が不変で作られていることの実利）。
    */
-  const apply = (next: TapSession) => {
-    if (next === session) return;
+  const apply = (next: TapSession, ignored: string) => {
+    if (next === session) {
+      if (ignored) el.hint.textContent = ignored;
+      return;
+    }
     session = next;
     render();
   };
 
   const run = (command: TapCommand) => {
     const now = player.currentTime;
-    if (command === 'in') apply(tapIn(session, now));
-    else if (command === 'out') apply(tapOut(session, now));
-    else apply(undo(session));
+    if (command === 'toggle') {
+      player.toggle().catch((error: unknown) => {
+        el.hint.textContent = '再生できませんでした';
+        console.error(error);
+      });
+      return;
+    }
+
+    if (command === 'in') apply(tapIn(session, now), IGNORED.in);
+    else if (command === 'out') apply(tapOut(session, now), IGNORED.out);
+    else apply(undo(session), IGNORED.undo);
   };
 
   const onKeyDown = (event: KeyboardEvent) => {
     // 修飾キー付きの打鍵はブラウザ側の操作（再読み込みなど）なので触らない
     if (event.ctrlKey || event.metaKey || event.altKey) return;
+    // 押しっぱなしの自動リピートは収録ではない。再生中は currentTime が進み続けるので、
+    // 弾かないと逆行のガードを素通りして数十行がまとめて焼かれる
+    if (event.repeat) return;
     if (isTextEntry(event.target)) return;
 
     const command = commandForKey(event.key);
@@ -80,21 +104,26 @@ export function mountTapTool(
     const row = target.closest<HTMLElement>('[data-index]');
     if (!row) return;
 
-    apply(moveCursorTo(session, Number(row.dataset.index)));
+    apply(moveCursorTo(session, Number(row.dataset.index)), '');
   };
 
   const onExport = () => {
     try {
-      const written = toSheet(session);
-      el.output.value = `${JSON.stringify(written, null, 2)}\n`;
-      el.output.focus();
-      el.output.select();
-      // クリップボードは拒否されることがある（安全な文脈でないなど）。
-      // 選択済みなので手でコピーすればよく、失敗しても収録は続けられる
-      void navigator.clipboard?.writeText(el.output.value).catch(() => undefined);
+      el.output.value = exportText(session);
+      exported = session;
+      // **焦点は移さない。** readonly の textarea に焦点を移すと Space も
+      // Backspace も横取りされ、収録が続けられなくなる（画面上は無反応に見える）
+      void navigator.clipboard
+        ?.writeText(el.output.value)
+        .then(() => {
+          el.hint.textContent = 'クリップボードに入れました。歌詞シートに貼ってください';
+        })
+        .catch(() => {
+          el.hint.textContent = '下の JSON を選択してコピーし、歌詞シートに貼ってください';
+        });
     } catch (error) {
       // ボタンは衝突がある間 disabled なので、ここに来るのは組み方を誤ったとき
-      el.output.value = String(error);
+      el.hint.textContent = '書き出せませんでした（詳細はコンソール）';
       console.error(error);
     }
   };
@@ -106,10 +135,22 @@ export function mountTapTool(
     el.progress.textContent = `${view.recorded} / ${view.total} 行`;
     el.exportButton.disabled = !view.canExport;
 
+    // 書き出した後に録り直したら、textarea の中身はもう実測と違う。**消す。**
+    // 残すと、見た目は正しい JSON なので気づけないまま古い値を貼ってしまう
+    if (exported !== undefined && exported !== session) {
+      el.output.value = '';
+      exported = undefined;
+    }
+
     el.list.replaceChildren(...view.rows.map(rowElement));
 
-    // 曲は進み続けるので、今の行は自分で追いかけずに済むようにする
-    el.list.querySelector('[data-current="true"]')?.scrollIntoView({ block: 'center' });
+    // 曲は進み続けるので、今の行は自分で追いかけずに済むようにする。
+    // ただし毎回追従させると、衝突箇所を見に行った時に引き戻してしまう
+    const cursor = view.rows.findIndex((row) => row.current);
+    if (cursor !== scrolledTo) {
+      scrolledTo = cursor;
+      el.list.querySelector('[data-current="true"]')?.scrollIntoView({ block: 'center' });
+    }
   };
 
   document.addEventListener('keydown', onKeyDown);
@@ -137,7 +178,7 @@ function rowElement(row: TapRow): HTMLElement {
   li.dataset.recorded = String(row.recorded);
   if (row.problem) li.dataset.problem = row.problem;
   if (row.problemPartner) li.dataset.partner = 'true';
-  li.title = 'クリックするとこの行から録り直す';
+  li.title = problemTitle(row) ?? 'クリックするとこの行から録り直す';
 
   li.append(
     span('tap-row__no', String(row.index + 1)),
@@ -148,6 +189,14 @@ function rowElement(row: TapRow): HTMLElement {
   );
 
   return li;
+}
+
+/** 衝突の種類は色だけでは伝わらないので、行の説明にも書く */
+function problemTitle(row: TapRow): string | undefined {
+  if (row.problem === 'previous-later') return '前の行と同時か、前の行より前にあります';
+  if (row.problem === 'overlap') return '前の行の表示がこの行に食い込んでいます';
+  if (row.problemPartner) return 'この行の時刻が、次の行と衝突しています';
+  return undefined;
 }
 
 function span(className: string, text: string): HTMLElement {

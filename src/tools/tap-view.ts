@@ -10,6 +10,7 @@ import {
   NO_PENDING,
   orderProblems,
   previewLines,
+  toSheet,
   type OrderProblem,
   type TapSession,
 } from '../domain/tap-session';
@@ -47,6 +48,17 @@ export interface TapView {
 /** 12.3 → "12.30"。表示の桁を揃えると、行が並んだときに読み取りやすい */
 export function formatSeconds(seconds: number): string {
   return seconds.toFixed(2);
+}
+
+/**
+ * 書き出す JSON の文字列。`public/lyrics/<name>.json` に貼る中身そのもの。
+ *
+ * DOM 側に置かない。**この道具の成果物そのもの**なので、
+ * 「書き出したものが歌詞シートとして読み直せる」を検査で守りたい。
+ * 衝突が残っていれば `toSheet` が投げる（画面はその手前で止める）。
+ */
+export function exportText(session: TapSession): string {
+  return `${JSON.stringify(toSheet(session), null, 2)}\n`;
 }
 
 export function buildView(session: TapSession): TapView {

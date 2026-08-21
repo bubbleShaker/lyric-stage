@@ -14,6 +14,8 @@ import { AudioPlayer } from '../stage/audio-player';
 import { mountTransport } from '../stage/transport';
 import { AUDIO_PATH, DEFAULT_SHEET_NAME } from '../work';
 import { mountTapTool } from './tap-tool';
+// 様式を持ち込むのは組み立てる側（本編の main.ts が style.css を持つのと同じ）
+import './tap-tool.css';
 
 const player = new AudioPlayer(new Audio(), assetUrl(AUDIO_PATH));
 const ticker = new Ticker();

@@ -242,7 +242,11 @@ export function moveCursorTo(session: TapSession, index: number): TapSession {
  * 「今どうなっているか」を出し続ける必要があり、衝突しているときこそ
  * その値を見せないと、どこを録り直せばよいか分からないため。
  */
-export function previewLines(session: TapSession): LyricLine[] {
+export function previewLines(session: TapSession): readonly LyricLine[] {
+  return buildLines(session);
+}
+
+function buildLines(session: TapSession): LyricLine[] {
   return session.source.lines.map((line, index) => {
     const take = session.takes[index];
     // 未収録の行も複製する。返した行を書き換えられても元シートに波及しないため
@@ -275,7 +279,7 @@ export function previewLines(session: TapSession): LyricLine[] {
  * **どの行から録り直せばよいかを画面に出せる形で返す。**
  */
 export function orderProblems(session: TapSession): OrderProblem[] {
-  return problemsOf(previewLines(session));
+  return problemsOf(buildLines(session));
 }
 
 function problemsOf(lines: readonly LyricLine[]): OrderProblem[] {
@@ -313,7 +317,7 @@ function problemsOf(lines: readonly LyricLine[]): OrderProblem[] {
  * 指された行まで叩き進めれば必ず解消する。収録の成果が失われるわけではない。
  */
 export function toSheet(session: TapSession): LyricSheet {
-  const lines = previewLines(session);
+  const lines = buildLines(session);
   const problems = problemsOf(lines);
   if (problems.length > 0) throw new OrderConflictError(problems);
 
