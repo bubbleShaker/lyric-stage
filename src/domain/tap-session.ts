@@ -231,13 +231,21 @@ export function moveCursorTo(session: TapSession, index: number): TapSession {
 }
 
 /**
- * 収録結果を行の並びにする。
+ * 収録結果を行の並びにする。**書き出したらこうなる、という下見。**
  *
  * まだ叩いていない行は元の値のまま残るので、途中まで録って書き出せる。
  * **叩いた行の duration は終了の打鍵からしか作らない。** 元の duration を
  * 残すと、開始を録り直した行で「新しい開始 + 古い長さ」という、
  * どちらの収録にも属さない値ができてしまう。
+ *
+ * 衝突が残っていても返す（`toSheet` と違って投げない）。収録中の画面は
+ * 「今どうなっているか」を出し続ける必要があり、衝突しているときこそ
+ * その値を見せないと、どこを録り直せばよいか分からないため。
  */
+export function previewLines(session: TapSession): readonly LyricLine[] {
+  return buildLines(session);
+}
+
 function buildLines(session: TapSession): LyricLine[] {
   return session.source.lines.map((line, index) => {
     const take = session.takes[index];
