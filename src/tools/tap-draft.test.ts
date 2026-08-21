@@ -54,7 +54,7 @@ describe('draftText', () => {
     const session = tapIn(startSession(sheet), 11);
 
     expect(JSON.parse(draftText(session))).toMatchObject({
-      version: 1,
+      version: 2,
       takes: [{ time: 11 }, null, null],
     });
   });
@@ -144,6 +144,11 @@ describe('unavailableDraftStore', () => {
   });
 });
 
+/** 下書きが無いだけの置き場所（初期状態を作るため。保存は素通し） */
+function emptyStore(): DraftStore {
+  return { load: () => undefined, save: () => {}, clear: () => {} };
+}
+
 /** 保存も読み込みも失敗する置き場所（容量超過や設定で止められている場面） */
 function brokenStore(): DraftStore {
   return {
@@ -231,11 +236,7 @@ describe('keepDraft', () => {
 
   it('保存に失敗したら、以後は保存を試みずに知らせ続ける', () => {
     const store = brokenStore();
-    const failed = keepDraft(
-      store,
-      openDraft(sheet, unavailableDraftStore),
-      tapIn(startSession(sheet), 11),
-    );
+    const failed = keepDraft(store, openDraft(sheet, emptyStore()), tapIn(startSession(sheet), 11));
 
     expect(failed.saving).toBe(false);
     expect(failed.trouble).toBe('save-failed');
@@ -250,7 +251,7 @@ describe('keepDraft', () => {
   it('警告は消えない（打鍵を重ねても流れない）', () => {
     let state = keepDraft(
       brokenStore(),
-      openDraft(sheet, unavailableDraftStore),
+      openDraft(sheet, emptyStore()),
       tapIn(startSession(sheet), 11),
     );
     for (let i = 0; i < 5; i += 1) state = noticeShown(keepDraft(brokenStore(), state, state.session));
@@ -335,7 +336,7 @@ describe('noticeShown', () => {
   });
 
   it('知らせが無ければ同じものを返す', () => {
-    const state = openDraft(sheet, unavailableDraftStore);
+    const state = openDraft(sheet, emptyStore());
 
     expect(noticeShown(state)).toBe(state);
   });

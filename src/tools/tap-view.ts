@@ -54,27 +54,60 @@ export interface TapView {
  */
 export function draftNoticeText(notice: DraftNotice | undefined): string {
   if (!notice) return '';
-  if (notice.kind === 'resumed') return `下書きから再開しました（${notice.recorded} 行）。`;
-  return '下書きを破棄しました。最初から録れます。';
+
+  switch (notice.kind) {
+    case 'resumed':
+      return `下書きから再開しました（${notice.recorded} 行）。`;
+    case 'discarded':
+      return '下書きを破棄しました。最初から録れます。';
+    default:
+      // 知らせの種類を増やしたときに、ここで型が止める。
+      // 素通しにすると新しい知らせが**別の文面で嘘をつく**
+      return exhausted(notice);
+  }
 }
 
-export function draftTroubleText(trouble: DraftTrouble | undefined): string {
+/**
+ * 下書きが守られていないことの知らせ。
+ *
+ * **「直近に何が起きたか」と「今も自動保存が止まっているか」は別の事実。**
+ * 一緒くたに 1 つの文面へ畳むと、破棄に失敗した瞬間に
+ * 「保存が止まっている」という重い方の知らせが消える。
+ */
+export function draftTroubleText(state: {
+  trouble?: DraftTrouble;
+  saving: boolean;
+}): string {
+  const stopped = state.saving
+    ? ''
+    : '自動保存は止まっています。この画面を閉じると収録は失われます。';
+
+  return `${troubleReason(state.trouble)}${stopped}`;
+}
+
+function troubleReason(trouble: DraftTrouble | undefined): string {
+  if (trouble === undefined) return '';
+
   switch (trouble) {
     case 'unreadable':
       // 版が上がっただけの場合も含めて「読めなかった」に寄せる。
       // 破棄すると今録った分も消えるので、そこも書いておく
       return (
-        '下書きを読めませんでした（壊れているか、歌詞シートが書き換えられたか、古い形式です）。' +
-        '元の下書きを残すため自動保存は止めています。' +
+        '保存されていた下書きを読めませんでした（壊れているか、歌詞シートが書き換えられたか、古い形式です）。' +
         '破棄すると今録った分も消えますが、自動保存は戻ります。'
       );
     case 'save-failed':
-      return '下書きを保存できません（詳細はコンソール）。この画面を閉じると収録は失われます。';
+      return '下書きを保存できません（詳細はコンソール）。';
     case 'clear-failed':
-      return '下書きを消せませんでした（詳細はコンソール）。';
+      return '下書きを破棄できませんでした（詳細はコンソール）。';
     default:
-      return '';
+      return exhausted(trouble);
   }
+}
+
+/** 型で網羅を締める。増やした種類の文面を書き忘れたらコンパイルが止まる */
+function exhausted(value: never): string {
+  return String(value);
 }
 
 /** 12.3 → "12.30"。表示の桁を揃えると、行が並んだときに読み取りやすい */

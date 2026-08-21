@@ -127,7 +127,11 @@ export interface DraftState {
   readonly hasDraft: boolean;
   /** 自動保存が生きているか。止まっている間は保存先に触らない */
   readonly saving: boolean;
-  /** この遷移で起きた不具合。呼び出し側がコンソールへ出す */
+  /**
+   * 直近に起きた不具合。呼び出し側がコンソールへ出す。
+   * **持ち回る遷移もある**（noticeShown）ので、出す側は
+   * 「前と違う不具合か」で二重出力を防ぐこと
+   */
   readonly error?: unknown;
 }
 

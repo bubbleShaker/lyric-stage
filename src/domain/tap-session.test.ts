@@ -412,7 +412,7 @@ describe('toSheet', () => {
 describe('resumeSession', () => {
   /** 下書きの形。JSON を通すので未収録の行は null になる */
   function draftOfTakes(takes: unknown[], sheetOf: LyricSheet = sheet) {
-    return { version: 1, sheet: sheetFingerprint(sheetOf), takes };
+    return { version: 2, sheet: sheetFingerprint(sheetOf), takes };
   }
 
   const draft = draftOfTakes([{ time: 11 }, { time: 21, end: 25 }, null]);
@@ -473,7 +473,7 @@ describe('resumeSession', () => {
   describe('形が違う下書きは読まない', () => {
     const cases: [string, unknown][] = [
       ['オブジェクトではない', [{ time: 11 }, null, null]],
-      ['版が違う', { version: 2, sheet: sheetFingerprint(sheet), takes: [null, null, null] }],
+      ['版が違う', { version: 1, sheet: sheetFingerprint(sheet), takes: [null, null, null] }],
       ['takes が配列ではない', draftOfTakes(undefined as unknown as unknown[])],
       ['行数が合わない', draftOfTakes([{ time: 11 }])],
       ['time が無い', draftOfTakes([{ end: 12 }, null, null])],
@@ -522,6 +522,13 @@ describe('sheetFingerprint', () => {
 
     expect(sheetFingerprint(same)).toBe(sheetFingerprint(sheet));
     expect(sheetFingerprint(edited)).not.toBe(sheetFingerprint(sheet));
+  });
+
+  it('行の区切りが違えば別の指紋（改行を含む歌詞でも取り違えない）', () => {
+    const joined: LyricSheet = { title: 'x', lines: [{ time: 0, text: 'あ\nい' }, { time: 1, text: 'う' }] };
+    const split: LyricSheet = { title: 'x', lines: [{ time: 0, text: 'あ' }, { time: 1, text: 'い\nう' }] };
+
+    expect(sheetFingerprint(joined)).not.toBe(sheetFingerprint(split));
   });
 
   it('時刻を録り直しても変わらない（下書きは録るたびに無効にならない）', () => {

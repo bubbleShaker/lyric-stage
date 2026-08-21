@@ -102,7 +102,7 @@ export function mountTapTool(
    * 「守られていない」ことの知らせだけが流れて消えてしまう。
    */
   const showHint = (message: string) => {
-    const trouble = draftTroubleText(draft.trouble);
+    const trouble = draftTroubleText(draft);
     el.hint.textContent = trouble ? `${trouble}　${message}` : message;
     el.hint.dataset.trouble = String(trouble !== '');
   };
