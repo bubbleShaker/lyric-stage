@@ -19,7 +19,14 @@ import {
   type DraftStore,
 } from './tap-draft';
 import { commandForKey, isTextEntry, type TapCommand } from './tap-keys';
-import { buildView, exportText, formatSeconds, type TapRow } from './tap-view';
+import {
+  buildView,
+  draftNoticeText,
+  draftTroubleText,
+  exportText,
+  formatSeconds,
+  type TapRow,
+} from './tap-view';
 
 export interface TapToolElements {
   list: HTMLElement;
@@ -64,6 +71,7 @@ export function mountTapTool(
   let draft = openDraft(sheet, store);
   // 起動時の読み込み失敗もコンソールへ（以降の遷移は adopt が受け持つ）
   if (draft.error !== undefined) console.error(draft.error);
+
   /** 今 textarea に出ている JSON を作ったときのセッション */
   let exported: TapSession | undefined;
   /** 今カーソルが載っている行。ここが変わった時だけ画面を追従させる */
@@ -71,9 +79,13 @@ export function mountTapTool(
   /** 破棄ボタンが身構えているか（次のクリックで実行） */
   let armed = false;
 
-  /** 下書きの状態を進める。この遷移で起きた不具合はここでだけ書き出す */
+  /**
+   * 下書きの状態を進める。**新しく起きた不具合だけをコンソールへ出す。**
+   * 参照の違いで判定すると「遷移関数が必ず error を落とす」という規約に
+   * 依存することになり、落とさない遷移（noticeShown）を通せなくなる
+   */
   const adopt = (next: DraftState) => {
-    if (next !== draft && next.error !== undefined) console.error(next.error);
+    if (next.error !== undefined && next.error !== draft.error) console.error(next.error);
     draft = next;
   };
 
@@ -90,8 +102,9 @@ export function mountTapTool(
    * 「守られていない」ことの知らせだけが流れて消えてしまう。
    */
   const showHint = (message: string) => {
-    el.hint.textContent = `${draft.trouble}${message}`;
-    el.hint.dataset.trouble = String(draft.trouble !== '');
+    const trouble = draftTroubleText(draft.trouble);
+    el.hint.textContent = trouble ? `${trouble}　${message}` : message;
+    el.hint.dataset.trouble = String(trouble !== '');
   };
 
   /**
@@ -216,8 +229,8 @@ export function mountTapTool(
     if (armed) setArmed(false);
 
     // 一度きりの知らせは案内の前に足す。案内（次に何を叩くか）は消さない
-    showHint(`${draft.notice}${view.hint}`);
-    draft = noticeShown(draft);
+    showHint(`${draftNoticeText(draft.notice)}${view.hint}`);
+    adopt(noticeShown(draft));
     el.progress.textContent = `${view.recorded} / ${view.total} 行`;
     el.exportButton.disabled = !view.canExport;
     el.discardButton.disabled = !draft.hasDraft;

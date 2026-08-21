@@ -15,9 +15,10 @@ import {
   draftStore,
   draftText,
   keepDraft,
-  noDraftStore,
   noticeShown,
   openDraft,
+  unavailableDraftStore,
+  type DraftState,
   type DraftStorage,
   type DraftStore,
 } from './tap-draft';
@@ -120,16 +121,28 @@ describe('draftStore', () => {
   });
 });
 
-describe('noDraftStore', () => {
-  it('何も覚えないが、呼んでも落ちない', () => {
-    expect(noDraftStore.load()).toBeUndefined();
-    expect(() => {
-      noDraftStore.save(tapIn(startSession(sheet), 11));
-      noDraftStore.clear();
-    }).not.toThrow();
+describe('unavailableDraftStore', () => {
+  it('保存を求められたら投げる（黙って捨てると守られているつもりになる）', () => {
+    expect(() => unavailableDraftStore.save(tapIn(startSession(sheet), 11))).toThrow();
+  });
+
+  it('読み込みと破棄は落ちない（下書きが無いだけ）', () => {
+    expect(unavailableDraftStore.load()).toBeUndefined();
+    expect(() => unavailableDraftStore.clear()).not.toThrow();
+  });
+
+  it('保存先が無いことは最初の打鍵で画面に出る形になる', () => {
+    const state = keepDraft(
+      unavailableDraftStore,
+      openDraft(sheet, unavailableDraftStore),
+      tapIn(startSession(sheet), 11),
+    );
+
+    expect(state.trouble).toBe('save-failed');
+    // 「下書きがある」ことにしない（破棄ボタンだけが点灯するのを防ぐ）
+    expect(state.hasDraft).toBe(false);
   });
 });
-
 
 /** 保存も読み込みも失敗する置き場所（容量超過や設定で止められている場面） */
 function brokenStore(): DraftStore {
@@ -148,7 +161,9 @@ describe('openDraft', () => {
   it('下書きが無ければ何も録っていない状態から始まる', () => {
     const state = openDraft(sheet, draftStore(fakeStorage(), 'sample'));
 
-    expect(state).toMatchObject({ notice: '', trouble: '', hasDraft: false, saving: true });
+    expect(state).toMatchObject({ hasDraft: false, saving: true });
+    expect(state.notice).toBeUndefined();
+    expect(state.trouble).toBeUndefined();
     expect(state.session.cursor).toBe(0);
   });
 
@@ -159,7 +174,7 @@ describe('openDraft', () => {
 
     const state = openDraft(sheet, store);
 
-    expect(state.notice).toContain('1 行');
+    expect(state.notice).toEqual({ kind: 'resumed', recorded: 1 });
     expect(state.hasDraft).toBe(true);
     expect(toSheet(state.session).lines[0].time).toBe(11);
   });
@@ -171,7 +186,7 @@ describe('openDraft', () => {
       const state = openDraft(sheet, store());
 
       expect(state.session.cursor).toBe(0);
-      expect(state.trouble).not.toBe('');
+      expect(state.trouble).toBe('unreadable');
       expect(state.error).toBeDefined();
     });
 
@@ -216,10 +231,14 @@ describe('keepDraft', () => {
 
   it('保存に失敗したら、以後は保存を試みずに知らせ続ける', () => {
     const store = brokenStore();
-    const failed = keepDraft(store, openDraft(sheet, noDraftStore), tapIn(startSession(sheet), 11));
+    const failed = keepDraft(
+      store,
+      openDraft(sheet, unavailableDraftStore),
+      tapIn(startSession(sheet), 11),
+    );
 
     expect(failed.saving).toBe(false);
-    expect(failed.trouble).not.toBe('');
+    expect(failed.trouble).toBe('save-failed');
     expect(failed.error).toBeDefined();
 
     // 次の打鍵は保存を試みない（try の中に入らないので error も付かない）
@@ -229,10 +248,25 @@ describe('keepDraft', () => {
   });
 
   it('警告は消えない（打鍵を重ねても流れない）', () => {
-    let state = keepDraft(brokenStore(), openDraft(sheet, noDraftStore), tapIn(startSession(sheet), 11));
+    let state = keepDraft(
+      brokenStore(),
+      openDraft(sheet, unavailableDraftStore),
+      tapIn(startSession(sheet), 11),
+    );
     for (let i = 0; i < 5; i += 1) state = noticeShown(keepDraft(brokenStore(), state, state.session));
 
-    expect(state.trouble).not.toBe('');
+    expect(state.trouble).toBe('save-failed');
+  });
+
+  it('保存が通ったら警告は消える（今この瞬間守られているかを表す）', () => {
+    const storage = fakeStorage();
+    const store = draftStore(storage, 'sample');
+    // 破棄に失敗して警告だけが残った状態から、保存が通る場面
+    const stuck: DraftState = { ...openDraft(sheet, store), trouble: 'clear-failed' };
+
+    const kept = keepDraft(store, stuck, tapIn(startSession(sheet), 11));
+
+    expect(kept.trouble).toBeUndefined();
   });
 });
 
@@ -247,7 +281,7 @@ describe('discardDraft', () => {
     expect(storage.items.size).toBe(0);
     expect(discarded.hasDraft).toBe(false);
     expect(discarded.session.cursor).toBe(0);
-    expect(discarded.notice).toContain('破棄');
+    expect(discarded.notice).toEqual({ kind: 'discarded' });
   });
 
   it('読めない下書きを捨てたら、自動保存が戻る', () => {
@@ -257,7 +291,7 @@ describe('discardDraft', () => {
     const discarded = discardDraft(store, openDraft(sheet, store));
 
     expect(discarded.saving).toBe(true);
-    expect(discarded.trouble).toBe('');
+    expect(discarded.trouble).toBeUndefined();
   });
 
   it('消せなかったら「破棄しました」と言わない（次に開くと戻ってくるため）', () => {
@@ -272,8 +306,8 @@ describe('discardDraft', () => {
 
     const discarded = discardDraft(store, state);
 
-    expect(discarded.notice).toBe('');
-    expect(discarded.trouble).not.toBe('');
+    expect(discarded.notice).toBeUndefined();
+    expect(discarded.trouble).toBe('clear-failed');
     expect(discarded.session).toBe(state.session);
   });
 });
@@ -287,8 +321,8 @@ describe('noticeShown', () => {
 
     const shown = noticeShown(resumed);
 
-    expect(resumed.notice).not.toBe('');
-    expect(shown.notice).toBe('');
+    expect(resumed.notice).toBeDefined();
+    expect(shown.notice).toBeUndefined();
     expect(shown.session).toBe(resumed.session);
   });
 
@@ -297,11 +331,11 @@ describe('noticeShown', () => {
 
     const shown = noticeShown(openDraft(sheet, store));
 
-    expect(shown.trouble).not.toBe('');
+    expect(shown.trouble).toBe('unreadable');
   });
 
   it('知らせが無ければ同じものを返す', () => {
-    const state = openDraft(sheet, noDraftStore);
+    const state = openDraft(sheet, unavailableDraftStore);
 
     expect(noticeShown(state)).toBe(state);
   });

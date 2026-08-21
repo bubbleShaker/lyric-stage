@@ -148,7 +148,11 @@ export interface TapDraft {
  * 狙うのは取り違えの検出だけなので、短いハッシュ（FNV-1a）で足りる。
  */
 export function sheetFingerprint(sheet: LyricSheet): string {
-  const text = `${sheet.title}\n${sheet.lines.map((line) => line.text).join('\n')}`;
+  // 区切りは歌詞に現れない文字にし、行数も混ぜる。改行を含む歌詞があると
+  // 「どこが行の境目か」が曖昧になり、別のシートが同じ指紋になりうる
+  const text = [sheet.lines.length, sheet.title, ...sheet.lines.map((line) => line.text)].join(
+    '\u0000',
+  );
 
   let hash = 0x811c9dc5;
   for (let index = 0; index < text.length; index += 1) {

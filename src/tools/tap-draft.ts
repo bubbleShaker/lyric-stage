@@ -86,13 +86,20 @@ export function draftStore(storage: DraftStorage, sheetName: string): DraftStore
 }
 
 /**
- * 何も覚えない置き場所。`localStorage` が使えない場面（ブラウザの設定で
- * 保存を止めている等）で使う。**道具そのものは動き続ける**（下書きが
- * 残らないだけで、収録も書き出しもできる）。
+ * 使える保存先が無いときの置き場所。`localStorage` が使えない場面
+ * （ブラウザの設定で保存を止めている等）で使う。**道具そのものは動き続ける**
+ * （下書きが残らないだけで、収録も書き出しもできる）。
+ *
+ * **保存を求められたら投げる。**黙って受け取って捨てると、`keepDraft` は
+ * 成功として扱い「下書きがある」ことにしてしまう。画面には警告が出ず、
+ * 破棄ボタンだけが点灯し、閉じれば全部消える —
+ * **守られているつもりで守られていない**という、一番まずい形になる。
  */
-export const noDraftStore: DraftStore = {
+export const unavailableDraftStore: DraftStore = {
   load: () => undefined,
-  save: () => {},
+  save: () => {
+    throw new Error('下書きの保存先がありません');
+  },
   clear: () => {},
 };
 
@@ -106,10 +113,16 @@ export const noDraftStore: DraftStore = {
  */
 export interface DraftState {
   readonly session: TapSession;
-  /** 一度だけ出す知らせ（再開・破棄）。出したら noticeShown で落とす */
-  readonly notice: string;
+  /**
+   * 一度だけ出す知らせ。出したら noticeShown で落とす。
+   *
+   * **文面ではなく「何が起きたか」を持つ。**言い回しは表示側の関心で、
+   * ここが決めると文面を読み解かないと状態が分からなくなる
+   * （domain の OrderConflictError が problems を持つのと同じ判断）
+   */
+  readonly notice?: DraftNotice;
   /** 下書きが守られていないことの知らせ。**直るまで消さない** */
-  readonly trouble: string;
+  readonly trouble?: DraftTrouble;
   /** 保存先に下書きが在るか（破棄ボタンを押せるか） */
   readonly hasDraft: boolean;
   /** 自動保存が生きているか。止まっている間は保存先に触らない */
@@ -118,11 +131,19 @@ export interface DraftState {
   readonly error?: unknown;
 }
 
-const READ_TROUBLE =
-  '下書きを読めませんでした（壊れているか、歌詞シートが書き換えられています）。' +
-  '元の下書きを残すため自動保存は止めています。破棄すると最初から録り直せます。';
+/** 一度だけ出す知らせ。再開したときは「何行戻ったか」も要る */
+export type DraftNotice = { readonly kind: 'resumed'; readonly recorded: number } | {
+  readonly kind: 'discarded';
+};
 
-const SAVE_TROUBLE = '下書きを保存できません（詳細はコンソール）。この画面を閉じると収録は失われます。';
+/**
+ * 下書きが守られていない理由。
+ *
+ * - unreadable: 保存されていたものを読めなかった（壊れている・別のシート・古い形式）
+ * - save-failed: 保存できない（容量、保存先が無い）
+ * - clear-failed: 破棄できなかった
+ */
+export type DraftTrouble = 'unreadable' | 'save-failed' | 'clear-failed';
 
 /**
  * 下書きがあれば読んで収録を始める。**自動で再開する。**
@@ -131,13 +152,7 @@ const SAVE_TROUBLE = '下書きを保存できません（詳細はコンソー�
  * 下書きを上書きするという、塞ごうとしている事故が形を変えて残る。
  */
 export function openDraft(sheet: LyricSheet, store: DraftStore): DraftState {
-  const empty: DraftState = {
-    session: startSession(sheet),
-    notice: '',
-    trouble: '',
-    hasDraft: false,
-    saving: true,
-  };
+  const empty: DraftState = { session: startSession(sheet), hasDraft: false, saving: true };
 
   try {
     const raw = store.load();
@@ -148,14 +163,14 @@ export function openDraft(sheet: LyricSheet, store: DraftStore): DraftState {
       ...empty,
       session,
       hasDraft: true,
-      notice: `下書きから再開しました（${recordedCount(session)} 行）。`,
+      notice: { kind: 'resumed', recorded: recordedCount(session) },
     };
   } catch (error) {
     // 読めない下書きは**こちらからは消さない**（手で直せば救えるかもしれない
     // 唯一の控えを勝手に捨てない）。ただし消さないだけでは足りず、
     // **自動保存も止めないと最初の 1 打鍵が上から書いて同じことになる。**
     // 捨てるかどうかは破棄（＝人の意思）に委ねる
-    return { ...empty, hasDraft: true, saving: false, trouble: READ_TROUBLE, error };
+    return { ...empty, hasDraft: true, saving: false, trouble: 'unreadable', error };
   }
 }
 
@@ -170,10 +185,13 @@ export function keepDraft(store: DraftStore, state: DraftState, session: TapSess
 
   try {
     store.save(session);
-    return { ...next, hasDraft: true };
+    // **trouble は「今この瞬間守られていないか」。**保存が通ったなら消す。
+    // 残すと、破棄に失敗した後などに、実際は保存できているのに
+    // 警告だけが案内欄へ貼り付いたまま抜け出せなくなる
+    return { ...next, hasDraft: true, trouble: undefined };
   } catch (error) {
     // 容量や設定が理由なら次も失敗する。毎打鍵で投げ続けさせない
-    return { ...next, saving: false, trouble: SAVE_TROUBLE, error };
+    return { ...next, saving: false, trouble: 'save-failed', error };
   }
 }
 
@@ -187,14 +205,13 @@ export function discardDraft(store: DraftStore, state: DraftState): DraftState {
   try {
     store.clear();
   } catch (error) {
-    return { ...state, trouble: '下書きを消せませんでした（詳細はコンソール）。', error };
+    return { ...state, trouble: 'clear-failed', error };
   }
 
   return {
     session: startSession(state.session.source),
-    notice: '下書きを破棄しました。最初から録れます。',
+    notice: { kind: 'discarded' },
     // 読めない下書きを守るために止めていた自動保存は、捨てた今こそ戻す
-    trouble: '',
     hasDraft: false,
     saving: true,
   };
@@ -202,6 +219,6 @@ export function discardDraft(store: DraftStore, state: DraftState): DraftState {
 
 /** 一度きりの知らせを出し終えた状態 */
 export function noticeShown(state: DraftState): DraftState {
-  if (state.notice === '') return state;
-  return { ...state, notice: '' };
+  if (state.notice === undefined) return state;
+  return { ...state, notice: undefined };
 }

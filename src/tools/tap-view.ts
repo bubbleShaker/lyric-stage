@@ -15,6 +15,7 @@ import {
   type OrderProblem,
   type TapSession,
 } from '../domain/tap-session';
+import type { DraftNotice, DraftTrouble } from './tap-draft';
 
 export interface TapRow {
   index: number;
@@ -44,6 +45,36 @@ export interface TapView {
   canExport: boolean;
   /** 次に何を叩けばよいかの案内 */
   hint: string;
+}
+
+/**
+ * 下書きまわりの言い回し。**状態機械（tap-draft）は理由だけを持ち、
+ * 文面はここで決める。**domain の OrderConflictError が problems を持ち、
+ * 「何行目の何が」を表示側に委ねているのと同じ分け方。
+ */
+export function draftNoticeText(notice: DraftNotice | undefined): string {
+  if (!notice) return '';
+  if (notice.kind === 'resumed') return `下書きから再開しました（${notice.recorded} 行）。`;
+  return '下書きを破棄しました。最初から録れます。';
+}
+
+export function draftTroubleText(trouble: DraftTrouble | undefined): string {
+  switch (trouble) {
+    case 'unreadable':
+      // 版が上がっただけの場合も含めて「読めなかった」に寄せる。
+      // 破棄すると今録った分も消えるので、そこも書いておく
+      return (
+        '下書きを読めませんでした（壊れているか、歌詞シートが書き換えられたか、古い形式です）。' +
+        '元の下書きを残すため自動保存は止めています。' +
+        '破棄すると今録った分も消えますが、自動保存は戻ります。'
+      );
+    case 'save-failed':
+      return '下書きを保存できません（詳細はコンソール）。この画面を閉じると収録は失われます。';
+    case 'clear-failed':
+      return '下書きを消せませんでした（詳細はコンソール）。';
+    default:
+      return '';
+  }
 }
 
 /** 12.3 → "12.30"。表示の桁を揃えると、行が並んだときに読み取りやすい */

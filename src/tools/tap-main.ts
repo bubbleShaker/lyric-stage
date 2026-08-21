@@ -13,7 +13,7 @@ import { requiredElement } from '../lib/dom';
 import { AudioPlayer } from '../stage/audio-player';
 import { mountTransport } from '../stage/transport';
 import { AUDIO_PATH, DEFAULT_SHEET_NAME } from '../work';
-import { draftStore, noDraftStore, type DraftStore } from './tap-draft';
+import { draftStore, unavailableDraftStore, type DraftStore } from './tap-draft';
 import { mountTapTool } from './tap-tool';
 // 様式を持ち込むのは組み立てる側（本編の main.ts が style.css を持つのと同じ）
 import './tap-tool.css';
@@ -43,8 +43,10 @@ function availableDraftStore(): DraftStore {
   try {
     return draftStore(window.localStorage, sheetName);
   } catch (error) {
-    console.warn('下書きを保存できません（この画面を閉じると収録は失われます）', error);
-    return noDraftStore;
+    console.warn('下書きの保存先がありません', error);
+    // 何も覚えない置き場所を返す。**握り潰さない実装**なので、
+    // 保存できないことは最初の打鍵で画面にも出る
+    return unavailableDraftStore;
   }
 }
 
