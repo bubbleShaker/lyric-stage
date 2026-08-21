@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>収録（開発用）</title>
+  </head>
+  <body>
+    <!--
+      歌詞のタイミングを実音から録るための開発用ページ。`npm run dev` で
+      /lyric-stage/tap.html を開く（vite.config.ts の base が /lyric-stage/ なので
+      dev サーバーでもこの前置きが要る）。?lyrics=sample で別のシートも録れる。
+
+      Vite のビルド入口は index.html だけなので、このページは dist に入らない
+      （＝公開サイトには出ない）。effect-preview.html と同じ扱い。
+
+      中身は src/tools/ に置いてある。effect-preview.html のようにページへ
+      直書きすると tsconfig の include（src）から外れて型検査もテストも効かない。
+    -->
+    <main class="tap">
+      <h1 class="tap__title">収録 — <span id="tap-progress">0 / 0 行</span></h1>
+      <p class="tap__keys">
+        <kbd>Space</kbd> 行の開始 ／ <kbd>Enter</kbd> 行の終了（間を空けるとき）／
+        <kbd>Backspace</kbd> 取り消し ／ 行をクリックでそこから録り直し
+      </p>
+
+      <p class="tap__hint" id="tap-hint">読み込み中…</p>
+
+      <ol class="tap__list" id="tap-list"></ol>
+
+      <button class="tap__export" id="tap-export" type="button" disabled>
+        JSON を書き出す（クリップボードにも入れる）
+      </button>
+      <textarea
+        class="tap__output"
+        id="tap-output"
+        readonly
+        aria-label="書き出した JSON"
+        placeholder="ここに書き出した JSON が出ます。public/lyrics/ の該当ファイルに貼ってください"
+      ></textarea>
+    </main>
+
+    <div class="tap-transport" id="transport" data-state="loading">
+      <button id="transport-toggle" type="button">再生</button>
+      <input
+        id="transport-seek"
+        type="range"
+        min="0"
+        max="0"
+        step="0.01"
+        value="0"
+        aria-label="再生位置"
+        disabled
+      />
+      <span id="transport-time">0:00 / 0:00</span>
+      <p id="transport-message" role="status"></p>
+    </div>
+
+    <script type="module" src="/src/tools/tap-main.ts"></script>
+  </body>
+</html>

@@ -1,0 +1,156 @@
+/* 収録ページ（開発用）の見た目。本編の style.css とは別に持つ。
+   作品の様式に合わせる必要はなく、値が読み取りやすいことだけを狙う */
+
+.tap {
+  --tap-accent: #7cc4ff;
+  --tap-problem: #ff8a80;
+  color-scheme: dark;
+  margin: 0 auto;
+  padding: 1rem 1rem 8rem;
+  max-width: 60rem;
+  color: #e8e8ea;
+  font-family: system-ui, sans-serif;
+}
+
+body {
+  margin: 0;
+  background: #101218;
+}
+
+.tap__title {
+  font-size: 1.1rem;
+}
+
+/* 再生コントロール。本編（style.css）は読み込まないので、ここで最低限だけ整える */
+.tap-transport {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  border-top: 1px solid #2c303a;
+  padding: 0.6rem 1rem;
+  background: #181b22;
+  color: #e8e8ea;
+  font-family: system-ui, sans-serif;
+  font-size: 0.9rem;
+}
+
+.tap-transport #transport-seek {
+  flex: 1;
+}
+
+.tap-transport #transport-message {
+  margin: 0;
+  color: #ffb4a8;
+  font-size: 0.8rem;
+}
+
+.tap__keys {
+  color: #a9adb8;
+  font-size: 0.85rem;
+}
+
+.tap__keys kbd {
+  border: 1px solid #4a4f5c;
+  border-radius: 0.25rem;
+  padding: 0 0.3rem;
+  background: #2a2e38;
+}
+
+.tap__hint {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  margin: 0.5rem 0;
+  border-left: 3px solid var(--tap-accent);
+  padding: 0.5rem 0.75rem;
+  background: #1c1f26;
+}
+
+.tap__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tap-row {
+  display: grid;
+  /* 番号・開始・長さ・歌詞・演出。数字の桁が揃うように幅を固定する */
+  grid-template-columns: 2.5rem 4.5rem 4rem 1fr 7rem;
+  gap: 0.5rem;
+  align-items: baseline;
+  border-left: 3px solid transparent;
+  padding: 0.15rem 0.4rem;
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+}
+
+.tap-row:hover {
+  background: #23262e;
+}
+
+.tap-row__no,
+.tap-row__effect {
+  color: #8b90a0;
+  font-size: 0.8rem;
+}
+
+.tap-row__time,
+.tap-row__duration {
+  font-family: ui-monospace, monospace;
+}
+
+/* まだ叩いていない行は元シートの推定値。録った値と見分けが付くようにする */
+.tap-row[data-recorded='false'] .tap-row__time,
+.tap-row[data-recorded='false'] .tap-row__duration {
+  color: #70747f;
+}
+
+.tap-row[data-current='true'] {
+  border-left-color: var(--tap-accent);
+  background: #1b2735;
+}
+
+.tap-row[data-open='true'] .tap-row__duration {
+  color: var(--tap-accent);
+}
+
+.tap-row[data-problem] {
+  border-left-color: var(--tap-problem);
+  background: #35201f;
+}
+
+.tap-row[data-partner='true'] {
+  background: #2b2220;
+}
+
+.tap__export {
+  margin: 1rem 0 0.5rem;
+  border: 1px solid #4a4f5c;
+  border-radius: 0.3rem;
+  padding: 0.4rem 1rem;
+  background: #2a2e38;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.tap__export:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.tap__output {
+  width: 100%;
+  height: 12rem;
+  border: 1px solid #3a3e48;
+  border-radius: 0.3rem;
+  padding: 0.5rem;
+  background: #14161b;
+  color: #d7dbe4;
+  font-family: ui-monospace, monospace;
+  font-size: 0.8rem;
+}

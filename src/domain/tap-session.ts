@@ -231,14 +231,18 @@ export function moveCursorTo(session: TapSession, index: number): TapSession {
 }
 
 /**
- * 収録結果を行の並びにする。
+ * 収録結果を行の並びにする。**書き出したらこうなる、という下見。**
  *
  * まだ叩いていない行は元の値のまま残るので、途中まで録って書き出せる。
  * **叩いた行の duration は終了の打鍵からしか作らない。** 元の duration を
  * 残すと、開始を録り直した行で「新しい開始 + 古い長さ」という、
  * どちらの収録にも属さない値ができてしまう。
+ *
+ * 衝突が残っていても返す（`toSheet` と違って投げない）。収録中の画面は
+ * 「今どうなっているか」を出し続ける必要があり、衝突しているときこそ
+ * その値を見せないと、どこを録り直せばよいか分からないため。
  */
-function buildLines(session: TapSession): LyricLine[] {
+export function previewLines(session: TapSession): LyricLine[] {
   return session.source.lines.map((line, index) => {
     const take = session.takes[index];
     // 未収録の行も複製する。返した行を書き換えられても元シートに波及しないため
@@ -271,7 +275,7 @@ function buildLines(session: TapSession): LyricLine[] {
  * **どの行から録り直せばよいかを画面に出せる形で返す。**
  */
 export function orderProblems(session: TapSession): OrderProblem[] {
-  return problemsOf(buildLines(session));
+  return problemsOf(previewLines(session));
 }
 
 function problemsOf(lines: readonly LyricLine[]): OrderProblem[] {
@@ -309,7 +313,7 @@ function problemsOf(lines: readonly LyricLine[]): OrderProblem[] {
  * 指された行まで叩き進めれば必ず解消する。収録の成果が失われるわけではない。
  */
 export function toSheet(session: TapSession): LyricSheet {
-  const lines = buildLines(session);
+  const lines = previewLines(session);
   const problems = problemsOf(lines);
   if (problems.length > 0) throw new OrderConflictError(problems);
 

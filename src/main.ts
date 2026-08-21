@@ -4,6 +4,7 @@ import { loadLyricSheet, lyricSheetNameFromLocation } from './app/load-lyric-she
 import { mountLyricTimeline } from './app/lyric-timeline';
 import { Ticker } from './app/ticker';
 import { assetUrl } from './lib/asset';
+import { requiredElement as required } from './lib/dom';
 import { systemReducedMotion } from './lib/reduced-motion';
 import { AudioPlayer } from './stage/audio-player';
 import { LyricStage } from './stage/lyric-stage';
@@ -17,13 +18,6 @@ import './style.css';
 // GSAP のプラグインは使う前に gsap 本体へ登録する。登録することで gsap 側が
 // プラグインの存在を知り、tween からその機能を呼べるようになる。
 gsap.registerPlugin(SplitText);
-
-/** id で要素を取る。無ければ即座に落として原因を分かりやすくする */
-function required<T extends HTMLElement>(id: string): T {
-  const el = document.getElementById(id);
-  if (!el) throw new Error(`#${id} が見つかりません`);
-  return el as T;
-}
 
 // ここは composition root。各層を組み立てて起動するだけで、
 // 演出の中身も歌詞の判定ロジックも持たない。
