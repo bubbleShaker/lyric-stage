@@ -108,7 +108,6 @@ describe('formatSeconds', () => {
   });
 });
 
-
 describe('draftNoticeText', () => {
   it('再開したときは何行戻ったかを言う', () => {
     expect(draftNoticeText({ kind: 'resumed', recorded: 12 })).toContain('12 行');

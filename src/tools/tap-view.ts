@@ -15,7 +15,7 @@ import {
   type OrderProblem,
   type TapSession,
 } from '../domain/tap-session';
-import type { DraftNotice, DraftTrouble } from './tap-draft';
+import type { DraftNotice, DraftState, DraftTrouble } from './tap-draft';
 
 export interface TapRow {
   index: number;
@@ -74,10 +74,7 @@ export function draftNoticeText(notice: DraftNotice | undefined): string {
  * 一緒くたに 1 つの文面へ畳むと、破棄に失敗した瞬間に
  * 「保存が止まっている」という重い方の知らせが消える。
  */
-export function draftTroubleText(state: {
-  trouble?: DraftTrouble;
-  saving: boolean;
-}): string {
+export function draftTroubleText(state: Pick<DraftState, 'trouble' | 'saving'>): string {
   const stopped = state.saving
     ? ''
     : '自動保存は止まっています。この画面を閉じると収録は失われます。';
@@ -107,7 +104,7 @@ function troubleReason(trouble: DraftTrouble | undefined): string {
 
 /** 型で網羅を締める。増やした種類の文面を書き忘れたらコンパイルが止まる */
 function exhausted(value: never): string {
-  return String(value);
+  return JSON.stringify(value);
 }
 
 /** 12.3 → "12.30"。表示の桁を揃えると、行が並んだときに読み取りやすい */

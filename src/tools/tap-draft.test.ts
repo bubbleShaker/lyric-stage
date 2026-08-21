@@ -295,6 +295,27 @@ describe('discardDraft', () => {
     expect(discarded.trouble).toBeUndefined();
   });
 
+  it('読めない下書きを消しそこねても、自動保存は止まったまま', () => {
+    // **3 度出た穴の本体。**「直近に何が起きたか」が「今も止まっているか」を
+    // 押し流すと、保存されていないのに知らせが消えて収録を進めてしまう
+    const storage = fakeStorage({ [draftKey('sample')]: '{壊れた' });
+    const store: DraftStore = {
+      ...draftStore(storage, 'sample'),
+      clear: () => {
+        throw new Error('消せません');
+      },
+    };
+    const unreadable = openDraft(sheet, store);
+    expect(unreadable.saving).toBe(false);
+
+    const failed = discardDraft(store, unreadable);
+
+    expect(failed.saving).toBe(false);
+    expect(failed.trouble).toBe('clear-failed');
+    // 読めない下書きも残っている（消せなかったのだから）
+    expect(storage.items.get(draftKey('sample'))).toBe('{壊れた');
+  });
+
   it('消せなかったら「破棄しました」と言わない（次に開くと戻ってくるため）', () => {
     const store: DraftStore = {
       load: () => undefined,
