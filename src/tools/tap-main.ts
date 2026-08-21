@@ -13,6 +13,7 @@ import { requiredElement } from '../lib/dom';
 import { AudioPlayer } from '../stage/audio-player';
 import { mountTransport } from '../stage/transport';
 import { AUDIO_PATH, DEFAULT_SHEET_NAME } from '../work';
+import { draftStore, unavailableDraftStore, type DraftStore } from './tap-draft';
 import { mountTapTool } from './tap-tool';
 // 様式を持ち込むのは組み立てる側（本編の main.ts が style.css を持つのと同じ）
 import './tap-tool.css';
@@ -32,17 +33,34 @@ ticker.subscribe(transport.render);
 ticker.start();
 
 const hint = requiredElement('tap-hint');
+const sheetName = lyricSheetNameFromLocation(location.search, DEFAULT_SHEET_NAME);
+
+/**
+ * localStorage は**触れた時点で投げうる**（ブラウザの設定で保存を止めている場合）。
+ * 下書きが残らないだけで収録そのものはできるので、道具ごと止めない。
+ */
+function availableDraftStore(): DraftStore {
+  try {
+    return draftStore(window.localStorage, sheetName);
+  } catch (error) {
+    console.warn('下書きの保存先がありません', error);
+    // 何も覚えない置き場所を返す。**握り潰さない実装**なので、
+    // 保存できないことは最初の打鍵で画面にも出る
+    return unavailableDraftStore;
+  }
+}
 
 // 読み込んだ JSON は loadLyricSheet の中で parseLyricSheet を通っている。
 // 収録はその検証済みのシートを土台にする（検証を二重には持たない）
-loadLyricSheet(lyricSheetNameFromLocation(location.search, DEFAULT_SHEET_NAME))
+loadLyricSheet(sheetName)
   .then((sheet) => {
     document.title = `収録: ${sheet.title}`;
-    mountTapTool(sheet, player, {
+    mountTapTool(sheet, player, availableDraftStore(), {
       list: requiredElement('tap-list'),
       hint,
       progress: requiredElement('tap-progress'),
       exportButton: requiredElement<HTMLButtonElement>('tap-export'),
+      discardButton: requiredElement<HTMLButtonElement>('tap-discard'),
       output: requiredElement<HTMLTextAreaElement>('tap-output'),
     });
   })

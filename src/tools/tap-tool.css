@@ -127,8 +127,15 @@ body {
   background: #2b2220;
 }
 
-.tap__export {
+.tap__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
   margin: 1rem 0 0.5rem;
+}
+
+.tap__export,
+.tap__discard {
   border: 1px solid #4a4f5c;
   border-radius: 0.3rem;
   padding: 0.4rem 1rem;
@@ -138,9 +145,23 @@ body {
   cursor: pointer;
 }
 
-.tap__export:disabled {
+.tap__export:disabled,
+.tap__discard:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+/* 下書きが守られていない間は、案内の欄そのものを警告の色にする（消えない知らせ） */
+.tap__hint[data-trouble='true'] {
+  border-left: 3px solid #d05a5a;
+  padding-left: 0.6rem;
+  color: #ffb4a8;
+}
+
+/* 身構えている間は見た目でも分かるようにする（次のクリックで収録が消えるため） */
+.tap__discard[data-armed='true'] {
+  border-color: #d05a5a;
+  background: #45242a;
 }
 
 .tap__output {

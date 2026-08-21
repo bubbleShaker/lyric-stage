@@ -28,9 +28,18 @@
 
       <ol class="tap__list" id="tap-list"></ol>
 
-      <button class="tap__export" id="tap-export" type="button" disabled>
-        JSON を書き出す（クリップボードにも入れる）
-      </button>
+      <!--
+        収録の途中は自動で下書きに残り、開き直すとそこから再開する。
+        破棄は 2 段階（1 回目で身構え、2 回目で実行）。
+      -->
+      <div class="tap__actions">
+        <button class="tap__export" id="tap-export" type="button" disabled>
+          JSON を書き出す（クリップボードにも入れる）
+        </button>
+        <button class="tap__discard" id="tap-discard" type="button" data-armed="false" disabled>
+          下書きを破棄
+        </button>
+      </div>
       <textarea
         class="tap__output"
         id="tap-output"

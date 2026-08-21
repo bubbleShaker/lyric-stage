@@ -111,6 +111,152 @@ export function startSession(source: LyricSheet): TapSession {
   };
 }
 
+/** 今のセッションで時刻を持っている行の数 */
+export function recordedCount(session: TapSession): number {
+  return session.takes.filter((take) => take !== undefined).length;
+}
+
+/** 保存した下書きが読めなかったときの例外 */
+export class TapDraftError extends Error {
+  constructor(message: string) {
+    super(`下書きが不正です: ${message}`);
+    this.name = 'TapDraftError';
+  }
+}
+
+/**
+ * 下書きの形の版。**形か指紋の作り方を変えたら上げる。**
+ * 据え置くと、古い下書きが「歌詞が書き換えられた」と誤って説明される
+ * （2: `sheetFingerprint` の区切りを NUL にし、行数を混ぜた）
+ */
+const DRAFT_VERSION = 2;
+
+/**
+ * 収録途中の下書き。**保存されるのはこの形。**
+ *
+ * 持たせるのは `takes` と、それがどのシートのものかという印だけ。
+ * `cursor` / `pending` / `runStart` は `resumeSession` が導出する。
+ */
+export interface TapDraft {
+  readonly version: number;
+  /** どのシートを録っていたか（下記 sheetFingerprint） */
+  readonly sheet: string;
+  readonly takes: readonly (Take | undefined)[];
+}
+
+/**
+ * シートの指紋。歌詞が書き換われば合わなくなる値。
+ *
+ * 行数だけでは足りない。**1 行足して 1 行消したシート**には古い時刻が
+ * そのまま載ってしまい、行数が合っているぶん気づけない。
+ * 狙うのは取り違えの検出だけなので、短いハッシュ（FNV-1a）で足りる。
+ */
+export function sheetFingerprint(sheet: LyricSheet): string {
+  // 区切りは歌詞に現れない文字にし、行数も混ぜる。改行を含む歌詞があると
+  // 「どこが行の境目か」が曖昧になり、別のシートが同じ指紋になりうる
+  const text = [sheet.lines.length, sheet.title, ...sheet.lines.map((line) => line.text)].join(
+    '\u0000',
+  );
+
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+
+  return (hash >>> 0).toString(16);
+}
+
+/** 今の収録を下書きの形にする */
+export function draftOf(session: TapSession): TapDraft {
+  return {
+    version: DRAFT_VERSION,
+    sheet: sheetFingerprint(session.source),
+    takes: session.takes,
+  };
+}
+
+/**
+ * 保存した下書きから収録を再開する。
+ *
+ * **セッションを外から手組みさせないための入口。** TapSession は
+ * `runStart <= pending < cursor` と `[runStart, cursor)` に穴が無いことを
+ * 守っており、画面側でオブジェクトリテラルを書くとその不変条件が
+ * 規約でしか保たれなくなる（`pending: cursor - 1` の取り違えが再発する）。
+ * だから**下書きに持たせるのは takes だけ**で、残りはここで導出する。
+ *
+ * - `cursor` は最後に録った行の次
+ * - `pending` は無し。再開直後は終了も取り消しも働かない（まず開始を叩く）
+ * - `runStart` は `cursor`。**取り消しは復元した分へは遡らない。**
+ *   `moveCursorTo` で飛んだときと同じ扱いで、前の収録の成果を
+ *   Backspace の連打で消せないようにするため
+ *
+ * `raw` を `unknown` で受けるのは、下書きの置き場所（localStorage）が
+ * **手で書き換えられる外部入力**だから。`parseLyricSheet` と同じ立場。
+ */
+export function resumeSession(source: LyricSheet, raw: unknown): TapSession {
+  const takes = parseDraft(raw, source);
+
+  let cursor = 0;
+  for (let index = takes.length - 1; index >= 0; index -= 1) {
+    if (takes[index] !== undefined) {
+      cursor = index + 1;
+      break;
+    }
+  }
+
+  // runStart === cursor なので [runStart, cursor) は空区間。
+  // 復元した takes に穴があっても不変条件は保たれる
+  return { source, takes, cursor, pending: NO_PENDING, runStart: cursor };
+}
+
+/**
+ * 下書きの形を確かめる。
+ *
+ * 確かめるのは**形と、どのシートのものか**だけで、時刻の逆行や食い込みは
+ * 弾かない。弾くと収録の成果がまるごと失われるが、通せば `orderProblems` が
+ * 衝突として拾い、画面から録り直せる（下書きを守ることの方が大事）。
+ */
+function parseDraft(raw: unknown, source: LyricSheet): (Take | undefined)[] {
+  if (typeof raw !== 'object' || raw === null) throw new TapDraftError('オブジェクトではありません');
+
+  const { version, sheet, takes } = raw as Record<string, unknown>;
+
+  if (version !== DRAFT_VERSION) throw new TapDraftError(`版が違います（${String(version)}）`);
+  if (sheet !== sheetFingerprint(source)) {
+    // 同じ名前のシートでも、歌詞が書き換わっていれば別物として扱う
+    throw new TapDraftError('別のシート、または歌詞が書き換えられたシートのものです');
+  }
+  if (!Array.isArray(takes)) throw new TapDraftError('takes が配列ではありません');
+  if (takes.length !== source.lines.length) {
+    throw new TapDraftError(
+      `行数が合いません（下書き ${takes.length} / シート ${source.lines.length}）`,
+    );
+  }
+
+  return takes.map((value, index) => parseTake(value, index));
+}
+
+function parseTake(value: unknown, index: number): Take | undefined {
+  // JSON では未収録の行が null になる（undefined は配列の穴として書き出される）
+  if (value === null || value === undefined) return undefined;
+  if (typeof value !== 'object') throw new TapDraftError(`[${index}] がオブジェクトではありません`);
+
+  const { time, end } = value as Record<string, unknown>;
+
+  if (typeof time !== 'number' || !isValidTime(time)) {
+    throw new TapDraftError(`[${index}].time が 0 以上の数値ではありません`);
+  }
+  if (end === undefined || end === null) return { time };
+
+  if (typeof end !== 'number' || !isValidTime(end) || end <= time) {
+    throw new TapDraftError(`[${index}].end が開始より後の数値ではありません`);
+  }
+
+  // 読んだ値をそのまま持たない。余計なプロパティを内側へ持ち込まないため
+  return { time, end };
+}
+
 /** takes の 1 要素だけを差し替えた新しいセッションを作る */
 function withTake(
   session: TapSession,

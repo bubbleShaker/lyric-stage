@@ -7,7 +7,8 @@ import {
   tapIn,
   tapOut,
 } from '../domain/tap-session';
-import { buildView, exportText, formatSeconds } from './tap-view';
+import type { DraftTrouble } from './tap-draft';
+import { buildView, draftNoticeText, draftTroubleText, exportText, formatSeconds } from './tap-view';
 
 const sheet: LyricSheet = {
   title: 'テスト',
@@ -104,5 +105,49 @@ describe('formatSeconds', () => {
   it('桁を揃える', () => {
     expect(formatSeconds(12.3)).toBe('12.30');
     expect(formatSeconds(0)).toBe('0.00');
+  });
+});
+
+describe('draftNoticeText', () => {
+  it('再開したときは何行戻ったかを言う', () => {
+    expect(draftNoticeText({ kind: 'resumed', recorded: 12 })).toContain('12 行');
+  });
+
+  it('破棄したときは最初から録れることを言う', () => {
+    expect(draftNoticeText({ kind: 'discarded' })).toContain('破棄');
+  });
+
+  it('知らせが無ければ何も出さない', () => {
+    expect(draftNoticeText(undefined)).toBe('');
+  });
+});
+
+describe('draftTroubleText', () => {
+  const troubles: DraftTrouble[] = ['unreadable', 'save-failed', 'clear-failed'];
+
+  it.each(troubles)('%s には必ず文面がある（黙って消えない）', (trouble) => {
+    expect(draftTroubleText({ trouble, saving: false })).not.toBe('');
+  });
+
+  it('何も起きていなければ何も出さない', () => {
+    expect(draftTroubleText({ saving: true })).toBe('');
+  });
+
+  it('自動保存が止まっていることは、直近の不具合が何であれ必ず言う', () => {
+    // 破棄の失敗が「保存が止まっている」を押し流さないこと。
+    // 読めない下書きを捨てそこねた場面がまさにこれ
+    for (const trouble of troubles) {
+      expect(draftTroubleText({ trouble, saving: false })).toContain('自動保存は止まっています');
+    }
+  });
+
+  it('保存が生きているなら、止まっているとは言わない', () => {
+    expect(draftTroubleText({ trouble: 'clear-failed', saving: true })).not.toContain(
+      '自動保存は止まっています',
+    );
+  });
+
+  it('読めない下書きでは、破棄すると今録った分も消えることを言う', () => {
+    expect(draftTroubleText({ trouble: 'unreadable', saving: false })).toContain('今録った分も消えます');
   });
 });

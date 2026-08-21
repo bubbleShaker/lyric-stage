@@ -10,10 +10,12 @@ import {
   NO_PENDING,
   orderProblems,
   previewLines,
+  recordedCount,
   toSheet,
   type OrderProblem,
   type TapSession,
 } from '../domain/tap-session';
+import type { DraftNotice, DraftState, DraftTrouble } from './tap-draft';
 
 export interface TapRow {
   index: number;
@@ -43,6 +45,66 @@ export interface TapView {
   canExport: boolean;
   /** 次に何を叩けばよいかの案内 */
   hint: string;
+}
+
+/**
+ * 下書きまわりの言い回し。**状態機械（tap-draft）は理由だけを持ち、
+ * 文面はここで決める。**domain の OrderConflictError が problems を持ち、
+ * 「何行目の何が」を表示側に委ねているのと同じ分け方。
+ */
+export function draftNoticeText(notice: DraftNotice | undefined): string {
+  if (!notice) return '';
+
+  switch (notice.kind) {
+    case 'resumed':
+      return `下書きから再開しました（${notice.recorded} 行）。`;
+    case 'discarded':
+      return '下書きを破棄しました。最初から録れます。';
+    default:
+      // 知らせの種類を増やしたときに、ここで型が止める。
+      // 素通しにすると新しい知らせが**別の文面で嘘をつく**
+      return exhausted(notice);
+  }
+}
+
+/**
+ * 下書きが守られていないことの知らせ。
+ *
+ * **「直近に何が起きたか」と「今も自動保存が止まっているか」は別の事実。**
+ * 一緒くたに 1 つの文面へ畳むと、破棄に失敗した瞬間に
+ * 「保存が止まっている」という重い方の知らせが消える。
+ */
+export function draftTroubleText(state: Pick<DraftState, 'trouble' | 'saving'>): string {
+  const stopped = state.saving
+    ? ''
+    : '自動保存は止まっています。この画面を閉じると収録は失われます。';
+
+  return `${troubleReason(state.trouble)}${stopped}`;
+}
+
+function troubleReason(trouble: DraftTrouble | undefined): string {
+  if (trouble === undefined) return '';
+
+  switch (trouble) {
+    case 'unreadable':
+      // 版が上がっただけの場合も含めて「読めなかった」に寄せる。
+      // 破棄すると今録った分も消えるので、そこも書いておく
+      return (
+        '保存されていた下書きを読めませんでした（壊れているか、歌詞シートが書き換えられたか、古い形式です）。' +
+        '破棄すると今録った分も消えますが、自動保存は戻ります。'
+      );
+    case 'save-failed':
+      return '下書きを保存できません（詳細はコンソール）。';
+    case 'clear-failed':
+      return '下書きを破棄できませんでした（詳細はコンソール）。';
+    default:
+      return exhausted(trouble);
+  }
+}
+
+/** 型で網羅を締める。増やした種類の文面を書き忘れたらコンパイルが止まる */
+function exhausted(value: never): string {
+  return JSON.stringify(value);
 }
 
 /** 12.3 → "12.30"。表示の桁を揃えると、行が並んだときに読み取りやすい */
@@ -83,7 +145,7 @@ export function buildView(session: TapSession): TapView {
 
   return {
     rows,
-    recorded: session.takes.filter((take) => take !== undefined).length,
+    recorded: recordedCount(session),
     total: lines.length,
     problems,
     // 衝突が残っている間は書き出させない。toSheet の例外は最後の砦で、
