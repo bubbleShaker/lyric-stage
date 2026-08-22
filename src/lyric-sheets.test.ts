@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { parseLyricSheet, type LyricLine } from './domain/lyrics';
+import { parseLyricSheet, sliceSheet, type LyricLine } from './domain/lyrics';
 import { effects, isEffectName, resolveEffect } from './stage/effects';
-import { DEFAULT_SHEET_NAME } from './work';
+import { DEFAULT_SHEET_NAME, WORK_WINDOW } from './work';
 // Vite の ?raw は対象ファイルを文字列として読み込む。fs を使わずに済むので
 // Node の型定義をアプリ側の tsconfig に持ち込まなくてよい。
 import sampleJson from '../public/lyrics/sample.json?raw';
@@ -182,6 +182,43 @@ describe(`${DEFAULT_SHEET_NAME}.json`, () => {
       );
       timeline.kill();
     }
+  });
+});
+
+/**
+ * 作品として見せる区間（WORK_WINDOW）と本編シートの噛み合わせ。
+ *
+ * M6-3 で 51 行の time を実測に差し替えると歌が動くので、区間だけ据え置くと
+ * **全テスト緑のまま作品が空になる**。ここで噛み合わせそのものを見張る。
+ */
+describe('WORK_WINDOW × 本編シート', () => {
+  const sheet = parseLyricSheet(JSON.parse(SHEET_SOURCES[DEFAULT_SHEET_NAME]));
+  const sliced = sliceSheet(sheet, WORK_WINDOW);
+
+  it('区間が音源の中に収まっている', () => {
+    expect(WORK_WINDOW.start).toBeGreaterThanOrEqual(0);
+    expect(WORK_WINDOW.end).toBeLessThan(AUDIO_DURATION_SECONDS);
+  });
+
+  it('切り出すとラスサビの 7 行が残る', () => {
+    expect(sliced.lines).toHaveLength(7);
+  });
+
+  it('区間の頭に助走がある（いきなり歌から始まらない）', () => {
+    // 1 小節ぶん（79.85 BPM で 3.0055 秒）を目安に、無音から入る
+    expect(sliced.lines[0].time).toBeGreaterThan(1);
+  });
+
+  it('最後の行が区間の終わりまでに収まる', () => {
+    const last = sliced.lines[sliced.lines.length - 1];
+    const length = WORK_WINDOW.end - WORK_WINDOW.start;
+    expect(last.time + (last.duration ?? 0)).toBeLessThanOrEqual(length);
+  });
+
+  it('切り出しても全行に effect が残っている', () => {
+    expect(
+      sliced.lines.every((line) => line.effect !== undefined && isEffectName(line.effect)),
+    ).toBe(true);
   });
 });
 

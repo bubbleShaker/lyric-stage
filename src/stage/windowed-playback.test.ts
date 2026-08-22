@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Playback, PlaybackStatus } from '../domain/ports';
+import { WHOLE_SONG } from '../domain/work-window';
 import { WindowedPlayback } from './windowed-playback';
 
 /** 曲の全長を持つ本物の代わり。秒数と状態を手で動かせる */
@@ -54,6 +55,22 @@ function setup() {
 }
 
 describe('WindowedPlayback', () => {
+  it('区間が不正なら組み立てを拒む（定数の取り違えに気付けるように）', () => {
+    const source = new FakeSource();
+    expect(() => new WindowedPlayback(source, { start: 120, end: 100 })).toThrow();
+    expect(() => new WindowedPlayback(source, { start: 100, end: 100 })).toThrow();
+    expect(() => new WindowedPlayback(source, { start: -1, end: 100 })).toThrow();
+  });
+
+  it('既に読み込みが済んでいる Playback を包んでも区間の頭へ送る', () => {
+    // 購読のコールバックの中だけで頭出しすると、この場合に一度も呼ばれない
+    const source = new FakeSource();
+    source.duration = 240;
+    source.currentStatus = 'ready';
+    new WindowedPlayback(source, WINDOW);
+    expect(source.currentTime).toBe(100);
+  });
+
   it('音源の読み込みが済んだら区間の頭へ送る', () => {
     const { source } = setup();
     expect(source.currentTime).toBe(0);
@@ -165,6 +182,27 @@ describe('WindowedPlayback', () => {
     expect(source.currentTime).toBe(110);
   });
 
+  it('区間の手前へ落ちたら連れ戻す', () => {
+    // 音源が区間より短いと終端の見張りが働かないまま曲が自然に終わり、
+    // 次の再生は要素の仕様で 0 秒から始まる。曲の頭から全部流れてしまう経路
+    const { source, player } = setup();
+    source.ready(240);
+    source.paused = false;
+    source.seek(0);
+    player.keepInWindow();
+    expect(source.currentTime).toBe(100);
+    expect(source.paused).toBe(false);
+  });
+
+  it('元の Playback のイベントでも見張りが働く（毎フレームの駆動を落とした時の保険）', () => {
+    const { source } = setup();
+    source.ready(240);
+    source.paused = false;
+    source.seek(130);
+    source.emit();
+    expect(source.paused).toBe(true);
+  });
+
   it('止める・状態・購読はそのまま元へ渡す', () => {
     const { source, player } = setup();
     player.pause();
@@ -182,5 +220,38 @@ describe('WindowedPlayback', () => {
     unsubscribe();
     source.emit();
     expect(called).toBe(1);
+  });
+});
+
+describe('WindowedPlayback（曲を丸ごと扱う WHOLE_SONG）', () => {
+  // 区間を切らない場合の特別扱いを消すための値。素の Playback と同じでなければ意味が無い
+  function whole() {
+    const source = new FakeSource();
+    return { source, player: new WindowedPlayback(source, WHOLE_SONG) };
+  }
+
+  it('長さも再生位置も素通し', () => {
+    const { source, player } = whole();
+    source.ready(240);
+    source.seek(90);
+    expect(player.duration).toBe(240);
+    expect(player.currentTime).toBe(90);
+  });
+
+  it('シークを丸めない', () => {
+    const { source, player } = whole();
+    source.ready(240);
+    player.seek(200);
+    expect(source.currentTime).toBe(200);
+  });
+
+  it('見張りは何もしない', () => {
+    const { source, player } = whole();
+    source.ready(240);
+    source.paused = false;
+    source.seek(239);
+    player.keepInWindow();
+    expect(source.paused).toBe(false);
+    expect(source.pauses).toBe(0);
   });
 });

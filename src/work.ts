@@ -6,7 +6,7 @@
  * 複数曲に対応するときは、ここを差し替えるか JSON へ移す。
  */
 
-import type { WorkWindow } from './domain/lyrics';
+import type { WorkWindow } from './domain/work-window';
 
 /** 作品本編の歌詞シート名。?lyrics= の指定が無いときはこれを読む */
 export const DEFAULT_SHEET_NAME = 'shining-star';
@@ -28,6 +28,9 @@ export const AUDIO_PATH = 'audio/maou_14_shining_star.mp3';
  * **音源は曲の全長のまま置く。** 魔王魂の利用ルールで加工版は置けないので、
  * 切り出しはこの値と WindowedPlayback / sliceSheet が受け持つ。
  * 歌詞シートも 51 行のまま残してある（区間を広げ直せるようにするため）。
+ *
+ * **この区間は本編シートに固有。** `?lyrics=` で別のシートを見るときは
+ * WHOLE_SONG（曲を丸ごと）に切り替わる。main.ts の workWindowFor を参照。
  */
 export const WORK_WINDOW: WorkWindow = { start: 176.77, end: 203.82 };
 

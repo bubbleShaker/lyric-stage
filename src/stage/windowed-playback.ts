@@ -1,5 +1,5 @@
-import type { WorkWindow } from '../domain/lyrics';
 import type { Playback, PlaybackStatus } from '../domain/ports';
+import type { WorkWindow } from '../domain/work-window';
 
 /**
  * 曲の一部だけを 1 つの作品として見せる Playback。
@@ -10,26 +10,44 @@ import type { Playback, PlaybackStatus } from '../domain/ports';
  * 「0 秒から始まる 27 秒の作品」だけを見ていればよくなる。
  *
  * 歌詞シートの側の付け替えは domain の sliceSheet が行う。区間を知っているのは
- * その 2 か所だけ。
+ * その 2 か所だけ。区間を切らない場合は WHOLE_SONG を渡せば素通しになる。
  */
 export class WindowedPlayback implements Playback {
   private readonly source: Playback;
   private readonly window: WorkWindow;
-  /** 区間の頭へ送るのは metadata が来てから 1 回だけ。以降は人の操作に任せる */
+  /** 区間の頭へ送るのは一度だけ。以降は人の操作に任せる */
   private positioned = false;
 
-  constructor(source: Playback, window: WorkWindow) {
-    this.source = source;
-    this.window = window;
+  constructor(source: Playback, workWindow: WorkWindow) {
+    // 書き間違えると「シークバーが無効のまま」という原因の分かりにくい壊れ方をする。
+    // 定数の取り違えなので、起動した瞬間に気付ける方がよい
+    if (!(workWindow.start >= 0) || !(workWindow.start < workWindow.end)) {
+      throw new Error(
+        `作品の区間が不正です: start=${String(workWindow.start)} end=${String(workWindow.end)}`,
+      );
+    }
 
-    // 読み込みが済むまで currentTime への代入は効かないので、
-    // 用意ができたのを見てから開始位置へ送る
+    this.source = source;
+    this.window = workWindow;
+
     this.source.subscribe(() => {
-      if (this.positioned) return;
-      if (this.source.currentStatus !== 'ready') return;
-      this.positioned = true;
-      this.source.seek(this.window.start);
+      this.positionAtStart();
+      // 終端の見張りは毎フレームの keepInWindow() が本命だが、配線を落とした時に
+      // 曲の残り全部が流れ出すのは重い。イベント経由でも保険を掛けておく
+      this.keepInWindow();
     });
+    // 既に読み込みが済んでいる Playback を包むこともある。購読の中だけで頭出しすると、
+    // その場合に一度も呼ばれず、作品が曲の 0 秒から始まる
+    this.positionAtStart();
+  }
+
+  /** 読み込みが済んだら一度だけ区間の頭へ送る */
+  private positionAtStart(): void {
+    if (this.positioned) return;
+    // 読み込みが済むまで currentTime への代入は効かないので、用意ができるのを待つ
+    if (this.source.currentStatus !== 'ready') return;
+    this.positioned = true;
+    this.source.seek(this.window.start);
   }
 
   /** 作品の長さ。音源の長さが分かるまでは 0 を返す */
@@ -73,6 +91,14 @@ export class WindowedPlayback implements Playback {
    */
   keepInWindow(): void {
     if (this.source.paused) return;
+
+    // 音源が区間より短いと終端の見張りが一度も働かず、曲が自然に終わる。
+    // その後の再生は要素の仕様で 0 秒から始まるので、頭へ落ちた時は連れ戻す
+    if (this.source.currentTime < this.window.start) {
+      this.source.seek(this.window.start);
+      return;
+    }
+
     if (this.source.currentTime < this.window.end) return;
     this.source.pause();
     // 行き過ぎた分を戻して、終端でぴったり止まっているように見せる

@@ -2,6 +2,7 @@ import gsap from 'gsap';
 import { SplitText } from 'gsap/SplitText';
 import { loadLyricSheet, lyricSheetNameFromLocation } from './app/load-lyric-sheet';
 import { sliceSheet } from './domain/lyrics';
+import { WHOLE_SONG } from './domain/work-window';
 import { mountLyricTimeline } from './app/lyric-timeline';
 import { Ticker } from './app/ticker';
 import { assetUrl } from './lib/asset';
@@ -30,9 +31,15 @@ const ticker = new Ticker();
 const media = new Audio();
 const loudness = createLoudness(media, systemAudioContext, LOUDNESS_RANGE);
 
-// 作品はこの曲のラスサビ 1 ブロックだけ。音源は全長のまま置き、切り出しはここで包んで行う。
-// 以降のすべて（再生コントロール・歌詞・背景）は「0 秒から始まる 27 秒の作品」だけを見る
-const player = new WindowedPlayback(new AudioPlayer(media, assetUrl(AUDIO_PATH)), WORK_WINDOW);
+// どのシートを見るかは URL で決まる。区間はシートに固有の値なので、ここで組にする。
+// **本編以外は曲を丸ごと流す。** WORK_WINDOW を無条件に当てると、?lyrics=sample
+// （README が案内している開発用のシート）が無関係な区間で切り取られて壊れる
+const sheetName = lyricSheetNameFromLocation(location.search, DEFAULT_SHEET_NAME);
+const workWindow = sheetName === DEFAULT_SHEET_NAME ? WORK_WINDOW : WHOLE_SONG;
+
+// 音源は全長のまま置き、切り出しはここで包んで行う。以降のすべて
+// （再生コントロール・歌詞・背景）は「0 秒から始まる作品」だけを見る
+const player = new WindowedPlayback(new AudioPlayer(media, assetUrl(AUDIO_PATH)), workWindow);
 
 // OS の「視差効果を減らす」設定。読み方だけを渡し、いつ読むかは受け取った側が決める。
 // 文字も背景も動くので、同じ設定を両方へ渡す
@@ -87,11 +94,11 @@ try {
 
 ticker.start();
 
-loadLyricSheet(lyricSheetNameFromLocation(location.search, DEFAULT_SHEET_NAME))
+loadLyricSheet(sheetName)
   .then((sheet) => {
     // 区間で切り出し、時刻を区間の先頭起点に付け替える。以降 domain は
-    // 「27 秒の作品の何秒目か」しか扱わない
-    mountLyricTimeline(player, ticker, sliceSheet(sheet, WORK_WINDOW), stage);
+    // 「作品の何秒目か」しか扱わない（WHOLE_SONG なら素通し）
+    mountLyricTimeline(player, ticker, sliceSheet(sheet, workWindow), stage);
   })
   .catch((error: unknown) => {
     // 再生コントロール側のメッセージ欄とは別の場所に出す。

@@ -7,6 +7,7 @@ import {
   type LyricLine,
   type LyricSheet,
 } from './lyrics';
+import { WHOLE_SONG } from './work-window';
 
 describe('activeLineIndexAt', () => {
   const lines: LyricLine[] = [
@@ -155,6 +156,12 @@ describe('sliceSheet', () => {
     expect(sliceSheet(edge, window).lines).toEqual([]);
   });
 
+  it('丸めて 0 になるほどしか残らない行は、行ごと落とす', () => {
+    // duration だけ落とすと「次の行まで表示」に化けて、元より長く出ることになる
+    const sliver: LyricSheet = { title: 't', lines: [{ time: 119.9996, text: 'X', duration: 1 }] };
+    expect(sliceSheet(sliver, window).lines).toEqual([]);
+  });
+
   it('区間の開始ちょうどで終わる行は含めない', () => {
     const edge: LyricSheet = { title: 't', lines: [{ time: 95, text: 'X', duration: 5 }] };
     expect(sliceSheet(edge, window).lines).toEqual([]);
@@ -180,5 +187,21 @@ describe('sliceSheet', () => {
   it('切り出した結果も time の昇順を保つ（activeLineIndexAt の前提）', () => {
     const times = sliceSheet(sheet, window).lines.map((line) => line.time);
     expect(times).toEqual([...times].sort((a, b) => a - b));
+  });
+});
+
+describe('sliceSheet（曲を丸ごと扱う WHOLE_SONG）', () => {
+  // 区間を切らない場合の特別扱いを消すための値。素通しでなければ意味が無い
+  const sheet: LyricSheet = {
+    title: 'テスト',
+    lines: [
+      { time: 0, text: 'A' },
+      { time: 10, text: 'B', duration: 5 },
+      { time: 30, text: 'C', effect: 'zoom' },
+    ],
+  };
+
+  it('何も変えずに返す', () => {
+    expect(sliceSheet(sheet, WHOLE_SONG)).toEqual(sheet);
   });
 });

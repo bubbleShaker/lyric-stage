@@ -1,3 +1,5 @@
+import type { WorkWindow } from './work-window';
+
 /**
  * 歌詞タイムラインの型と判定ロジック。
  *
@@ -24,17 +26,6 @@ export interface LyricSheet {
 
 /** どの行も表示しない状態を表す番号 */
 export const NO_LINE = -1;
-
-/**
- * 作品として見せる区間。曲の先頭からの秒数で表す。
- *
- * 音源は曲の全長のまま置く（加工版は素材の利用ルールで置けない）ので、
- * 「作品はここからここまで」という切り出しはデータ側が持つ。
- */
-export interface WorkWindow {
-  readonly start: number;
-  readonly end: number;
-}
 
 class LyricSheetError extends Error {
   constructor(message: string) {
@@ -153,27 +144,29 @@ function displayEnd(lines: readonly LyricLine[], index: number): number {
  *
  * 元のシートは書き換えない（行は複製して返す）。
  */
-export function sliceSheet(sheet: LyricSheet, window: WorkWindow): LyricSheet {
+export function sliceSheet(sheet: LyricSheet, workWindow: WorkWindow): LyricSheet {
   const lines: LyricLine[] = [];
 
   sheet.lines.forEach((line, index) => {
     const end = displayEnd(sheet.lines, index);
     // 表示区間が作品の区間と少しでも重なる行を残す。「time が区間内」で選ぶと、
     // 区間の頭を跨いで出続けている行が消え、開幕だけ歌詞が抜ける
-    if (end <= window.start || line.time >= window.end) return;
+    if (end <= workWindow.start || line.time >= workWindow.end) return;
 
     // 跨いで始まっている行は、区間の頭で出ていることにする
-    const time = trim(Math.max(line.time, window.start) - window.start);
+    const time = trim(Math.max(line.time, workWindow.start) - workWindow.start);
     // duration は組み直すので、元の値はここで一度落とす
     const { duration: _original, ...rest } = line;
     const copy: LyricLine = { ...rest, time };
 
     if (line.duration !== undefined) {
       // 区間の外まで出し続けても見えないので、はみ出した分は削る。
-      // 併せて、頭を削られた行の残り時間もここで正しくなる。
-      // 丸めて 0 になるほど短い区間は間として書かない（duration: 0 は不正なデータ）
-      const clipped = trim(Math.min(end, window.end) - window.start - time);
-      if (clipped > 0) copy.duration = clipped;
+      // 併せて、頭を削られた行の残り時間もここで正しくなる
+      const clipped = trim(Math.min(end, workWindow.end) - workWindow.start - time);
+      // 丸めて 0 になるほど短い区間まで残っている行は、**行ごと落とす**。
+      // duration だけ落とすと「次の行まで表示」に化けて、元より長く出ることになる
+      if (clipped <= 0) return;
+      copy.duration = clipped;
     }
 
     lines.push(copy);

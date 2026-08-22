@@ -21,9 +21,12 @@ export class AudioPlayer implements Playback {
     this.el.preload = 'metadata';
     this.el.src = src;
 
-    // 状態が変わりうるイベントをまとめて購読者に転送する
+    // 状態が変わりうるイベントをまとめて購読者に転送する。
+    // timeupdate は 250ms 程度の粗さでしか飛ばないので毎フレームの駆動の代わりには
+    // ならないが、「再生中に位置が進んでいる」ことを知る唯一のイベントなので、
+    // rAF の駆動を落とした時の保険として転送しておく
     const notify = () => this.emit();
-    for (const type of ['play', 'pause', 'ended', 'seeked', 'durationchange'] as const) {
+    for (const type of ['play', 'pause', 'ended', 'seeked', 'timeupdate', 'durationchange'] as const) {
       this.el.addEventListener(type, notify);
     }
     this.el.addEventListener('loadedmetadata', () => {
@@ -71,16 +74,16 @@ export class AudioPlayer implements Playback {
     this.el.currentTime = max > 0 ? Math.min(clamped, max) : clamped;
   }
 
-  /**
-   * ブラウザは音の自動再生を禁止しているので、必ずクリックなどの
-   * ユーザー操作から呼ぶこと。play() は Promise を返し、拒否されると reject する。
-   * 状態の通知は play / pause イベント経由で行われるのでここでは emit しない。
-   */
   /** 止める。既に止まっていれば pause() は何もしない（イベントも飛ばない） */
   pause(): void {
     this.el.pause();
   }
 
+  /**
+   * ブラウザは音の自動再生を禁止しているので、必ずクリックなどの
+   * ユーザー操作から呼ぶこと。play() は Promise を返し、拒否されると reject する。
+   * 状態の通知は play / pause イベント経由で行われるのでここでは emit しない。
+   */
   async toggle(): Promise<void> {
     if (this.el.paused) {
       await this.el.play();
