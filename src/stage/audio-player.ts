@@ -76,6 +76,11 @@ export class AudioPlayer implements Playback {
    * ユーザー操作から呼ぶこと。play() は Promise を返し、拒否されると reject する。
    * 状態の通知は play / pause イベント経由で行われるのでここでは emit しない。
    */
+  /** 止める。既に止まっていれば pause() は何もしない（イベントも飛ばない） */
+  pause(): void {
+    this.el.pause();
+  }
+
   async toggle(): Promise<void> {
     if (this.el.paused) {
       await this.el.play();

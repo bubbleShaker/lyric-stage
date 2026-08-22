@@ -18,6 +18,9 @@ class FakePlayback implements Playback {
     return () => {};
   }
   async toggle(): Promise<void> {}
+  pause(): void {
+    this.paused = true;
+  }
   seek(time: number): void {
     this.currentTime = time;
   }
