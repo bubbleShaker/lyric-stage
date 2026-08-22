@@ -19,6 +19,13 @@ export interface Playback {
   /** 状態変化の購読。戻り値を呼ぶと解除する */
   subscribe(listener: () => void): () => void;
   toggle(): Promise<void>;
+  /**
+   * 止める。既に止まっていれば何もしない。
+   *
+   * toggle() で代用しない。「今動いているか」を読んでから切り替えるまでの間に
+   * 状態が変わりうるので、止めたつもりが再生の開始になる。
+   */
+  pause(): void;
   seek(time: number): void;
 }
 

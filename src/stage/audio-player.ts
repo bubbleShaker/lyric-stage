@@ -21,9 +21,12 @@ export class AudioPlayer implements Playback {
     this.el.preload = 'metadata';
     this.el.src = src;
 
-    // 状態が変わりうるイベントをまとめて購読者に転送する
+    // 状態が変わりうるイベントをまとめて購読者に転送する。
+    // timeupdate は 250ms 程度の粗さでしか飛ばないので毎フレームの駆動の代わりには
+    // ならないが、「再生中に位置が進んでいる」ことを知る唯一のイベントなので、
+    // rAF の駆動を落とした時の保険として転送しておく
     const notify = () => this.emit();
-    for (const type of ['play', 'pause', 'ended', 'seeked', 'durationchange'] as const) {
+    for (const type of ['play', 'pause', 'ended', 'seeked', 'timeupdate', 'durationchange'] as const) {
       this.el.addEventListener(type, notify);
     }
     this.el.addEventListener('loadedmetadata', () => {
@@ -69,6 +72,11 @@ export class AudioPlayer implements Playback {
     const clamped = Math.max(time, 0);
     const max = this.duration;
     this.el.currentTime = max > 0 ? Math.min(clamped, max) : clamped;
+  }
+
+  /** 止める。既に止まっていれば pause() は何もしない（イベントも飛ばない） */
+  pause(): void {
+    this.el.pause();
   }
 
   /**

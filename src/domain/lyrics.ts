@@ -1,3 +1,5 @@
+import type { WorkWindow } from './work-window';
+
 /**
  * 歌詞タイムラインの型と判定ロジック。
  *
@@ -111,4 +113,64 @@ export function activeLineIndexAt(lines: readonly LyricLine[], time: number): nu
   }
 
   return candidate;
+}
+
+/**
+ * 浮動小数の埃を落とす（1ms の格子）。
+ *
+ * 区間の開始を引くと `179.78 - 176.77 = 3.0100000000000193` のような値になる。
+ * 聴いて分かる差ではないので丸める。収録ツールの格子（10ms）より細かいので、
+ * 実測して入れた値をここで粗くすることはない。
+ */
+function trim(seconds: number): number {
+  return Math.round(seconds * 1000) / 1000;
+}
+
+/** 行が画面に出ている区間の終わり。duration が無ければ次の行が始まるまで */
+function displayEnd(lines: readonly LyricLine[], index: number): number {
+  const line = lines[index];
+  if (line.duration !== undefined) return line.time + line.duration;
+  const next = lines[index + 1];
+  // 最終行で duration も無ければ、曲が終わるまで出続ける
+  return next ? next.time : Infinity;
+}
+
+/**
+ * シートを作品の区間で切り出し、時刻を**区間の先頭からの秒数に付け替える**。
+ *
+ * 切り出した後は「区間の外」という概念そのものが消えるので、これを通した後の
+ * 歌詞・再生位置・背景はすべて同じ 0 起点の時間軸で揃う。区間を知っているのは
+ * この関数と、再生位置を読み替える WindowedPlayback だけになる。
+ *
+ * 元のシートは書き換えない（行は複製して返す）。
+ */
+export function sliceSheet(sheet: LyricSheet, workWindow: WorkWindow): LyricSheet {
+  const lines: LyricLine[] = [];
+
+  sheet.lines.forEach((line, index) => {
+    const end = displayEnd(sheet.lines, index);
+    // 表示区間が作品の区間と少しでも重なる行を残す。「time が区間内」で選ぶと、
+    // 区間の頭を跨いで出続けている行が消え、開幕だけ歌詞が抜ける
+    if (end <= workWindow.start || line.time >= workWindow.end) return;
+
+    // 跨いで始まっている行は、区間の頭で出ていることにする
+    const time = trim(Math.max(line.time, workWindow.start) - workWindow.start);
+    // duration は組み直すので、元の値はここで一度落とす
+    const { duration: _original, ...rest } = line;
+    const copy: LyricLine = { ...rest, time };
+
+    if (line.duration !== undefined) {
+      // 区間の外まで出し続けても見えないので、はみ出した分は削る。
+      // 併せて、頭を削られた行の残り時間もここで正しくなる
+      const clipped = trim(Math.min(end, workWindow.end) - workWindow.start - time);
+      // 丸めて 0 になるほど短い区間まで残っている行は、**行ごと落とす**。
+      // duration だけ落とすと「次の行まで表示」に化けて、元より長く出ることになる
+      if (clipped <= 0) return;
+      copy.duration = clipped;
+    }
+
+    lines.push(copy);
+  });
+
+  return { title: sheet.title, lines };
 }

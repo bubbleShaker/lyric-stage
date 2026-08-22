@@ -6,11 +6,46 @@
  * 複数曲に対応するときは、ここを差し替えるか JSON へ移す。
  */
 
+import { WHOLE_SONG, type WorkWindow } from './domain/work-window';
+
 /** 作品本編の歌詞シート名。?lyrics= の指定が無いときはこれを読む */
 export const DEFAULT_SHEET_NAME = 'shining-star';
 
 /** 音源。public/ からの相対パス */
 export const AUDIO_PATH = 'audio/maou_14_shining_star.mp3';
+
+/**
+ * 作品として見せる区間。**ラスサビ 1 ブロックを丸ごと切り出している。**
+ *
+ * 文字PV は 1 行ずつ手で構図を作るので、51 行すべてに構図を用意するのは現実的でない。
+ * 曲の中で一番強く、前後とも切れ目になっている所を選んで、そこを作り込む。
+ *
+ * - `155.7`〜`179.78` は 24 秒の間奏（前の切れ目）
+ * - `176.77` = 歌の 1 小節前（79.85 BPM / 1 小節 3.0055 秒）。助走を付けて始める
+ * - `179.78`〜 ラスサビの 7 行
+ * - `203.82` で次のサビ頭に折り返す＝後ろの切れ目
+ *
+ * **音源は曲の全長のまま置く。** 魔王魂の利用ルールで加工版は置けないので、
+ * 切り出しはこの値と WindowedPlayback / sliceSheet が受け持つ。
+ * 歌詞シートも 51 行のまま残してある（区間を広げ直せるようにするため）。
+ *
+ * **この区間は本編シートに固有。** どのシートに当てるかは workWindowFor が決める。
+ */
+export const WORK_WINDOW: WorkWindow = { start: 176.77, end: 203.82 };
+
+/**
+ * そのシートを見るときの区間。
+ *
+ * 区間は「この曲のこの構成」に紐づく値なので、**本編以外のシートに当ててはいけない**。
+ * 当てると、開発用の `?lyrics=sample`（1〜33 秒のシート）が無関係な区間で
+ * 切り取られて、1 行だけが延々出ているページになる。
+ *
+ * 組み立て側（main.ts）に三項演算子で書くとテストが届かず、書き戻しても全テストが
+ * 緑のまま公開ページだけが壊れる。作品固有の対応付けなのでここに置く。
+ */
+export function workWindowFor(sheetName: string): WorkWindow {
+  return sheetName === DEFAULT_SHEET_NAME ? WORK_WINDOW : WHOLE_SONG;
+}
 
 /**
  * 背景が反応する音量の幅。**実測で決めた、この曲固有の値。**
