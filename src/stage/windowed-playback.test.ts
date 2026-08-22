@@ -46,6 +46,35 @@ class FakeSource implements Playback {
   }
 }
 
+/**
+ * 本物の <audio> に寄せた偽物。**seek と pause が更にイベントを起こす。**
+ *
+ * WindowedPlayback は自分の購読の中から keepInWindow() を呼ぶので、見張りの中の
+ * seek / pause がまた見張りを呼ぶ。止まらない組み合わせが無いことをこれで確かめる。
+ */
+class EmittingSource extends FakeSource {
+  /** 購読が何回走ったか。暴走したら跳ね上がる */
+  notifications = 0;
+
+  constructor() {
+    super();
+    this.subscribe(() => {
+      this.notifications += 1;
+    });
+  }
+
+  /** 本物と同じく、音源の長さより先へは進めない */
+  override seek(time: number): void {
+    super.seek(this.duration > 0 ? Math.min(time, this.duration) : time);
+    this.emit();
+  }
+
+  override pause(): void {
+    super.pause();
+    this.emit();
+  }
+}
+
 /** 曲の 100〜120 秒だけを作品として見せる */
 const WINDOW = { start: 100, end: 120 };
 
@@ -201,6 +230,38 @@ describe('WindowedPlayback', () => {
     source.seek(130);
     source.emit();
     expect(source.paused).toBe(true);
+  });
+
+  it('見張りの中の pause / seek が更に見張りを呼んでも収束する', () => {
+    const source = new EmittingSource();
+    const player = new WindowedPlayback(source, WINDOW);
+    source.ready(240);
+    source.paused = false;
+    source.currentTime = 130;
+    source.notifications = 0;
+
+    player.keepInWindow();
+
+    expect(source.paused).toBe(true);
+    expect(source.currentTime).toBe(120);
+    // pause と seek で 1 回ずつ。連鎖が続いていれば桁が変わる
+    expect(source.notifications).toBeLessThan(10);
+  });
+
+  it('区間の頭に届かない音源では連れ戻さない（seek が頭打ちになり終わらなくなる）', () => {
+    // 取り違えた mp3（作品の区間より短い）を置いた場合。連れ戻しても届かないので、
+    // seek → イベント → また連れ戻す、が止まらなくなる経路
+    const source = new EmittingSource();
+    const player = new WindowedPlayback(source, WINDOW);
+    source.ready(50);
+    source.paused = false;
+    source.currentTime = 10;
+    source.notifications = 0;
+
+    expect(() => {
+      player.keepInWindow();
+    }).not.toThrow();
+    expect(source.notifications).toBeLessThan(10);
   });
 
   it('止める・状態・購読はそのまま元へ渡す', () => {

@@ -2,7 +2,6 @@ import gsap from 'gsap';
 import { SplitText } from 'gsap/SplitText';
 import { loadLyricSheet, lyricSheetNameFromLocation } from './app/load-lyric-sheet';
 import { sliceSheet } from './domain/lyrics';
-import { WHOLE_SONG } from './domain/work-window';
 import { mountLyricTimeline } from './app/lyric-timeline';
 import { Ticker } from './app/ticker';
 import { assetUrl } from './lib/asset';
@@ -15,7 +14,7 @@ import { ScaledCanvas, systemPixelRatio } from './stage/scaled-canvas';
 import { Starfield } from './stage/starfield';
 import { mountTransport } from './stage/transport';
 import { WindowedPlayback } from './stage/windowed-playback';
-import { AUDIO_PATH, DEFAULT_SHEET_NAME, LOUDNESS_RANGE, WORK_WINDOW } from './work';
+import { AUDIO_PATH, DEFAULT_SHEET_NAME, LOUDNESS_RANGE, workWindowFor } from './work';
 import './style.css';
 
 // GSAP のプラグインは使う前に gsap 本体へ登録する。登録することで gsap 側が
@@ -31,11 +30,9 @@ const ticker = new Ticker();
 const media = new Audio();
 const loudness = createLoudness(media, systemAudioContext, LOUDNESS_RANGE);
 
-// どのシートを見るかは URL で決まる。区間はシートに固有の値なので、ここで組にする。
-// **本編以外は曲を丸ごと流す。** WORK_WINDOW を無条件に当てると、?lyrics=sample
-// （README が案内している開発用のシート）が無関係な区間で切り取られて壊れる
+// どのシートを見るかは URL で決まる。区間はシートに固有の値なので、対応付けは work.ts が持つ
 const sheetName = lyricSheetNameFromLocation(location.search, DEFAULT_SHEET_NAME);
-const workWindow = sheetName === DEFAULT_SHEET_NAME ? WORK_WINDOW : WHOLE_SONG;
+const workWindow = workWindowFor(sheetName);
 
 // 音源は全長のまま置き、切り出しはここで包んで行う。以降のすべて
 // （再生コントロール・歌詞・背景）は「0 秒から始まる作品」だけを見る

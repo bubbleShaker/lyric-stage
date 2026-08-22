@@ -14,7 +14,7 @@ import type { WorkWindow } from '../domain/work-window';
  */
 export class WindowedPlayback implements Playback {
   private readonly source: Playback;
-  private readonly window: WorkWindow;
+  private readonly workWindow: WorkWindow;
   /** 区間の頭へ送るのは一度だけ。以降は人の操作に任せる */
   private positioned = false;
 
@@ -28,7 +28,7 @@ export class WindowedPlayback implements Playback {
     }
 
     this.source = source;
-    this.window = workWindow;
+    this.workWindow = workWindow;
 
     this.source.subscribe(() => {
       this.positionAtStart();
@@ -47,7 +47,7 @@ export class WindowedPlayback implements Playback {
     // 読み込みが済むまで currentTime への代入は効かないので、用意ができるのを待つ
     if (this.source.currentStatus !== 'ready') return;
     this.positioned = true;
-    this.source.seek(this.window.start);
+    this.source.seek(this.workWindow.start);
   }
 
   /** 作品の長さ。音源の長さが分かるまでは 0 を返す */
@@ -57,14 +57,14 @@ export class WindowedPlayback implements Playback {
     // 判断してシークバーを開けてしまう。読み込み前の挙動は今までどおりに保つ
     if (loaded <= 0) return 0;
     // 音源が区間より短い（取り違えた mp3 など）場合は音源の方に合わせる
-    return Math.max(0, Math.min(this.window.end, loaded) - this.window.start);
+    return Math.max(0, Math.min(this.workWindow.end, loaded) - this.workWindow.start);
   }
 
   get currentTime(): number {
-    const elapsed = this.source.currentTime - this.window.start;
+    const elapsed = this.source.currentTime - this.workWindow.start;
     // 上限は区間の長さ（this.duration ではない）。読み込み前は duration が 0 なので、
     // そちらで抑えると再生位置が 0 に貼り付いて見える
-    return Math.min(Math.max(0, elapsed), this.window.end - this.window.start);
+    return Math.min(Math.max(0, elapsed), this.workWindow.end - this.workWindow.start);
   }
 
   get paused(): boolean {
@@ -93,16 +93,23 @@ export class WindowedPlayback implements Playback {
     if (this.source.paused) return;
 
     // 音源が区間より短いと終端の見張りが一度も働かず、曲が自然に終わる。
-    // その後の再生は要素の仕様で 0 秒から始まるので、頭へ落ちた時は連れ戻す
-    if (this.source.currentTime < this.window.start) {
-      this.source.seek(this.window.start);
+    // その後の再生は要素の仕様で 0 秒から始まるので、頭へ落ちた時は連れ戻す。
+    //
+    // **区間の頭に届かない音源では連れ戻さない。** seek は音源の長さで頭打ちになるので、
+    // 戻しても届かず、seek → イベント → また連れ戻す、が終わらなくなる（取り違えた
+    // mp3 を置いたときだけ起きる。上限側は pause() で状態が変わるので必ず収束する）
+    if (
+      this.source.currentTime < this.workWindow.start &&
+      this.source.duration > this.workWindow.start
+    ) {
+      this.source.seek(this.workWindow.start);
       return;
     }
 
-    if (this.source.currentTime < this.window.end) return;
+    if (this.source.currentTime < this.workWindow.end) return;
     this.source.pause();
     // 行き過ぎた分を戻して、終端でぴったり止まっているように見せる
-    this.source.seek(this.window.end);
+    this.source.seek(this.workWindow.end);
   }
 
   /**
@@ -112,16 +119,16 @@ export class WindowedPlayback implements Playback {
    * 一度最後まで聴いた人はリロードするまで二度と再生できない。
    */
   async toggle(): Promise<void> {
-    if (this.source.paused && this.source.currentTime >= this.window.end) {
-      this.source.seek(this.window.start);
+    if (this.source.paused && this.source.currentTime >= this.workWindow.end) {
+      this.source.seek(this.workWindow.start);
     }
     await this.source.toggle();
   }
 
   /** 区間の内側に収めてから元の秒数に直す */
   seek(time: number): void {
-    const length = this.window.end - this.window.start;
+    const length = this.workWindow.end - this.workWindow.start;
     const clamped = Math.min(Math.max(time, 0), length);
-    this.source.seek(this.window.start + clamped);
+    this.source.seek(this.workWindow.start + clamped);
   }
 }
