@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { parseLyricSheet, sliceSheet, type LyricLine } from './domain/lyrics';
+import { isAnchorName, isSizeName } from './stage/composition';
 import { effects, isEffectName, resolveEffect } from './stage/effects';
 import { DEFAULT_SHEET_NAME, WORK_WINDOW } from './work';
 // Vite の ?raw は対象ファイルを文字列として読み込む。fs を使わずに済むので
@@ -219,6 +220,47 @@ describe('WORK_WINDOW × 本編シート', () => {
     expect(
       sliced.lines.every((line) => line.effect !== undefined && isEffectName(line.effect)),
     ).toBe(true);
+  });
+
+  it('作品に残る全ての行に構図が明示されている', () => {
+    // M4-3 で effect に課したのと同じ理由 — 省略しても既定の構図（中央）で動くので、
+    // 「意図して中央に置いた行」と「割り当てを忘れた行」が画面を見ても区別できない。
+    //
+    // **全 51 行ではなく、切り出した後の行だけを見る。** 文字PV は 1 行ずつ手で
+    // 構図を作るので、作品に出ない行まで用意するのは現実的でない（M8-0 の決定）。
+    // 区間を広げたらここが落ちて、構図の要る行が増えたことに気付ける
+    const missing = sliced.lines.filter((line) => line.place === undefined).map((line) => line.text);
+
+    expect(missing).toStrictEqual([]);
+  });
+
+  it('知らないアンカー名や大きさの段階が書かれていない', () => {
+    // 未知の名前でも既定に落ちて動いてしまうので、綴りの間違いは画面を見ても
+    // 気付けない（effect の「知らない演出名」と同じ）。ここで名指しして落とす
+    const unknown = sliced.lines
+      .flatMap((line) =>
+        line.place === undefined
+          ? []
+          : [
+              ...(isAnchorName(line.place.at) ? [] : [`${line.text}: at=${line.place.at}`]),
+              ...(isSizeName(line.place.size) ? [] : [`${line.text}: size=${line.place.size}`]),
+            ],
+      );
+
+    expect(unknown).toStrictEqual([]);
+  });
+
+  it('隣り合う行が同じアンカーに置かれていない', () => {
+    // M8-1 の狙いは「1 行ずつ違う画になる」こと。同じ場所に続けて出すと、
+    // 文字だけが差し替わって見えて構図が効かない。離れた行での再登場は
+    // 「戻ってきた」として効くので、隣り合う組だけを見る
+    const repeated = sliced.lines
+      .slice(1)
+      .map((line, index) => ({ line, previous: sliced.lines[index] }))
+      .filter(({ line, previous }) => line.place?.at === previous.place?.at)
+      .map(({ line, previous }) => `${previous.text} → ${line.text}: ${line.place?.at}`);
+
+    expect(repeated).toStrictEqual([]);
   });
 });
 

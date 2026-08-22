@@ -181,37 +181,44 @@
     {
       "time": 179.78,
       "text": "シャイニングスター綴れば",
-      "effect": "zoomLine"
+      "effect": "zoomLine",
+      "place": { "at": "middle-center", "size": "xl", "nudge": { "y": -0.06 }, "tilt": -3 }
     },
     {
       "time": 182.79,
       "text": "無限のイマジネーション",
-      "effect": "shatter"
+      "effect": "shatter",
+      "place": { "at": "top-right", "size": "lg", "nudge": { "x": -0.02 }, "tilt": 4 }
     },
     {
       "time": 185.79,
       "text": "魔法が使えるような",
-      "effect": "typewriter"
+      "effect": "typewriter",
+      "place": { "at": "middle-left", "size": "md", "nudge": { "y": 0.1 } }
     },
     {
       "time": 188.79,
       "text": "世界が広がる",
-      "effect": "zoom"
+      "effect": "zoom",
+      "place": { "at": "bottom-right", "size": "xl", "tilt": -5 }
     },
     {
       "time": 191.8,
       "text": "I'll believe of my sensation",
-      "effect": "glitch"
+      "effect": "glitch",
+      "place": { "at": "top-left", "size": "sm", "nudge": { "y": 0.06 }, "tilt": 2 }
     },
     {
       "time": 194.8,
       "text": "今も降り募る想いよ",
-      "effect": "fade"
+      "effect": "fade",
+      "place": { "at": "bottom-left", "size": "lg", "nudge": { "y": -0.04 } }
     },
     {
       "time": 197.81,
       "text": "切なさやトキメキが輝き出す",
-      "effect": "vertical"
+      "effect": "vertical",
+      "place": { "at": "top-right", "size": "lg" }
     },
     {
       "time": 203.82,

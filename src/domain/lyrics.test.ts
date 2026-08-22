@@ -113,6 +113,75 @@ describe('parseLyricSheet', () => {
   });
 });
 
+describe('parseLyricSheet（構図 = place）', () => {
+  /** 1 行だけのシートを読ませて、その行を返す */
+  const parseLine = (line: object) =>
+    parseLyricSheet({ title: 'テスト', lines: [{ time: 0, text: 'A', ...line }] }).lines[0];
+
+  it('構図をそのまま保持する', () => {
+    // parseLyricLine は項目を組み直すので、**書き忘れると黙って落ちる**。
+    // 落ちても JSON は valid のままで画面も出るため、この検査でしか気付けない
+    const place = { at: 'top-left', size: 'xl', nudge: { x: 0.05, y: -0.1 }, tilt: -4 };
+
+    expect(parseLine({ place }).place).toEqual(place);
+  });
+
+  it('nudge と tilt は省略できる', () => {
+    expect(parseLine({ place: { at: 'middle-center', size: 'md' } }).place).toEqual({
+      at: 'middle-center',
+      size: 'md',
+    });
+  });
+
+  it('at と size は省略できない', () => {
+    // 省略を許すと「意図してその配置を選んだ行」と「割り当てを忘れた行」が
+    // 画面を見ても区別できない
+    expect(() => parseLine({ place: { size: 'md' } })).toThrow();
+    expect(() => parseLine({ place: { at: 'top-left' } })).toThrow();
+    expect(() => parseLine({ place: { at: '', size: 'md' } })).toThrow();
+  });
+
+  it('構図の形が違うものを弾く', () => {
+    expect(() => parseLine({ place: null })).toThrow();
+    expect(() => parseLine({ place: 'top-left' })).toThrow();
+    // 配列も typeof では 'object' を名乗るので、素通しにならないことを見る
+    expect(() => parseLine({ place: ['top-left', 'md'] })).toThrow();
+    expect(() => parseLine({ place: { at: 'top-left', size: 'md', nudge: 0.1 } })).toThrow();
+  });
+
+  it('画面の外へ出るずらし幅と傾きを弾く', () => {
+    // 桁を間違えても CSS はエラーにならず、行が画面外に出て**何も表示されない**
+    // という原因の分かりにくい壊れ方をする
+    const base = { at: 'top-left', size: 'md' };
+
+    expect(() => parseLine({ place: { ...base, nudge: { x: 5 } } })).toThrow();
+    expect(() => parseLine({ place: { ...base, nudge: { y: -0.3 } } })).toThrow();
+    expect(() => parseLine({ place: { ...base, nudge: { x: NaN } } })).toThrow();
+    expect(() => parseLine({ place: { ...base, tilt: 90 } })).toThrow();
+    expect(() => parseLine({ place: { ...base, tilt: '4deg' } })).toThrow();
+  });
+
+  it('綴りを間違えた項目を弾く', () => {
+    // 構図は行ごとに手で書くので綴り間違いが起きる。黙って落とすと範囲の検証も
+    // 素通りして「なぜか傾かない行」になるだけで、画面を見ても原因が分からない
+    const base = { at: 'top-left', size: 'md' };
+
+    expect(() => parseLine({ place: { ...base, tlit: 4 } })).toThrow();
+    expect(() => parseLine({ place: { ...base, nudge: { X: 0.05 } } })).toThrow();
+  });
+
+  it('中身の無い nudge を弾く', () => {
+    expect(() => parseLine({ place: { at: 'top-left', size: 'md', nudge: {} } })).toThrow();
+  });
+
+  it('傾き 0 とずらし幅 0 は指定として残す', () => {
+    // 0 を falsy として落とすと「傾けないと決めた行」が「未指定」に化ける
+    const place = { at: 'top-left', size: 'md', nudge: { x: 0 }, tilt: 0 };
+
+    expect(parseLine({ place }).place).toEqual(place);
+  });
+});
+
 describe('sliceSheet', () => {
   // 時刻の付け替えを目で追えるよう、区間の開始を切りのいい 100 にしてある
   const sheet: LyricSheet = {

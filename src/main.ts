@@ -13,6 +13,7 @@ import { createLoudness, systemAudioContext } from './stage/loudness';
 import { ScaledCanvas, systemPixelRatio } from './stage/scaled-canvas';
 import { Starfield } from './stage/starfield';
 import { mountTransport } from './stage/transport';
+import { mountTransportIdle } from './stage/transport-idle';
 import { WindowedPlayback } from './stage/windowed-playback';
 import { AUDIO_PATH, DEFAULT_SHEET_NAME, LOUDNESS_RANGE, workWindowFor } from './work';
 import './style.css';
@@ -41,17 +42,25 @@ const player = new WindowedPlayback(new AudioPlayer(media, assetUrl(AUDIO_PATH))
 // OS の「視差効果を減らす」設定。読み方だけを渡し、いつ読むかは受け取った側が決める。
 // 文字も背景も動くので、同じ設定を両方へ渡す
 const prefersReducedMotion = systemReducedMotion();
-const stage = new LyricStage(requiredElement<HTMLDivElement>('stage-text'), prefersReducedMotion);
+const stage = new LyricStage(
+  { frame: requiredElement('stage-frame'), text: requiredElement('stage-text') },
+  prefersReducedMotion,
+);
 
 const toggle = requiredElement<HTMLButtonElement>('transport-toggle');
+const transportRoot = requiredElement('transport');
 
 const transport = mountTransport(player, {
-  root: requiredElement('transport'),
+  root: transportRoot,
   toggle,
   seek: requiredElement<HTMLInputElement>('transport-seek'),
   time: requiredElement('transport-time'),
   message: requiredElement('transport-message'),
 });
+
+// 構図が画面の下端まで使うので、再生中に操作が途切れたらコントロールを画から退ける。
+// 解除の関数は捨てている（ページの寿命 = アプリの寿命）
+mountTransportIdle({ root: transportRoot, player });
 
 // AudioContext はユーザー操作を起点にしないと動き出せない（音の自動再生と同じ制限）。
 // 再生ボタンのクリックに相乗りする。mountTransport 側の再生処理とは独立

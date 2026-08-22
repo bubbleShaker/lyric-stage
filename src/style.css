@@ -44,57 +44,168 @@ body {
   pointer-events: none;
 }
 
+/* 構図の座標系を張る箱（M8-1）。
+   中の行は position: absolute で置くので、ここが「画面のどこ」の基準になる。
+   絶対配置の基準は padding box なので、padding を足しても割合の指定は縮まない。
+
+   M8-1 より前は display: grid; place-items: center で「中央に 1 行」だった。
+   下に居る .transport を padding-bottom: 8rem で一括して避けていたが、
+   「画面の下端に置く」構図と正面からぶつかるのでやめた。今は再生中に
+   .transport 側が画から退く（下の [data-idle] を見よ）。
+
+   **中の要素はすべて absolute である前提。** アンカーの 7% / 10% はこの箱の大きさに
+   対する割合なので、ここに通常の流れに乗る子を 1 つ足すと箱が伸び、全アンカーの
+   意味が静かにずれる */
 .stage {
   position: relative;
-  display: grid;
-  place-items: center;
-  min-height: 100dvh;
-  padding: 2rem;
+  height: 100dvh;
+}
 
-  /* 画面下に固定の .transport（実高さ + bottom で約 105px）が居るので、
-     その手前で歌詞が止まるよう下だけ厚く空ける。ここで一括して避けることで、
-     演出ごとに避け方を考えなくて済む。
-     代償として歌詞の中心は画面の中央よりやや上になる */
-  padding-bottom: 8rem;
+/* 構図の枠。**GSAP はこの要素を決して触らない。**
+   演出が動かすのは内側の .stage__text だけで、置き場所・大きさ・傾きはこちらが持つ。
+
+   分けているのは所有権の衝突を避けるため。GSAP の CSSPlugin は transform を
+   自分のものとして扱い、要素に書かれた translate / rotate / scale を読み取って
+   transform に畳み、元のプロパティには none を書き込む。構図を演出と同じ要素に
+   置くと、**行を跨いで前の行の寄せ方が residue として残る**（実測で確認した）。
+   触る人を分ければ、この取り合いが構造的に起きなくなる */
+.stage__frame {
+  position: absolute;
+
+  /* 幅と高さを内容なりに決める。**auto のままにしてはいけない。**
+     left だけを指定した絶対配置は「残りの幅」に押し込められるので、右端に
+     置いた行が 1 文字ずつ縦に折り返す（left: 93% だと幅が 7% しか無い）。
+     また下の margin: auto による中央寄せは、大きさが auto だと効かない */
+  width: max-content;
+  height: max-content;
+  max-width: 86%;
+
+  /* 傾き。ここは GSAP が触らないので rotate プロパティを素直に使える */
+  rotate: var(--place-tilt, 0deg);
+}
+
+/* --- 構図のアンカー（src/stage/composition.ts が当てる） ---
+
+   端の余白は横 7% / 縦 10%。縦を厚めに取るのは、行の高さが幅よりずっと小さく、
+   同じ割合だと上下だけ画面の縁に貼り付いて見えるため。
+
+   微調整（--place-nudge-*）は正が右・下。反対側の端を基準にする right / bottom
+   では符号が逆になる。どちらも画面に対する割合で、px では書かない（M4-1 と揃える）。
+
+   text-align はアンカーと揃え、継承で内側の行に渡す。左端の行が中央寄せだと、
+   折り返した 2 行目が基準点からずれて「どこに置いたか」が読めなくなる */
+
+.stage__frame--left {
+  left: calc(7% + var(--place-nudge-x, 0%));
+  text-align: left;
+}
+
+.stage__frame--right {
+  right: calc(7% - var(--place-nudge-x, 0%));
+  text-align: right;
+}
+
+/* 中央寄せは両端を 0 に置いて余りを margin: auto に等分させる。
+   transform / translate を使わないのは上記のとおり GSAP と取り合いになるため。
+   左右を +n / -n とずらすと、等分した結果ごと n だけ移動する */
+.stage__frame--center {
+  left: var(--place-nudge-x, 0%);
+  right: calc(0% - var(--place-nudge-x, 0%));
+  margin-inline: auto;
+  text-align: center;
+}
+
+.stage__frame--top {
+  top: calc(10% + var(--place-nudge-y, 0%));
+}
+
+.stage__frame--bottom {
+  bottom: calc(10% - var(--place-nudge-y, 0%));
+}
+
+.stage__frame--middle {
+  top: var(--place-nudge-y, 0%);
+  bottom: calc(0% - var(--place-nudge-y, 0%));
+  margin-block: auto;
+}
+
+/* --- 大きさの段階 ---
+   カスタムプロパティは継承するので、枠に当てても内側の行の font-size に効く */
+
+.stage__frame--sm {
+  --size-step: 0.62;
+}
+
+.stage__frame--md {
+  --size-step: 1;
+}
+
+.stage__frame--lg {
+  --size-step: 1.45;
+}
+
+.stage__frame--xl {
+  --size-step: 1.9;
 }
 
 .stage__text {
-  /* clamp で画面幅に追従させる。字幕は行が短いので中央寄せ固定でよい */
-  font-size: clamp(1.75rem, 7vw, 5rem);
+  /* 大きさは「基準 × 段階」で決める。**段階は行ごとの構図が、基準は組み方が決める。**
+     両方を font-size に直接書くと、クラスの詳細度が同じせいで後に書いた方だけが
+     効いてしまう（縦書きが構図の段階を黙って潰す）。掛け算に分ければぶつからない。
+
+     段階の既定値は var() の中に書く。**ここで --size-step: 1 と宣言してはいけない。**
+     自分の要素への宣言は継承した値に必ず勝つので、枠が選んだ段階が黙って潰れる */
+  --size-base: clamp(1.5rem, 5.5vw, 3.6rem);
+  font-size: calc(var(--size-step, 1) * var(--size-base));
+
   font-weight: 700;
   letter-spacing: 0.08em;
   line-height: 1.5;
-  text-align: center;
   text-wrap: balance;
 }
 
 /* 縦書きの演出（src/stage/effects.ts の vertical）が付けるクラス。
-   演出側は「縦書きにする」意思だけを持ち、どう組むかはここが決める */
-.stage__text--vertical {
+   演出側は「縦書きにする」意思だけを持ち、どう組むかはここが決める。
+   構図の枠ではなく行そのものに当たる（writing-mode は文字の組み方だから）。
+
+   .stage__text を重ねて書いているのは詳細度のため。--size-base を .stage__text と
+   取り合うので、片方だけのクラスにするとソースの並び順にだけ依存して勝つことになる。
+   「掛け算に分けて詰まりを避けた」という設計の要が順序頼みでは壊れやすい */
+.stage__text.stage__text--vertical {
   writing-mode: vertical-rl;
 
   /* 縦組みでは高さがインライン方向（＝行の伸びる向き）になるので、
      高さを絞ると 1 段に収まらないぶんが右から左へ段になって折り返す。
      本編の最長行は 28 文字あり、絞らないと画面外へ流れていく。
 
-     3 つめは .stage の内側の高さ（100dvh から上下の padding 2rem + 8rem を引いた分）。
-     ここを max-height: 100% と書くと、grid の中では百分率の解決先が定まらず
-     max-height ごと無効になって高さが青天井になる。実測で確かめたので calc で書く */
-  max-height: min(70dvh, 32rem, calc(100dvh - 10rem));
+     M8-1 より前は中央配置を前提にした値（min(70dvh, 32rem, calc(100dvh - 10rem))）
+     だった。今はどのアンカーから伸ばしても収まる割合にしてある —
+     上端 10% から 80dvh 下ろして 90%、下端 10% から 80dvh 上げて 10% */
+  max-height: 80dvh;
 
-  /* 横組みの文字サイズは幅だけで決まるが、縦組みは高さが行の伸びる向きなので
-     画面が低いと 1 段に数文字しか入らず段だらけになる。高さにも追従させる */
-  font-size: clamp(1.5rem, min(7vw, 8dvh), 5rem);
+  /* 横組みの基準は幅だけで決まるが、縦組みは高さが行の伸びる向きなので、
+     画面が低いと 1 段に数文字しか入らず段だらけになる。高さにも追従させる。
+     置き換えるのは基準だけなので、構図が選んだ段階（--size-step）はそのまま効く */
+  --size-base: clamp(1.3rem, min(5.5vw, 6dvh), 3.4rem);
 
   /* 横組み前提の指定を縦組み用に上書きする。
      text-wrap: balance は行の長さを揃える指定で、段組みでは狙いが合わない */
   text-wrap: initial;
   letter-spacing: 0.12em;
+
+  /* 縦組みでは text-align がインライン方向（＝縦）の寄せになるので、枠が横組み用に
+     決めた left / right を継承すると段の途中で揃ってしまう。ここで断ち切る
+     （継承した値は、同じ要素への直接の指定に必ず負ける） */
+  text-align: start;
 }
 
 .stage__message {
   position: absolute;
+
+  /* .stage の grid をやめた（M8-1）ので、中央寄せは自分で持つ */
+  left: 50%;
   bottom: 6rem;
+  translate: -50% 0;
   font-size: 0.85rem;
   color: #ff9c9c;
 }
@@ -132,10 +243,25 @@ body {
   transition: opacity 0.3s;
 }
 
+/* 再生中に操作が無い間は、再生コントロールを画から完全に退ける（M8-1）。
+   構図が画面の下端まで使うようになったので、居座られると下段の行と重なる。
+   動画プレイヤーと同じ振る舞いで、止まっている間・ポインタが動いた直後・
+   キーボードのフォーカスがある間は必ず見える。判断は src/stage/transport-idle.ts。
+
+   隠れている間はクリックも通さない。見えないボタンを押せてしまうと、
+   歌詞をクリックしたつもりで再生が止まる */
+.transport[data-idle='true'] {
+  opacity: 0;
+  pointer-events: none;
+}
+
 /* 演出の邪魔にならないよう、触っていない間は薄くする。
-   タッチ端末は hover が無く薄いままになるので、hover を持つ環境に限定する */
+   タッチ端末は hover が無く薄いままになるので、hover を持つ環境に限定する。
+
+   :not([data-idle='true']) を明示するのは詳細度のため。この選択子の方が上の
+   規則より詳細度が高く、書かないと「薄く」が「隠す」に勝ってしまう */
 @media (hover: hover) {
-  .transport[data-state='ready']:not(:hover):not(:focus-within) {
+  .transport[data-state='ready']:not([data-idle='true']):not(:hover):not(:focus-within) {
     opacity: 0.35;
   }
 }
