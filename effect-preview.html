@@ -21,12 +21,15 @@
         その時はこのページを除外すること
     -->
     <main class="stage">
-      <div class="stage__text" id="stage-text"></div>
+      <div class="stage__frame" id="stage-frame">
+        <div class="stage__text" id="stage-text"></div>
+      </div>
     </main>
     <script type="module">
       import gsap from 'gsap';
       import { SplitText } from 'gsap/SplitText';
       import { neverReduceMotion } from './src/lib/reduced-motion.ts';
+      import { ANCHOR_CLASS, SIZE_CLASS } from './src/stage/composition.ts';
       import { effects } from './src/stage/effects.ts';
       import { LyricStage } from './src/stage/lyric-stage.ts';
       import './src/style.css';
@@ -35,16 +38,32 @@
 
       // ここは演出そのものを見る道具なので、OS の「視差効果を減らす」設定に関わらず
       // 素の演出を出す。本編（src/main.ts）は systemReducedMotion() を渡す
-      const stage = new LyricStage(document.getElementById('stage-text'), neverReduceMotion);
+      const stage = new LyricStage(
+        {
+          frame: document.getElementById('stage-frame'),
+          text: document.getElementById('stage-text'),
+        },
+        neverReduceMotion,
+      );
 
-      /** 1 行を指定の演出で表示する。effect を省くと既定の演出になる */
-      window.play = (text, effect) => stage.show({ time: 0, text, effect });
+      /**
+       * 1 行を指定の演出と構図で表示する。どちらも省くと既定になる。
+       * 例: play('世界が広がる', 'zoom', { at: 'bottom-right', size: 'xl', tilt: -5 })
+       */
+      window.play = (text, effect, place) => stage.show({ time: 0, text, effect, place });
 
       // 演出は一瞬で終わるので、コマ送りで見たいときのために gsap を出しておく。
       // gsap.globalTimeline.pause() で全体を止め、.time(秒) で任意のコマに飛べる
       window.gsap = gsap;
 
-      console.info(`play('文字', '演出名') で試せます。演出名: ${Object.keys(effects).join(' / ')}`);
+      console.info(
+        [
+          `play('文字', '演出名', 構図) で試せます。`,
+          `演出名: ${Object.keys(effects).join(' / ')}`,
+          `at: ${Object.keys(ANCHOR_CLASS).join(' / ')}`,
+          `size: ${Object.keys(SIZE_CLASS).join(' / ')}`,
+        ].join('\n'),
+      );
     </script>
   </body>
 </html>
