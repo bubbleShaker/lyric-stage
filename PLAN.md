@@ -54,7 +54,7 @@
   - [x] **M8-5** 行を語句に刻む（`parts`）と遠近感の演出（[Issue #36](https://github.com/bubbleShaker/lyric-stage/issues/36)）。**M8-2 より先に入れた** — 文字の動きが単調だという指摘が先にあり、配色や図形はその上に載せるものだから
     - [ ] **尺を戻す** 刻み方が決まったら `WORK_WINDOW` を `203.82`（7 行）へ広げ、残り 4 行を刻む
   - [x] **M8-2a** 書体を選ぶ（[Issue #39](https://github.com/bubbleShaker/lyric-stage/issues/39)）。**M8-2 より先。** 配色・図形・字間は書体を前提に決める値なので、後にすると全部詰め直しになる。**Zen Kaku Gothic New Black** を自前ホスト（3.4 MB → 29 KB）
-  - [ ] **M8-2** 配色と背景の差し替え（星空 → 文字PV 風）
+  - [ ] **M8-2** 配色と背景の差し替え（星空 → 文字PV 風）（[Issue #41](https://github.com/bubbleShaker/lyric-stage/issues/41) に設計の分岐点を書いた）
   - [ ] **M8-3** 図形グラフィック（帯・枠・グリッド・英字サブテキスト）
   - [ ] **M8-4** ビート同期の衝撃（フラッシュ・画面揺れ）。M5-2 の音量解析を流用する
 - [ ] **M7** 仕上げ（レスポンシブ、OGP、README）。**M8 の後に回す**
