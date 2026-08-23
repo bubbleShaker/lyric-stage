@@ -8,11 +8,12 @@ import { assetUrl } from './lib/asset';
 import { requiredElement } from './lib/dom';
 import { systemReducedMotion } from './lib/reduced-motion';
 import { AudioPlayer } from './stage/audio-player';
+import type { Backdrop } from './stage/backdrop';
 import { loadDeclaredFonts } from './stage/display-font';
 import { LyricStage } from './stage/lyric-stage';
 import { createLoudness, systemAudioContext } from './stage/loudness';
+import { GrainField } from './stage/grain-field';
 import { ScaledCanvas, systemPixelRatio } from './stage/scaled-canvas';
-import { Starfield } from './stage/starfield';
 import { mountTransport } from './stage/transport';
 import { mountTransportIdle } from './stage/transport-idle';
 import { WindowedPlayback } from './stage/windowed-playback';
@@ -86,14 +87,17 @@ ticker.subscribe(loudness.sample);
 
 // 背景は装飾。canvas を塞ぐブラウザや context を作れない状況でも、
 // 歌詞と音（作品の本体）は動かなければならないので、失敗をここで受け止める。
-// 星が出ないことより、真っ黒な画面に死んだ再生コントロールだけが残る方が悪い
+// 背景が出ないことより、真っ黒な画面に死んだ再生コントロールだけが残る方が悪い
 try {
   const canvas = new ScaledCanvas(requiredElement<HTMLCanvasElement>('backdrop'), systemPixelRatio);
-  const backdrop = new Starfield(canvas, prefersReducedMotion, loudness.level);
-  // 背景の時計も曲の再生位置。シークすれば星の瞬きも一緒に飛ぶ
+  // **どの描き手を使うかを決めているのはこの 1 行だけ**（M8-2 / Issue #41）。
+  // Backdrop という口の実装なので、Starfield（M5 の星空）に戻すのも、
+  // 層を重ねるものに差し替えるのもここで済む
+  const backdrop: Backdrop = new GrainField(canvas, prefersReducedMotion, loudness.level);
+  // 背景の時計も曲の再生位置。シークすれば粒のちらつきも一緒に飛ぶ
   ticker.subscribe(() => backdrop.render(player.currentTime));
 } catch (error) {
-  console.warn('背景の星空を出せませんでした。歌詞と音はそのまま動きます', error);
+  console.warn('背景を出せませんでした。歌詞と音はそのまま動きます', error);
 }
 
 ticker.start();

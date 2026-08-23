@@ -1,11 +1,17 @@
 import type { IntensityQuery } from '../lib/intensity';
 import { seededRandom } from '../lib/random';
 import type { ReducedMotionQuery } from '../lib/reduced-motion';
+import type { Backdrop } from './backdrop';
 import { PALETTE } from './palette';
 import type { DrawSurface } from './scaled-canvas';
 
 /**
  * 背景の星空。Canvas 2D で毎フレーム描く。
+ *
+ * **M8-2（Issue #41）で `Backdrop` の実装の 1 つに格下げした。今は使われていない。**
+ * 文字PV 化にあたって背景を粒と光（`GrainField`）に差し替えたが、消してはいない —
+ * 星空に戻す判断も、`LayeredBackdrop` で一番奥に薄く重ねる判断も、まだ残してある。
+ * 使うかどうかを決めているのは `main.ts` の 1 行だけ。
  *
  * gsap は使わない。星は数百個あり、1 つずつトゥイーンを張る対象ではないため
  * （GSAP に任せる価値があるのは「文字の登場」のような時間の組み立て）。
@@ -111,7 +117,7 @@ interface DrawnFrame {
   readonly intensity: number;
 }
 
-export class Starfield {
+export class Starfield implements Backdrop {
   private readonly surface: DrawSurface;
   private readonly prefersReducedMotion: ReducedMotionQuery;
   private readonly intensity: IntensityQuery;

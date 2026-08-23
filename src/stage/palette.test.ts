@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { PALETTE, cssVariableName, type PaletteName } from './palette';
+import { PALETTE, cssVariableName, withAlpha, type PaletteName } from './palette';
 // ?raw は対象ファイルを文字列として読み込む Vite の機能（font-subset.test.ts と同じ）
 import styleCss from '../style.css?raw';
 
@@ -67,5 +67,26 @@ describe('配色の単一の情報源', () => {
     const hardcoded = outside.match(/#[0-9a-fA-F]{3,8}\b/g) ?? [];
 
     expect(hardcoded).toStrictEqual([]);
+  });
+});
+
+describe('withAlpha', () => {
+  it('不透明度を 2 桁足して #rrggbbaa にする', () => {
+    expect(withAlpha(PALETTE.dim, 1)).toBe('#16171cff');
+    expect(withAlpha(PALETTE.dim, 0)).toBe('#16171c00');
+  });
+
+  it('1 桁になる不透明度も 2 桁で書く', () => {
+    // 0.02 * 255 = 5.1 → '5'。padStart が無いと '#16171c5' の 8 文字になり、
+    // **canvas は無効な色を黙って捨てる**（例外にならず、直前の塗り色のまま描かれる）
+    expect(withAlpha(PALETTE.dim, 0.02)).toBe('#16171c05');
+  });
+
+  it('0〜1 の外は端に丸める', () => {
+    // 丸めないと toString(16) が 3 桁以上になり、色として解釈できない文字列になる。
+    // 呼び出し側が音量（0〜1 のはずの値）を掛け算した結果を渡すので、
+    // わずかに 1 を超えることが実際にある
+    expect(withAlpha(PALETTE.ink, 1.4)).toBe('#f2f2f5ff');
+    expect(withAlpha(PALETTE.ink, -0.3)).toBe('#f2f2f500');
   });
 });

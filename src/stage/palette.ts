@@ -47,6 +47,31 @@ export const PALETTE = {
 
 export type PaletteName = keyof typeof PALETTE;
 
+/** パレットが持つ色そのもの。`#rrggbb` の 7 文字であることを型で保証する */
+export type PaletteColor = (typeof PALETTE)[PaletteName];
+
+/**
+ * パレットの色に不透明度を足して `#rrggbbaa` にする。
+ *
+ * グラデーションの終点に使う。canvas の `addColorStop` に `transparent` を渡すと
+ * **黒へ向かって補間される**（`transparent` は `rgba(0, 0, 0, 0)` なので、
+ * 色の成分ごと 0 に近づく）。同じ色の不透明度だけを 0 にすれば、
+ * 色味を保ったまま消えていく。
+ *
+ * 引数を `PaletteColor` に絞っているのは、書式の検査を型に任せるため。
+ * 任意の文字列を受けると `rgb()` 記法や 3 桁の短縮形を渡せてしまい、
+ * 末尾に 2 桁足すだけのこの実装が黙って壊れた色を返す。
+ */
+export function withAlpha(color: PaletteColor, alpha: number): string {
+  // 0〜1 の外は 00 / ff に丸める。範囲外をそのまま計算すると
+  // toString(16) が 3 桁以上になり、色として解釈できない文字列になる
+  const clamped = Math.min(1, Math.max(0, alpha));
+
+  return `${color}${Math.round(clamped * 255)
+    .toString(16)
+    .padStart(2, '0')}`;
+}
+
 /**
  * CSS 側の変数名。`style.css` の `:root` はこの名前で同じ値を宣言する。
  *

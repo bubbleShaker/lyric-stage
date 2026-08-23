@@ -20,6 +20,9 @@
       - vite.config.ts で複数ページ構成（rollupOptions.input）にすると公開対象に入る。
         その時はこのページを除外すること
     -->
+    <!-- 背景（M8-2 / Issue #41）。**歌詞と一緒に見えないと密度を判断できない**ので、
+         このページにも出す。本編と違って音が無いので、強さは window.loud で手で動かす -->
+    <canvas class="backdrop" id="backdrop" aria-hidden="true"></canvas>
     <main class="stage">
       <!-- 語句の枠はここに LyricStage が立てる。中身は触らない -->
       <div class="stage__lines" id="stage-lines"></div>
@@ -31,7 +34,9 @@
       import { ANCHOR_CLASS, SIZE_CLASS } from './src/stage/composition.ts';
       import { loadDeclaredFonts } from './src/stage/display-font.ts';
       import { effects } from './src/stage/effects.ts';
+      import { GrainField } from './src/stage/grain-field.ts';
       import { LyricStage } from './src/stage/lyric-stage.ts';
+      import { ScaledCanvas, systemPixelRatio } from './src/stage/scaled-canvas.ts';
       import './src/style.css';
 
       gsap.registerPlugin(SplitText);
@@ -90,6 +95,24 @@
       window.playParts = (parts) =>
         start({ time: 0, text: parts.map((part) => part.text).join(''), parts });
 
+      // 背景は歌詞とは別の時計で回す（M8-2）。本編では音の再生位置が時計だが、
+      // このページには音が無い。行を出す前から背景だけを眺められる方が、
+      // 「文字が乗っていない状態でどれだけ引けているか」を見るのに都合がよい。
+      //
+      // 音の代わりに window.loud（0〜1）で盛り上がりを手で動かす。
+      // 1 にすると中心の光が広がり、粒が濃くなる
+      window.loud = 0;
+      const backdrop = new GrainField(
+        new ScaledCanvas(document.getElementById('backdrop'), systemPixelRatio),
+        neverReduceMotion,
+        () => window.loud,
+      );
+      const spin = (now) => {
+        backdrop.render(now / 1000);
+        requestAnimationFrame(spin);
+      };
+      requestAnimationFrame(spin);
+
       // コマ送りで見たいときは window.hold = true で時計を止め、stage.render(秒) で
       // 任意のコマに飛ぶ。gsap 本体も出しておく（globalTimeline の様子を見る用）
       window.stage = stage;
@@ -101,6 +124,7 @@
           `演出名: ${Object.keys(effects).join(' / ')}`,
           `at: ${Object.keys(ANCHOR_CLASS).join(' / ')}`,
           `size: ${Object.keys(SIZE_CLASS).join(' / ')}`,
+          `背景の盛り上がりは window.loud = 0〜1 で動かせます。`,
         ].join('\n'),
       );
     </script>
