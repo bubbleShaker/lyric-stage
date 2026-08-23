@@ -18,6 +18,32 @@ export interface LyricLine {
   duration?: number;
   /** 行の構図。M8-1 で足した */
   place?: LyricPlacement;
+  /** 語句ごとの刻み。M8-5 で足した。省略時は行がそのまま 1 語句 */
+  parts?: LyricPart[];
+}
+
+/**
+ * 行を分けた語句 — **その行の中で、いつ・どこに・どう出るか。**
+ *
+ * 日本語は語の切れ目に空白が無いので、SplitText の `words` では意味のある単位に
+ * 割れない（`chars` しか当てにできない）。区切りは人が決めてデータに書く。
+ *
+ * 語句は**行が終わるまで画面に残る**。出るたびに画が埋まっていくのが文字PV の型で、
+ * 消えるのは行が変わる時にまとめて。
+ */
+export interface LyricPart {
+  text: string;
+  /**
+   * 出る時刻。**行の `time` からの相対秒。**
+   *
+   * 絶対時刻で書くと、行の `time` を実測に差し替えた時（M6-3）に語句の刻みが
+   * 全部書き直しになる。行に対する相対なら、行ごと動かしても刻みは生き残る。
+   */
+  at: number;
+  /** 語句の演出。省略時は行の `effect` を継ぐ */
+  effect?: string;
+  /** 語句の構図。省略時は行の `place` を継ぐ（＝同じ場所に重なる） */
+  place?: LyricPlacement;
 }
 
 /**
@@ -66,6 +92,40 @@ export interface LyricSheet {
 /** どの行も表示しない状態を表す番号 */
 export const NO_LINE = -1;
 
+/**
+ * 表示側が受け取る語句。行から継いだ分まで埋まっている。
+ *
+ * `LyricPart` と分けているのは、**書く側の省略**（`effect` を書かなければ行に従う）と
+ * **出す側の必要**（何を当てるかは必ず決まっている）が別のものだから。
+ * 表示側に `?? line.effect` を書かせると、継承の規則が画面を触る所へ散る。
+ */
+export interface ResolvedPart {
+  readonly text: string;
+  readonly at: number;
+  readonly effect: string | undefined;
+  readonly place: LyricPlacement | undefined;
+}
+
+/**
+ * 行を語句の列として見る。
+ *
+ * **`parts` が無い行は「`at: 0` の 1 語句だけの行」**として扱う。こうすると
+ * 表示側に「刻んである行」と「刻んでいない行」の分岐が要らなくなり、
+ * 既存の 51 行と開発用シートを書き換えずに済む。
+ */
+export function partsOf(line: LyricLine): ResolvedPart[] {
+  if (line.parts === undefined) {
+    return [{ text: line.text, at: 0, effect: line.effect, place: line.place }];
+  }
+
+  return line.parts.map((part) => ({
+    text: part.text,
+    at: part.at,
+    effect: part.effect ?? line.effect,
+    place: part.place ?? line.place,
+  }));
+}
+
 class LyricSheetError extends Error {
   constructor(message: string) {
     super(`歌詞データが不正です: ${message}`);
@@ -102,7 +162,13 @@ function parseLyricLine(value: unknown, index: number): LyricLine {
   }
 
   const line = value as Record<string, unknown>;
-  const { time, text, effect, duration, place } = line;
+
+  // 綴りを間違えた項目は名指しで落とす（place / parts の中と同じ番人）。
+  // 黙って落とすと、`parst` と書いた行が**検証も刻みも素通りして 1 語句で出る**。
+  // 画面には歌詞が出ているので、書いた本人にも原因が分からない
+  rejectUnknownKeys(line, ['time', 'text', 'effect', 'duration', 'place', 'parts'], `lines[${index}]`);
+
+  const { time, text, effect, duration, place, parts } = line;
 
   if (typeof time !== 'number' || !Number.isFinite(time) || time < 0) {
     throw new LyricSheetError(`lines[${index}].time が 0 以上の数値ではありません`);
@@ -118,19 +184,73 @@ function parseLyricLine(value: unknown, index: number): LyricLine {
   }
 
   // ここで組み直すので、**知らない項目は黙って落ちる**。新しい項目を足したら
-  // 必ずこの行にも足すこと（place は M8-1 で足した）
+  // 必ずこの行にも足すこと（place は M8-1、parts は M8-5 で足した）
   return {
     time,
     text,
     ...(effect ? { effect } : {}),
     ...(duration ? { duration } : {}),
-    ...(place !== undefined ? { place: parsePlacement(place, index) } : {}),
+    ...(place !== undefined ? { place: parsePlacement(place, `lines[${index}]`) } : {}),
+    ...(parts !== undefined ? { parts: parseParts(parts, `lines[${index}]`) } : {}),
   };
 }
 
-/** 構図の**形**だけを確かめる。名前が実在するかは stage/composition.ts の担当 */
-function parsePlacement(value: unknown, index: number): LyricPlacement {
-  const where = `lines[${index}].place`;
+/** 語句の列。空でないこと・時刻が 0 以上で昇順であることまで見る */
+function parseParts(value: unknown, owner: string): LyricPart[] {
+  const where = `${owner}.parts`;
+
+  if (!Array.isArray(value)) throw new LyricSheetError(`${where} が配列ではありません`);
+  // 空配列を通すと「語句がある行」なのに何も出ない行になる。書き掛けとして弾く
+  if (value.length === 0) throw new LyricSheetError(`${where} が空です`);
+
+  const parts = value.map((part, order) => parsePart(part, `${where}[${order}]`));
+
+  // 並べ替えず、順序が崩れていたら落とす。**書いた順＝出る順**でないと、
+  // 語句を読み進める向きと画に出る向きがずれても JSON を見ても気付けない
+  for (let i = 1; i < parts.length; i += 1) {
+    if (parts[i].at < parts[i - 1].at) {
+      throw new LyricSheetError(`${where}[${i}].at が前の語句より前にあります`);
+    }
+  }
+
+  return parts;
+}
+
+function parsePart(value: unknown, where: string): LyricPart {
+  if (!isPlainObject(value)) throw new LyricSheetError(`${where} がオブジェクトではありません`);
+
+  rejectUnknownKeys(value, ['text', 'at', 'effect', 'place'], where);
+
+  const { text, at, effect, place } = value;
+
+  if (typeof text !== 'string' || text.trim() === '') {
+    throw new LyricSheetError(`${where}.text が空でない文字列ではありません`);
+  }
+  // at は必須。省略を許すと「行の頭で出す」に落ちて、刻みを書き忘れた語句が
+  // 静かに重なる。刻むために足した項目なので、書かせる
+  if (typeof at !== 'number' || !Number.isFinite(at) || at < 0) {
+    throw new LyricSheetError(`${where}.at が 0 以上の数値ではありません`);
+  }
+  if (effect !== undefined && typeof effect !== 'string') {
+    throw new LyricSheetError(`${where}.effect が文字列ではありません`);
+  }
+
+  return {
+    text,
+    at,
+    ...(effect ? { effect } : {}),
+    ...(place !== undefined ? { place: parsePlacement(place, where) } : {}),
+  };
+}
+
+/**
+ * 構図の**形**だけを確かめる。名前が実在するかは stage/composition.ts の担当。
+ *
+ * `owner` は「どこの place か」を指す文字列（`lines[3]` / `lines[3].parts[1]`）。
+ * 行と語句のどちらからも呼ばれるので、番号ではなく道筋を受け取る
+ */
+function parsePlacement(value: unknown, owner: string): LyricPlacement {
+  const where = `${owner}.place`;
 
   if (!isPlainObject(value)) throw new LyricSheetError(`${where} がオブジェクトではありません`);
 
@@ -279,6 +399,15 @@ export function sliceSheet(sheet: LyricSheet, workWindow: WorkWindow): LyricShee
     // duration は組み直すので、元の値はここで一度落とす
     const { duration: _original, ...rest } = line;
     const copy: LyricLine = { ...rest, time };
+
+    // 語句の at は行の time からの相対秒なので、**頭を削った分だけ前に詰める**。
+    // 詰めないと、既に歌い終えた語句まで削った秒数だけ遅れて出直す。
+    // 区間の頭より前に出るはずだった語句は 0 に揃える（＝頭から出ている扱い）。
+    // 語句は行が終わるまで残る積み上げなので、落とすのではなく詰めるのが正しい
+    if (line.parts !== undefined) {
+      const cut = trim(Math.max(line.time, workWindow.start) - line.time);
+      copy.parts = line.parts.map((part) => ({ ...part, at: trim(Math.max(0, part.at - cut)) }));
+    }
 
     if (line.duration !== undefined) {
       // 区間の外まで出し続けても見えないので、はみ出した分は削る。

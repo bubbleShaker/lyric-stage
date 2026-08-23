@@ -14,11 +14,10 @@
     <canvas class="backdrop" id="backdrop" aria-hidden="true"></canvas>
 
     <main class="stage">
-      <!-- 枠が「画面のどこに・どのくらいの大きさで・どの傾きで」を持ち、
-           中の行を GSAP が動かす。分けている理由は src/stage/lyric-stage.ts -->
-      <div class="stage__frame" id="stage-frame">
-        <div class="stage__text" id="stage-text"></div>
-      </div>
+      <!-- 語句ごとの枠がここに並ぶ（中身は src/stage/lyric-stage.ts の所有物）。
+           枠が「画面のどこに・どのくらいの大きさで・どの傾きで」を持ち、
+           中の文字を GSAP が動かす。分けている理由は src/stage/lyric-stage.ts -->
+      <div class="stage__lines" id="stage-lines"></div>
       <!-- 歌詞まわりのお知らせ。再生コントロール側のメッセージ欄とは用途を分ける -->
       <p class="stage__message" id="stage-message" role="status"></p>
     </main>

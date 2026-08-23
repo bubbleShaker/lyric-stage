@@ -21,9 +21,8 @@
         その時はこのページを除外すること
     -->
     <main class="stage">
-      <div class="stage__frame" id="stage-frame">
-        <div class="stage__text" id="stage-text"></div>
-      </div>
+      <!-- 語句の枠はここに LyricStage が立てる。中身は触らない -->
+      <div class="stage__lines" id="stage-lines"></div>
     </main>
     <script type="module">
       import gsap from 'gsap';
@@ -38,27 +37,60 @@
 
       // ここは演出そのものを見る道具なので、OS の「視差効果を減らす」設定に関わらず
       // 素の演出を出す。本編（src/main.ts）は systemReducedMotion() を渡す
-      const stage = new LyricStage(
-        {
-          frame: document.getElementById('stage-frame'),
-          text: document.getElementById('stage-text'),
-        },
-        neverReduceMotion,
-      );
+      const stage = new LyricStage(document.getElementById('stage-lines'), neverReduceMotion);
+
+      /**
+       * 行を出して、時計を回す。
+       *
+       * LyricStage は自分では進まない（M8-5）。本編では音の再生位置が時計になるが、
+       * このページには音が無いので、代わりにここが経過時間を渡す。
+       * 止めたい時は window.hold = true、コマ送りは stage.render(秒) で。
+       */
+      // 時計は 1 本だけ。呼ぶたびにループを増やすと、古いループが新しい行に
+      // 別の時刻を書き込み続けて再生位置が飛ぶ
+      let frame = null;
+      const start = (line) => {
+        if (frame !== null) cancelAnimationFrame(frame);
+        stage.show(line);
+
+        let last = performance.now();
+        let elapsed = 0;
+        const step = (now) => {
+          // hold 中は経過を足さない（基準時刻を止めないと、解除した瞬間に跳ねる）
+          if (!window.hold) elapsed += (now - last) / 1000;
+          last = now;
+          stage.render(elapsed);
+          frame = requestAnimationFrame(step);
+        };
+        frame = requestAnimationFrame(step);
+      };
 
       /**
        * 1 行を指定の演出と構図で表示する。どちらも省くと既定になる。
        * 例: play('世界が広がる', 'zoom', { at: 'bottom-right', size: 'xl', tilt: -5 })
        */
-      window.play = (text, effect, place) => stage.show({ time: 0, text, effect, place });
+      window.play = (text, effect, place) => start({ time: 0, text, effect, place });
 
-      // 演出は一瞬で終わるので、コマ送りで見たいときのために gsap を出しておく。
-      // gsap.globalTimeline.pause() で全体を止め、.time(秒) で任意のコマに飛べる
+      /**
+       * 語句に刻んだ行を試す（M8-5）。本編シートの parts と同じ形を渡す。
+       * **ここは parseLyricSheet を通らない**ので、本番なら弾かれる形（at の逆順など）も
+       * そのまま動く。形の検証を見たい時は src/domain/lyrics.test.ts の方を見ること。
+       * 例: playParts([
+       *       { text: 'シャイニング', at: 0, effect: 'rushIn', place: { at: 'middle-left', size: 'lg' } },
+       *       { text: 'スター', at: 0.95, effect: 'zoom', place: { at: 'top-right', size: 'xl' } },
+       *     ])
+       */
+      window.playParts = (parts) =>
+        start({ time: 0, text: parts.map((part) => part.text).join(''), parts });
+
+      // コマ送りで見たいときは window.hold = true で時計を止め、stage.render(秒) で
+      // 任意のコマに飛ぶ。gsap 本体も出しておく（globalTimeline の様子を見る用）
+      window.stage = stage;
       window.gsap = gsap;
 
       console.info(
         [
-          `play('文字', '演出名', 構図) で試せます。`,
+          `play('文字', '演出名', 構図) / playParts([{ text, at, effect, place }, ...]) で試せます。`,
           `演出名: ${Object.keys(effects).join(' / ')}`,
           `at: ${Object.keys(ANCHOR_CLASS).join(' / ')}`,
           `size: ${Object.keys(SIZE_CLASS).join(' / ')}`,

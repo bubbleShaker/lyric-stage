@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { parseLyricSheet, sliceSheet, type LyricLine } from './domain/lyrics';
+import { parseLyricSheet, partsOf, sliceSheet, type LyricLine } from './domain/lyrics';
 import { isAnchorName, isSizeName } from './stage/composition';
 import { effects, isEffectName, resolveEffect } from './stage/effects';
+import { buildLineTimeline } from './stage/line-timeline';
 import { DEFAULT_SHEET_NAME, WORK_WINDOW } from './work';
 // Vite の ?raw は対象ファイルを文字列として読み込む。fs を使わずに済むので
 // Node の型定義をアプリ側の tsconfig に持ち込まなくてよい。
@@ -49,6 +50,32 @@ describe.each(Object.entries(SHEET_SOURCES))('%s.json', (_name, source) => {
   it('空の行が無い', () => {
     expect(sheet.lines.every((line) => line.text.trim() !== '')).toBe(true);
   });
+
+  // 語句の規約はシートに依らないので、本編だけでなく全シートに課す。
+  // 行の text は画面に出なくなった（出るのは parts 側）ぶん、
+  // ここで一致を見張っておかないと静かに古びる
+  it('語句に刻んだ行は、語句を繋ぐと行の歌詞に戻る', () => {
+    const mismatched = sheet.lines
+      .filter((line) => line.parts !== undefined)
+      .map((line) => ({ line, joined: partsOf(line).map((part) => part.text).join('') }))
+      .filter(({ line, joined }) => strip(joined) !== strip(line.text))
+      .map(({ line, joined }) => `${line.text} ≠ ${joined}`);
+
+    expect(mismatched).toStrictEqual([]);
+  });
+
+  it('語句が行の猶予の中で出る', () => {
+    // at は行の time からの相対秒。行が消えた後の時刻を書いても、その語句は
+    // 一度も画に出ないまま終わる（画面を見ても「なぜか出ない語句」にしか見えない）
+    const late = sheet.lines
+      .flatMap((line, index) =>
+        partsOf(line).map((part) => ({ line, part, gap: gapAfter(sheet.lines, index) })),
+      )
+      .filter(({ part, gap }) => part.at >= gap)
+      .map(({ line, part, gap }) => `${line.text} の「${part.text}」: at=${part.at} / 猶予 ${gap} 秒`);
+
+    expect(late).toStrictEqual([]);
+  });
 });
 
 describe(`${DEFAULT_SHEET_NAME}.json`, () => {
@@ -67,8 +94,11 @@ describe(`${DEFAULT_SHEET_NAME}.json`, () => {
     // 未知の名前でも既定の演出に落ちて動いてしまうので、綴りの間違いは
     // 画面を見ても気付けない。ここで名指しして落とす。
     // （sample.json は「未知の名前は fade に落ちる」ことを見せる行を意図的に持つので対象外）
+    //
+    // 語句（parts）の指定も partsOf 経由で一緒に見る。行に書いた名前だけを見ると、
+    // 刻んだ行では実際に使われる名前が検査を素通りする
     const unknown = sheet.lines
-      .map((line) => line.effect)
+      .flatMap((line) => partsOf(line).map((part) => part.effect))
       .filter((name): name is string => name !== undefined && !isEffectName(name));
 
     expect(unknown).toStrictEqual([]);
@@ -119,10 +149,13 @@ describe(`${DEFAULT_SHEET_NAME}.json`, () => {
     // 演出名ではなく layout で判定する。守りたいのは「縦組みになる行」であって
     // 「vertical という名前の行」ではないので、縦書き系の演出が増えても追従する。
     // 数字も同じ理由で横倒しになるので併せて見る。
+    // 語句に刻んだ行では、縦書きになるかどうかは語句ごとに決まる（M8-5）ので
+    // partsOf 経由で見る。行の effect だけを見ると、刻んだ行が素通りする
     const latin = sheet.lines
-      .filter((line) => resolveEffect(line.effect).layout === 'vertical')
-      .filter((line) => /[\p{Script=Latin}\p{Nd}]/u.test(line.text))
-      .map((line) => line.text);
+      .flatMap((line) => partsOf(line))
+      .filter((part) => resolveEffect(part.effect).layout === 'vertical')
+      .filter((part) => /[\p{Script=Latin}\p{Nd}]/u.test(part.text))
+      .map((part) => part.text);
 
     expect(latin).toStrictEqual([]);
   });
@@ -132,11 +165,14 @@ describe(`${DEFAULT_SHEET_NAME}.json`, () => {
     // 区間で使うと組み方が毎行変わって落ち着かない。そこで「6 秒前後の伸ばしの行に
     // だけ当てる」と決めた（M4-3）。文章で書くだけだと、M6 で time を詰め直した時に
     // 縦書きの行が短い区間へ静かに紛れ込むので検査にしておく。
+    // 語句に刻んだ行では、その語句が居られるのは「行の猶予 - 出る時刻」になる
     const hasty = sheet.lines
-      .map((line, index) => ({ line, gap: gapAfter(sheet.lines, index) }))
-      .filter(({ line }) => resolveEffect(line.effect).layout === 'vertical')
-      .filter(({ gap }) => gap < 5)
-      .map(({ line, gap }) => `${line.text}: ${gap.toFixed(2)} 秒`);
+      .flatMap((line, index) =>
+        partsOf(line).map((part) => ({ part, stay: gapAfter(sheet.lines, index) - part.at })),
+      )
+      .filter(({ part }) => resolveEffect(part.effect).layout === 'vertical')
+      .filter(({ stay }) => stay < 5)
+      .map(({ part, stay }) => `${part.text}: ${stay.toFixed(2)} 秒`);
 
     expect(hasty).toStrictEqual([]);
   });
@@ -145,12 +181,13 @@ describe(`${DEFAULT_SHEET_NAME}.json`, () => {
     // 割り当てが確定したので、実際の組み合わせ（その行に当てた演出 × その行の文字数
     // × その行の猶予）で測る。下の「どの演出も」はレジストリ全体の安全網で、
     // 実在しない最悪の組み合わせを見ているぶんこちらより厳しい。
+    //
+    // **本番と同じ組み立て（buildLineTimeline）で測る。** 語句を刻むと行の長さは
+    // 「最後の語句が出る時刻 + その演出の長さ」になるので、演出単体を測っても
+    // 刻みすぎに気付けない。DOM の代わりにダミーを渡せば、組み立てだけを借りられる
     const overrun = sheet.lines
       .map((line, index) => {
-        const timeline = resolveEffect(line.effect).build({
-          root: {} as HTMLElement,
-          chars: dummyChars(line.text.length),
-        });
+        const timeline = buildLineTimeline(line, (part) => dummyTarget(part.text.length));
         const duration = timeline.duration();
         timeline.kill();
         return { line, duration, gap: gapAfter(sheet.lines, index) };
@@ -174,10 +211,7 @@ describe(`${DEFAULT_SHEET_NAME}.json`, () => {
 
     for (const name of Object.keys(effects)) {
       // レジストリには関数と { layout, build } の 2 通りが書けるので resolveEffect で揃える
-      const timeline = resolveEffect(name).build({
-        root: {} as HTMLElement,
-        chars: dummyChars(worst.longestText),
-      });
+      const timeline = resolveEffect(name).build(dummyTarget(worst.longestText));
       expect(timeline.duration(), `${name} が ${worst.shortestGap} 秒に収まらない`).toBeLessThan(
         worst.shortestGap,
       );
@@ -201,8 +235,9 @@ describe('WORK_WINDOW × 本編シート', () => {
     expect(WORK_WINDOW.end).toBeLessThan(AUDIO_DURATION_SECONDS);
   });
 
-  it('切り出すとラスサビの 7 行が残る', () => {
-    expect(sliced.lines).toHaveLength(7);
+  it('切り出すとラスサビの頭 3 行が残る', () => {
+    // M8-5 で 7 行 → 3 行に縮めた。語句の刻み方を短い尺で確かめてから広げる
+    expect(sliced.lines).toHaveLength(3);
   });
 
   it('区間の頭に助走がある（いきなり歌から始まらない）', () => {
@@ -216,20 +251,42 @@ describe('WORK_WINDOW × 本編シート', () => {
     expect(last.time + (last.duration ?? 0)).toBeLessThanOrEqual(length);
   });
 
+  it('最後の行が語句ごと区間の終わりまでに収まる', () => {
+    // M8-5 で生まれた新しい壊れ方 — 最終行には次の行が無いので、刻みすぎても
+    // 「行の猶予に収まる」の検査に掛からず、**語句が出揃う前に区間が終わる**。
+    // 区間の終わりを猶予として、本番と同じ組み立てで測る
+    const last = sliced.lines[sliced.lines.length - 1];
+    const timeline = buildLineTimeline(last, (part) => dummyTarget(part.text.length));
+    const span = timeline.duration();
+    timeline.kill();
+
+    expect(last.time + span).toBeLessThanOrEqual(WORK_WINDOW.end - WORK_WINDOW.start);
+  });
+
   it('切り出しても全行に effect が残っている', () => {
     expect(
       sliced.lines.every((line) => line.effect !== undefined && isEffectName(line.effect)),
     ).toBe(true);
   });
 
-  it('作品に残る全ての行に構図が明示されている', () => {
+  /**
+   * 作品に出る語句の並び。**構図の検査はすべてこの並びで見る。**
+   *
+   * M8-5 で画に出る単位が行から語句になったので、行の place だけを見ると
+   * 刻んだ行の構図が丸ごと検査を素通りする（行の place は語句が省いた時の
+   * 戻り先でしかない）。partsOf は刻んでいない行も 1 語句として返すので、
+   * どちらの書き方でも同じ検査が当たる。
+   */
+  const parts = sliced.lines.flatMap((line) => partsOf(line));
+
+  it('作品に出る全ての語句に構図が明示されている', () => {
     // M4-3 で effect に課したのと同じ理由 — 省略しても既定の構図（中央）で動くので、
-    // 「意図して中央に置いた行」と「割り当てを忘れた行」が画面を見ても区別できない。
+    // 「意図して中央に置いた語句」と「割り当てを忘れた語句」が画面を見ても区別できない。
     //
-    // **全 51 行ではなく、切り出した後の行だけを見る。** 文字PV は 1 行ずつ手で
+    // **全 51 行ではなく、切り出した後だけを見る。** 文字PV は 1 語句ずつ手で
     // 構図を作るので、作品に出ない行まで用意するのは現実的でない（M8-0 の決定）。
     // 区間を広げたらここが落ちて、構図の要る行が増えたことに気付ける
-    const missing = sliced.lines.filter((line) => line.place === undefined).map((line) => line.text);
+    const missing = parts.filter((part) => part.place === undefined).map((part) => part.text);
 
     expect(missing).toStrictEqual([]);
   });
@@ -237,30 +294,40 @@ describe('WORK_WINDOW × 本編シート', () => {
   it('知らないアンカー名や大きさの段階が書かれていない', () => {
     // 未知の名前でも既定に落ちて動いてしまうので、綴りの間違いは画面を見ても
     // 気付けない（effect の「知らない演出名」と同じ）。ここで名指しして落とす
-    const unknown = sliced.lines
-      .flatMap((line) =>
-        line.place === undefined
-          ? []
-          : [
-              ...(isAnchorName(line.place.at) ? [] : [`${line.text}: at=${line.place.at}`]),
-              ...(isSizeName(line.place.size) ? [] : [`${line.text}: size=${line.place.size}`]),
-            ],
-      );
+    const unknown = parts.flatMap((part) =>
+      part.place === undefined
+        ? []
+        : [
+            ...(isAnchorName(part.place.at) ? [] : [`${part.text}: at=${part.place.at}`]),
+            ...(isSizeName(part.place.size) ? [] : [`${part.text}: size=${part.place.size}`]),
+          ],
+    );
 
     expect(unknown).toStrictEqual([]);
   });
 
-  it('隣り合う行が同じアンカーに置かれていない', () => {
-    // M8-1 の狙いは「1 行ずつ違う画になる」こと。同じ場所に続けて出すと、
-    // 文字だけが差し替わって見えて構図が効かない。離れた行での再登場は
-    // 「戻ってきた」として効くので、隣り合う組だけを見る
-    const repeated = sliced.lines
+  it('隣り合う語句が同じアンカーに置かれていない', () => {
+    // M8-1 の狙いは「1 つずつ違う画になる」こと。同じ場所に続けて出すと、
+    // 文字だけが差し替わって見えて構図が効かない。離れた所での再登場は
+    // 「戻ってきた」として効くので、隣り合う組だけを見る。
+    //
+    // 行を跨いだ組も見る（前の行の最後の語句 → 次の行の最初の語句）。積み上げた画が
+    // 消えた直後に同じ場所へ置くと、行が変わったことが画から読み取れない
+    const repeated = parts
       .slice(1)
-      .map((line, index) => ({ line, previous: sliced.lines[index] }))
-      .filter(({ line, previous }) => line.place?.at === previous.place?.at)
-      .map(({ line, previous }) => `${previous.text} → ${line.text}: ${line.place?.at}`);
+      .map((part, index) => ({ part, previous: parts[index] }))
+      .filter(({ part, previous }) => part.place?.at === previous.place?.at)
+      .map(({ part, previous }) => `${previous.text} → ${part.text}: ${part.place?.at}`);
 
     expect(repeated).toStrictEqual([]);
+  });
+
+  it('作品の行が語句に刻まれている', () => {
+    // M8-5 の狙いそのもの。1 行を丸ごと出す行が作品に残っていたら、そこだけ
+    // 動きが単調になる。区間を広げた時に、刻み忘れの行をここで名指しして落とす
+    const whole = sliced.lines.filter((line) => line.parts === undefined).map((line) => line.text);
+
+    expect(whole).toStrictEqual([]);
   });
 });
 
@@ -281,7 +348,21 @@ function worstCase(lines: readonly LyricLine[]) {
   };
 }
 
-/** 演出の長さを測るだけなので、文字要素の代わりにダミーを渡せば足りる */
-function dummyChars(count: number): Element[] {
-  return Array.from({ length: count }, () => ({}) as unknown as Element);
+/**
+ * 演出の長さを測るだけなので、DOM の代わりにダミーを渡せば足りる。
+ *
+ * gsap は要素でなくただのオブジェクトもトゥイーンできるので、
+ * ブラウザ無しで時間の組み立てだけを借りられる（stage/effects.test.ts と同じ手）。
+ */
+function dummyTarget(count: number) {
+  return {
+    frame: {} as HTMLElement,
+    root: {} as HTMLElement,
+    chars: Array.from({ length: count }, () => ({}) as unknown as Element),
+  };
+}
+
+/** 空白を落とす。画の都合で入れた空白で歌詞の一致を落としたくない */
+function strip(text: string): string {
+  return text.replace(/\s+/gu, '');
 }

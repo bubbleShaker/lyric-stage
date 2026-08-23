@@ -33,4 +33,13 @@ export interface Playback {
 export interface LyricPresenter {
   show(line: LyricLine): void;
   clear(): void;
+  /**
+   * 今出している行の、**行の頭からの経過秒**を伝える。
+   *
+   * 演出の時計は音の再生位置（M2 の技術選定で決めた「マスタークロック」）。
+   * 描画側に自前の時計を持たせると、音を止めても演出だけが進み続ける。
+   * M8-5 で行の中に語句の刻み（最大 3 秒）が入り、ズレが目に見えるようになったので
+   * 口に足した。**show() の直後を含め、毎フレーム呼ばれる前提。**
+   */
+  render(offset: number): void;
 }

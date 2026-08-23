@@ -104,6 +104,8 @@ describe('effects', () => {
       'zoom',
       'shatter',
       'zoomLine',
+      'rushIn',
+      'swing',
       'calm',
     ]) {
       expect(resolveEffect(name).layout, name).toBeNull();

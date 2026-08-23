@@ -1,47 +1,33 @@
 import { SplitText } from 'gsap/SplitText';
-import type { LyricLine } from '../domain/lyrics';
+import type { LyricLine, ResolvedPart } from '../domain/lyrics';
 import type { LyricPresenter } from '../domain/ports';
 import type { ReducedMotionQuery } from '../lib/reduced-motion';
-import { resolveComposition, type Composition } from './composition';
-import { LAYOUT_CLASS, resolveEffect, type EffectLayout, type EffectTimeline } from './effects';
+import { resolveComposition } from './composition';
+import { LAYOUT_CLASS, type EffectLayout, type EffectTimeline } from './effects';
+import { buildLineTimeline, type PartTarget } from './line-timeline';
 
 /**
- * このクラスが受け持つ 2 つの要素。
+ * 1 行ぶんの語句を画面に出す係。
  *
- * **分かれているのは所有権のため。** GSAP は行の要素の transform を自分のものとして
- * 扱うので、構図（位置・傾き）を同じ要素に置くと取り合いになり、前の行の寄せ方が
- * 次の行に残る。枠は GSAP が決して触らない場所として空けてある。
- */
-export interface LyricStageElements {
-  /** 構図を当てる外側の枠。位置・大きさの段階・傾きを持つ */
-  readonly frame: HTMLElement;
-  /** 文字が入る要素。SplitText と演出が動かすのはこちらだけ */
-  readonly text: HTMLElement;
-}
-
-/**
- * 1 行ぶんの文字を画面に出す係。
+ * **語句ごとに枠を 1 つ立てる**（M8-5）。枠が構図（位置・大きさ・傾き）を持ち、
+ * 中の要素を演出が動かす。分けている理由は所有権 — GSAP は要素の transform を
+ * 自分のものとして扱うので、構図を同じ要素に置くと取り合いになり、
+ * 前の語句の寄せ方が次に残る（M8-1 で実測した）。
  *
- * SplitText は元の要素を作り替えるので、行を差し替えるたびに revert() で
- * 元の姿に戻さないと <div> が積み重なって増え続ける。その後始末をここに閉じ込める。
+ * 行が変わるたびに枠ごと捨てて作り直す。M8-1 まではただ 1 つの枠を使い回して
+ * いたので「当てたクラスを外す」「置いたカスタムプロパティを消す」後始末が
+ * 要ったが、**要素ごと捨てるならその手当ては丸ごと不要になる**。消し忘れの
+ * 起きようがない形にした。
  *
- * 合わせて **演出が要求するレイアウトを当てるのと外すのの両方**を持つ。演出側は
- * 「縦書きにしたい」と宣言するだけで DOM を触らない。付ける側と外す側が同じ所に
- * あるので、「縦書きの次の行が横書きに戻らない」類の消し忘れが起こらない。
- *
- * `#stage-frame` と `#stage-text` の class と style はこのクラスの所有物として扱う。
- * 他所から触ると clear() が踏み潰す。
+ * `#stage-lines` の中身はこのクラスの所有物として扱う。他所から足した要素は
+ * 次の行で消える。
  */
 export class LyricStage implements LyricPresenter {
   private readonly root: HTMLElement;
-  private readonly frame: HTMLElement;
   private readonly prefersReducedMotion: ReducedMotionQuery;
-  private split: SplitText | null = null;
   private timeline: EffectTimeline | null = null;
-  /** 今あてているレイアウト。clear() で同じものを外すために控える */
-  private layout: EffectLayout | null = null;
-  /** 今あてている構図。控える理由はレイアウトと同じ */
-  private composition: Composition | null = null;
+  /** 今出している語句の分割。縁を切るために控える（clear() を見よ） */
+  private splits: SplitText[] = [];
 
   /**
    * 「動きを減らす」設定の読み方は関数で受け取る。
@@ -56,66 +42,76 @@ export class LyricStage implements LyricPresenter {
    * tsconfig の erasableSyntaxOnly が有効なので、コンストラクタ引数に
    * private を付ける書き方（パラメータプロパティ）は使えない。明示的に代入する。
    */
-  constructor(elements: LyricStageElements, prefersReducedMotion: ReducedMotionQuery) {
-    this.root = elements.text;
-    this.frame = elements.frame;
+  constructor(root: HTMLElement, prefersReducedMotion: ReducedMotionQuery) {
+    this.root = root;
     this.prefersReducedMotion = prefersReducedMotion;
   }
 
   show(line: LyricLine): void {
     this.clear();
 
-    // 歌詞は外部 JSON から来るので、必ず textContent で入れる（innerHTML は使わない）
-    this.root.textContent = line.text;
-
     // 設定は行を出すたびに読む。曲の途中で OS の設定を変えても次の行から効く
     // （購読して切り替える作りにしても、演出は 1 秒未満で終わるので違いが出ない）
-    const { layout, build } = resolveEffect(line.effect, {
+    // 返ってくるタイムラインは止まっている（GSAP 自身の時計には乗らない）。
+    // 進めるのは render() だけ ＝ 音の再生位置
+    this.timeline = buildLineTimeline(line, (part, layout) => this.appendPart(part, layout), {
       reducedMotion: this.prefersReducedMotion(),
     });
+  }
 
-    // レイアウトは分割より先に当てる。SplitText は分割時の組み方を前提に
-    // 要素を作るので、後から縦書きにすると型を lines に広げたときに破綻する
-    if (layout !== null) {
-      this.root.classList.add(LAYOUT_CLASS[layout]);
-      this.layout = layout;
-    }
-
-    // 構図も分割より先。演出は文字の位置を「今いる場所からの割合」で動かすので
-    // （shatter の xPercent など）、置き場所と大きさが決まった後に組み立てる。
-    // 当てる先は枠。行の要素に当てると GSAP と取り合いになる（LyricStageElements）
-    const composition = resolveComposition(line.place);
-    this.frame.classList.add(...composition.classes);
-    for (const [name, value] of Object.entries(composition.vars)) {
-      this.frame.style.setProperty(name, value);
-    }
-    this.composition = composition;
-
-    this.split = SplitText.create(this.root, { type: 'chars' });
-    this.timeline = build({ root: this.root, chars: this.split.chars });
+  /** 行の頭からの経過秒に合わせて描く。進める役はこれだけ */
+  render(offset: number): void {
+    // 負の値（行が始まる前）は 0 に潰す。gsap は後ろ側を端で頭打ちにするが、
+    // 負の位置は「最後まで進んだ状態」と解釈されうる
+    this.timeline?.time(Math.max(0, offset));
   }
 
   /** 何も表示しない状態に戻す */
   clear(): void {
-    // revert() は kill() と違い「トゥイーンを当てる前の姿」まで戻す。
-    // 演出が root に残したインラインスタイルもこれで消える
-    this.timeline?.revert();
+    // kill() で GSAP のティッカーから外す。revert() で元の姿に戻す必要は無い —
+    // 動かしていた要素ごと、この後の replaceChildren() で消えるため
+    this.timeline?.kill();
     this.timeline = null;
-    this.split?.revert();
-    this.split = null;
-    this.root.textContent = '';
 
-    if (this.layout !== null) {
-      this.root.classList.remove(LAYOUT_CLASS[this.layout]);
-      this.layout = null;
+    // SplitText は分割のために要素を作り替えるだけでなく、指定によっては
+    // フォントの読み込み完了（document.fonts）や ResizeObserver を購読する。
+    // 今の指定（type: 'chars' / autoSplit 既定）では購読しないので要素ごと
+    // 捨てれば足りるが、**それは分割の指定に依存した安全**でしかない。
+    // 指定を増やした時に購読が積み上がらないよう、ここで必ず縁を切る
+    for (const split of this.splits) split.kill();
+    this.splits = [];
+
+    this.root.replaceChildren();
+  }
+
+  /** 語句 1 つぶんの枠を立てて、演出の当て先を返す */
+  private appendPart(part: ResolvedPart, layout: EffectLayout | null): PartTarget {
+    const frame = document.createElement('div');
+    frame.className = 'stage__frame';
+
+    const composition = resolveComposition(part.place);
+    frame.classList.add(...composition.classes);
+    for (const [name, value] of Object.entries(composition.vars)) {
+      frame.style.setProperty(name, value);
     }
 
-    if (this.composition !== null) {
-      this.frame.classList.remove(...this.composition.classes);
-      for (const name of Object.keys(this.composition.vars)) {
-        this.frame.style.removeProperty(name);
-      }
-      this.composition = null;
-    }
+    const text = document.createElement('div');
+    text.className = 'stage__text';
+    // 歌詞は外部 JSON から来るので、必ず textContent で入れる（innerHTML は使わない）
+    text.textContent = part.text;
+
+    // レイアウトは分割より先に当てる。SplitText は分割時の組み方を前提に
+    // 要素を作るので、後から縦書きにすると型を lines に広げたときに破綻する
+    if (layout !== null) text.classList.add(LAYOUT_CLASS[layout]);
+
+    frame.append(text);
+    // 分割は木に繋いでから。SplitText は文字の位置を測るので、
+    // 繋ぐ前だとレイアウトが決まっておらず測れない
+    this.root.append(frame);
+
+    const split = SplitText.create(text, { type: 'chars' });
+    this.splits.push(split);
+
+    return { frame, root: text, chars: split.chars };
   }
 }
