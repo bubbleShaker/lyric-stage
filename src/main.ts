@@ -8,6 +8,7 @@ import { assetUrl } from './lib/asset';
 import { requiredElement } from './lib/dom';
 import { systemReducedMotion } from './lib/reduced-motion';
 import { AudioPlayer } from './stage/audio-player';
+import { loadDeclaredFonts } from './stage/display-font';
 import { LyricStage } from './stage/lyric-stage';
 import { createLoudness, systemAudioContext } from './stage/loudness';
 import { ScaledCanvas, systemPixelRatio } from './stage/scaled-canvas';
@@ -97,8 +98,19 @@ try {
 
 ticker.start();
 
-loadLyricSheet(sheetName)
-  .then((sheet) => {
+// 歌詞と書体が揃ってから演出を組み立てる。**書体を待つのは見た目のためではない**
+// （M8-2a）。SplitText は 1 文字ずつの位置を測ってから動かすので、測った後に書体が
+// 差し替わると字幅が変わって位置がずれる。loadDeclaredFonts は決して失敗しないので、
+// 下の catch に来るのは歌詞を読めなかった時だけ。
+//
+// **揃う前でも再生ボタンは押せるままにしてある**（レビュー指摘 🟡 を検討した上での判断）。
+// 押されて音だけ先に進んでも、歌詞の判定は毎フレーム「今は何行目か」を聞き直す作りなので
+// （app/lyric-timeline.ts）、後から刺さった時点の正しい状態がそのまま揃う。行を取りこぼす
+// のではなく、揃うまで何も出ないだけ。逆にボタンを disabled にすると、transport.ts が
+// 避けている罠（iOS Safari は play() を呼ぶまでメタデータを取りに行かない）を
+// この待ちで作り直すことになる
+Promise.all([loadLyricSheet(sheetName), loadDeclaredFonts(document.fonts)])
+  .then(([sheet]) => {
     // 区間で切り出し、時刻を区間の先頭起点に付け替える。以降 domain は
     // 「作品の何秒目か」しか扱わない（WHOLE_SONG なら素通し）
     mountLyricTimeline(player, ticker, sliceSheet(sheet, workWindow), stage);

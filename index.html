@@ -5,6 +5,27 @@
     <!-- index.html 内の / 始まりのパスは Vite がビルド時に base を前置してくれるので、
          ここに '/lyric-stage/' を書いてはいけない（二重管理になる） -->
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <!-- 歌詞の書体（M8-2a / Issue #39）。@font-face は src/style.css にあり、そちらは
+         JS のバンドルを経由してから読まれるので、指定が無いとフォントの取得が
+         それだけ後ろにずれる。
+
+         **演出の開始はこの取得を待つ**（src/stage/display-font.ts）。SplitText が
+         1 文字ずつの位置を測る前に書体が揃っていないと、測った位置と実際がずれるため。
+         先読みは、その待ち時間をできるだけ短くするためのもの。
+
+         crossorigin は**同一オリジンでも要る**。フォントの取得は常に CORS モードで
+         行われる決まりなので、これを書かないと preload したものが「別の要求」と
+         見なされて使われず、二重に取りに行く（Chrome が警告を出すだけで画は出る）。
+
+         href は @font-face の url と揃えること。ずれても画面には出るので目で気付けない
+         — src/font-subset.test.ts が一致を見張っている -->
+    <link
+      rel="preload"
+      as="font"
+      type="font/woff2"
+      href="/fonts/zen-kaku-gothic-new.woff2"
+      crossorigin
+    />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>lyric-stage — 文字を刻むステージ</title>
   </head>
@@ -39,9 +60,21 @@
       <p class="transport__message" id="transport-message" role="status"></p>
     </div>
 
+    <!-- 素材の出どころ。書体（OFL）はライセンス文の同梱が条件なので、
+         公開先で必ず辿れるよう本文からも指しておく（詳しくは README の「使用素材」） -->
     <footer class="credit">
       音楽：<a href="https://maou.audio/14_shining_star/" target="_blank" rel="noopener noreferrer"
         >魔王魂</a
+      >
+      <!-- ここだけ相対パス。Vite が base を足すのは link / script / img などの
+           取得のための属性で、**<a href> は書き換えない**（上の preload は書き換わる）。
+           '/fonts/...' と書くと GitHub Pages で https://user.github.io/fonts/... を
+           指して 404 になる。相対なら dev でも Pages でも同じ場所に解決する -->
+      ／ 書体：<a
+        href="fonts/zen-kaku-gothic-new.LICENSE.txt"
+        target="_blank"
+        rel="noopener noreferrer"
+        >Zen Kaku Gothic New (OFL)</a
       >
     </footer>
     <script type="module" src="/src/main.ts"></script>

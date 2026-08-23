@@ -29,11 +29,18 @@
       import { SplitText } from 'gsap/SplitText';
       import { neverReduceMotion } from './src/lib/reduced-motion.ts';
       import { ANCHOR_CLASS, SIZE_CLASS } from './src/stage/composition.ts';
+      import { loadDeclaredFonts } from './src/stage/display-font.ts';
       import { effects } from './src/stage/effects.ts';
       import { LyricStage } from './src/stage/lyric-stage.ts';
       import './src/style.css';
 
       gsap.registerPlugin(SplitText);
+
+      // 本編（src/main.ts）と同じく、書体が届いてから測る（M8-2a）。
+      // SplitText は 1 文字ずつの位置を測ってから動かすので、代替の書体のまま測ると
+      // ここで見た演出が本番とわずかにずれる。**このページは目で確かめる道具**なので、
+      // 見えているものが本番と違うのは本末転倒
+      await loadDeclaredFonts(document.fonts);
 
       // ここは演出そのものを見る道具なので、OS の「視差効果を減らす」設定に関わらず
       // 素の演出を出す。本編（src/main.ts）は systemReducedMotion() を渡す
