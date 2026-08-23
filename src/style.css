@@ -26,10 +26,23 @@
   font-display: swap;
 }
 
+/* 作品の配色（M8-2 / Issue #41）。**値の出どころは src/stage/palette.ts。**
+
+   色は canvas（TS）と画面（CSS）の両方から要るので、ここは写しになる。写しである以上
+   いつか片方だけ直るので、一致は src/stage/palette.test.ts が見張っている。
+   **同じ検査が「16 進カラーは :root の外に書かない」も見ている** — 変数を通さずに
+   書いた色は、パレットを差し替えてもそこだけ古いまま残るため。
+   色を足したい時は palette.ts に足してからここへ写すこと（逆をやると検査が落ちる）。
+
+   モノトーン基調 + 差し色 1 色。極太 900 の白文字が画面のあちこちに飛ぶ構図
+   （M8-1 / M8-5）なので、背景は明度の段だけで組んで文字を立てる */
 :root {
-  --stage-bg: #05060d;
-  --stage-fg: #f4f6ff;
-  --stage-accent: #7fd7ff;
+  --stage-bg: #0a0a0c;
+  --stage-dim: #16171c;
+  --stage-mute: #6b6d76;
+  --stage-ink: #f2f2f5;
+  --stage-accent: #ffd60a;
+  --stage-alert: #ff9c9c;
 
   /* 歌詞に当てる書体。**UI には当てない**（守っているのは src/font-subset.test.ts）。
      サブセットに入れたのは歌詞の文字だけなので、UI に広げると「再生」「読み込み中」
@@ -52,7 +65,7 @@
 body {
   min-height: 100dvh;
   background: var(--stage-bg);
-  color: var(--stage-fg);
+  color: var(--stage-ink);
   /* shatter 演出（src/stage/effects.ts）は文字を行の外まで飛ばすので、
      これを外すとはみ出した文字でスクロールバーが出る。
      html 側に overflow を書くとこの hidden は伝播しなくなるので注意 */
@@ -287,7 +300,7 @@ body {
   bottom: 6rem;
   translate: -50% 0;
   font-size: 0.85rem;
-  color: #ff9c9c;
+  color: var(--stage-alert);
 }
 
 .credit {
@@ -352,7 +365,7 @@ body {
   border: none;
   border-radius: 999px;
   background: var(--stage-accent);
-  color: #05060d;
+  color: var(--stage-bg);
   font: inherit;
   font-weight: 700;
   cursor: pointer;
@@ -391,6 +404,6 @@ body {
 }
 
 .transport[data-state='error'] .transport__message {
-  color: #ff9c9c;
+  color: var(--stage-alert);
   opacity: 1;
 }
