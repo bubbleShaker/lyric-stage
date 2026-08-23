@@ -269,6 +269,53 @@ export const effects = {
     }),
 
   /**
+   * ずっと奥から手前へ迫って止まる（M8-5 の遠近感）。
+   *
+   * `z` は画面の奥行き方向の移動。**親に `perspective` が張られていないと
+   * ただの平行移動になって何も起きない**ので、`.stage__lines` の
+   * `perspective` と、そこから語句まで繋がる `transform-style: preserve-3d` が
+   * 効いていることが前提（src/style.css）。zoom の `scale` と違い、
+   * 遠くの文字ほど小さく・中央寄りに見えるので、画面の隅に置いた語句が
+   * 隅の方から飛んでくる。
+   *
+   * ぼかしを併せているのは被写界深度の模倣。ピントが合いながら着地する。
+   * `.from()` ではなく `.fromTo()` なのは、素の見た目の `filter` が `none` で、
+   * `blur(14px)` → `none` は補間できないため（`blur(0px)` を明示する）。
+   */
+  rushIn: ({ chars }) =>
+    gsap.timeline().fromTo(
+      chars,
+      { opacity: 0, z: -1400, filter: 'blur(14px)' },
+      {
+        opacity: 1,
+        z: 0,
+        filter: 'blur(0px)',
+        duration: 0.55,
+        ease: 'power3.out',
+        stagger: staggerFor(chars.length, 0.04),
+      },
+    ),
+
+  /**
+   * 奥を向いていた面が正面へ振り向く（M8-5 の遠近感）。
+   *
+   * `rotationY` は縦軸まわりの回転。`rushIn` と同じく親の `perspective` が要る。
+   * 回転の軸を左端（`transformOrigin`）に置くと、扉が開くように見える。
+   *
+   * 語句を 1 枚の面として回す（`chars` を使わない）。文字ごとに回すと
+   * 面が割れて、奥行きのある 1 枚という手触りが消える。
+   */
+  swing: ({ root }) =>
+    gsap.timeline().from(root, {
+      opacity: 0,
+      rotationY: -78,
+      z: -260,
+      transformOrigin: '0% 50%',
+      duration: 0.6,
+      ease: 'power3.out',
+    }),
+
+  /**
    * 何も動かさず、行ごと静かに現れる。
    *
    * 「動きを減らす」設定のときに他の演出の代わりに使われる（REDUCED_MOTION_EFFECT）。

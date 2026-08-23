@@ -182,19 +182,79 @@
       "time": 179.78,
       "text": "シャイニングスター綴れば",
       "effect": "zoomLine",
-      "place": { "at": "middle-center", "size": "xl", "nudge": { "y": -0.06 }, "tilt": -3 }
+      "place": { "at": "middle-center", "size": "xl", "nudge": { "y": -0.06 }, "tilt": -3 },
+      "parts": [
+        {
+          "text": "シャイニング",
+          "at": 0,
+          "effect": "rushIn",
+          "place": { "at": "middle-left", "size": "lg", "nudge": { "y": -0.08 }, "tilt": -3 }
+        },
+        {
+          "text": "スター",
+          "at": 1.128,
+          "effect": "zoom",
+          "place": { "at": "top-right", "size": "xl", "nudge": { "x": -0.02 }, "tilt": 4 }
+        },
+        {
+          "text": "綴れば",
+          "at": 2.254,
+          "effect": "swing",
+          "place": { "at": "bottom-center", "size": "lg", "nudge": { "x": 0.08 } }
+        }
+      ]
     },
     {
       "time": 182.79,
       "text": "無限のイマジネーション",
       "effect": "shatter",
-      "place": { "at": "top-right", "size": "lg", "nudge": { "x": -0.02 }, "tilt": 4 }
+      "place": { "at": "top-right", "size": "lg", "nudge": { "x": -0.02 }, "tilt": 4 },
+      "parts": [
+        {
+          "text": "無限の",
+          "at": 0,
+          "effect": "swing",
+          "place": { "at": "top-left", "size": "md", "nudge": { "y": 0.04 }, "tilt": -4 }
+        },
+        {
+          "text": "イマジ",
+          "at": 1.128,
+          "effect": "rushIn",
+          "place": { "at": "middle-right", "size": "xl", "nudge": { "y": -0.04 } }
+        },
+        {
+          "text": "ネーション",
+          "at": 1.879,
+          "effect": "glitch",
+          "place": { "at": "bottom-left", "size": "lg", "nudge": { "x": 0.04 }, "tilt": 3 }
+        }
+      ]
     },
     {
       "time": 185.79,
       "text": "魔法が使えるような",
       "effect": "typewriter",
-      "place": { "at": "middle-left", "size": "md", "nudge": { "y": 0.1 } }
+      "place": { "at": "middle-left", "size": "md", "nudge": { "y": 0.1 } },
+      "parts": [
+        {
+          "text": "魔法が",
+          "at": 0,
+          "effect": "rushIn",
+          "place": { "at": "middle-center", "size": "xl", "nudge": { "y": -0.1 }, "tilt": -3 }
+        },
+        {
+          "text": "使える",
+          "at": 1.128,
+          "effect": "bounce",
+          "place": { "at": "top-right", "size": "lg", "nudge": { "y": 0.02 }, "tilt": 5 }
+        },
+        {
+          "text": "ような",
+          "at": 2.254,
+          "effect": "swing",
+          "place": { "at": "bottom-left", "size": "lg", "nudge": { "x": 0.06 } }
+        }
+      ]
     },
     {
       "time": 188.79,

@@ -3,6 +3,7 @@ import {
   activeLineIndexAt,
   NO_LINE,
   parseLyricSheet,
+  partsOf,
   sliceSheet,
   type LyricLine,
   type LyricSheet,
@@ -182,6 +183,125 @@ describe('parseLyricSheet（構図 = place）', () => {
   });
 });
 
+describe('parseLyricSheet（語句 = parts）', () => {
+  /** 1 行だけのシートを読ませて、その行を返す */
+  const parseLine = (line: object) =>
+    parseLyricSheet({ title: 'テスト', lines: [{ time: 0, text: 'AB', ...line }] }).lines[0];
+
+  it('語句をそのまま保持する', () => {
+    // parseLyricLine は項目を組み直すので、**書き忘れると黙って落ちる**
+    const parts = [
+      { text: 'A', at: 0, effect: 'zoom', place: { at: 'top-left', size: 'md' } },
+      { text: 'B', at: 1.5 },
+    ];
+
+    expect(parseLine({ parts }).parts).toEqual(parts);
+  });
+
+  it('at が無い語句を弾く', () => {
+    // 刻むために足した項目なので省略させない。0 に落とすと、刻みを書き忘れた
+    // 語句が行の頭で静かに重なる
+    expect(() => parseLine({ parts: [{ text: 'A' }] })).toThrow();
+    expect(() => parseLine({ parts: [{ text: 'A', at: -1 }] })).toThrow();
+    expect(() => parseLine({ parts: [{ text: 'A', at: '1.5' }] })).toThrow();
+  });
+
+  it('中身の無い語句を弾く', () => {
+    expect(() => parseLine({ parts: [{ text: '', at: 0 }] })).toThrow();
+    expect(() => parseLine({ parts: [{ text: '  ', at: 0 }] })).toThrow();
+    expect(() => parseLine({ parts: [] })).toThrow();
+    expect(() => parseLine({ parts: {} })).toThrow();
+  });
+
+  it('順番が前後した語句を弾く', () => {
+    // 並べ替えて助けない。**書いた順＝出る順**でないと、JSON を読む向きと
+    // 画に出る向きがずれていても気付けない
+    expect(() =>
+      parseLine({
+        parts: [
+          { text: 'A', at: 2 },
+          { text: 'B', at: 1 },
+        ],
+      }),
+    ).toThrow();
+  });
+
+  it('同時に出る語句は許す', () => {
+    const parts = [
+      { text: 'A', at: 1 },
+      { text: 'B', at: 1 },
+    ];
+
+    expect(parseLine({ parts }).parts).toHaveLength(2);
+  });
+
+  it('綴りを間違えた項目を弾く', () => {
+    expect(() => parseLine({ parts: [{ text: 'A', at: 0, effects: 'zoom' }] })).toThrow();
+    // 行の側も同じ番人を通る。`parst` が黙って落ちると、刻んだつもりの行が
+    // 検証も刻みも素通りして 1 語句で出る
+    expect(() => parseLine({ parst: [{ text: 'A', at: 0 }] })).toThrow();
+    expect(() => parseLine({ palce: { at: 'top-left', size: 'md' } })).toThrow();
+  });
+
+  it('語句の構図も行と同じ検証を受ける', () => {
+    // 行と語句で検証が食い違うと、語句に書いた時だけ画面外へ飛ぶ値が通ってしまう
+    expect(() => parseLine({ parts: [{ text: 'A', at: 0, place: { size: 'md' } }] })).toThrow();
+    expect(() =>
+      parseLine({ parts: [{ text: 'A', at: 0, place: { at: 'top-left', size: 'md', tilt: 90 } }] }),
+    ).toThrow();
+  });
+});
+
+describe('partsOf', () => {
+  it('刻んでいない行は 1 語句として返す', () => {
+    // 表示側から「刻んである行」「刻んでいない行」の分岐を消すための正規化
+    const line = { time: 0, text: 'A', effect: 'zoom', place: { at: 'top-left', size: 'md' } };
+
+    expect(partsOf(line)).toEqual([
+      { text: 'A', at: 0, effect: 'zoom', place: { at: 'top-left', size: 'md' } },
+    ]);
+  });
+
+  it('語句が省いた演出と構図は行から継ぐ', () => {
+    const place = { at: 'top-left', size: 'md' };
+    const line = {
+      time: 0,
+      text: 'AB',
+      effect: 'zoom',
+      place,
+      parts: [{ text: 'A', at: 0 }, { text: 'B', at: 1, effect: 'fade' }],
+    };
+
+    expect(partsOf(line)).toEqual([
+      { text: 'A', at: 0, effect: 'zoom', place },
+      { text: 'B', at: 1, effect: 'fade', place },
+    ]);
+  });
+
+  it('語句の指定が行に勝つ', () => {
+    const line = {
+      time: 0,
+      text: 'A',
+      effect: 'zoom',
+      place: { at: 'top-left', size: 'md' },
+      parts: [{ text: 'A', at: 0, effect: 'fade', place: { at: 'bottom-right', size: 'xl' } }],
+    };
+
+    expect(partsOf(line)[0]).toEqual({
+      text: 'A',
+      at: 0,
+      effect: 'fade',
+      place: { at: 'bottom-right', size: 'xl' },
+    });
+  });
+
+  it('演出も構図も無い行でも落ちない', () => {
+    expect(partsOf({ time: 0, text: 'A' })).toEqual([
+      { text: 'A', at: 0, effect: undefined, place: undefined },
+    ]);
+  });
+});
+
 describe('sliceSheet', () => {
   // 時刻の付け替えを目で追えるよう、区間の開始を切りのいい 100 にしてある
   const sheet: LyricSheet = {
@@ -209,6 +329,57 @@ describe('sliceSheet', () => {
     // 95〜105 まで出ている行。time が区間の外だからと落とすと開幕の歌詞が抜ける
     const across: LyricSheet = { title: 't', lines: [{ time: 95, text: 'X', duration: 10 }] };
     expect(sliceSheet(across, window).lines).toEqual([{ time: 0, text: 'X', duration: 5 }]);
+  });
+
+  it('頭を削られた行の語句は、削った分だけ前に詰める', () => {
+    // at は行の time からの相対秒。行の頭が区間に合わせて動くのに at をそのままに
+    // すると、**既に歌い終えた語句まで削った秒数だけ遅れて出直す**
+    const across: LyricSheet = {
+      title: 't',
+      lines: [
+        {
+          time: 95,
+          text: 'XYZ',
+          duration: 10,
+          parts: [
+            { text: 'X', at: 0 },
+            { text: 'Y', at: 3 },
+            { text: 'Z', at: 8 },
+          ],
+        },
+      ],
+    };
+
+    // 5 秒削られるので、区間の頭より前に出るはずだった X / Y は 0（頭から出ている扱い）。
+    // 語句は行が終わるまで残る積み上げなので、落とすのではなく詰めるのが正しい
+    expect(sliceSheet(across, window).lines[0].parts).toEqual([
+      { text: 'X', at: 0 },
+      { text: 'Y', at: 0 },
+      { text: 'Z', at: 3 },
+    ]);
+  });
+
+  it('頭を削らない行の語句はそのまま', () => {
+    const inside: LyricSheet = {
+      title: 't',
+      lines: [{ time: 105, text: 'XY', parts: [{ text: 'X', at: 0 }, { text: 'Y', at: 2 }] }],
+    };
+
+    expect(sliceSheet(inside, window).lines[0].parts).toEqual([
+      { text: 'X', at: 0 },
+      { text: 'Y', at: 2 },
+    ]);
+  });
+
+  it('語句を複製して返す（元のシートを書き換えない）', () => {
+    const original: LyricSheet = {
+      title: 't',
+      lines: [{ time: 95, text: 'X', duration: 10, parts: [{ text: 'X', at: 8 }] }],
+    };
+
+    sliceSheet(original, window);
+
+    expect(original.lines[0].parts).toEqual([{ text: 'X', at: 8 }]);
   });
 
   it('区間の終わりをはみ出す duration は切り詰める', () => {

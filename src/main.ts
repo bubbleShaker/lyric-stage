@@ -42,10 +42,7 @@ const player = new WindowedPlayback(new AudioPlayer(media, assetUrl(AUDIO_PATH))
 // OS の「視差効果を減らす」設定。読み方だけを渡し、いつ読むかは受け取った側が決める。
 // 文字も背景も動くので、同じ設定を両方へ渡す
 const prefersReducedMotion = systemReducedMotion();
-const stage = new LyricStage(
-  { frame: requiredElement('stage-frame'), text: requiredElement('stage-text') },
-  prefersReducedMotion,
-);
+const stage = new LyricStage(requiredElement('stage-lines'), prefersReducedMotion);
 
 const toggle = requiredElement<HTMLButtonElement>('transport-toggle');
 const transportRoot = requiredElement('transport');

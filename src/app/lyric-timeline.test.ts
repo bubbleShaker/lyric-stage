@@ -27,12 +27,18 @@ class FakePlayback implements Playback {
 }
 
 class SpyPresenter implements LyricPresenter {
+  /** 組み立て（show / clear）の記録。毎フレーム鳴る render とは分けて持つ */
   readonly calls: string[] = [];
+  /** render に渡された「行の頭からの経過秒」 */
+  readonly offsets: number[] = [];
   show(line: LyricLine): void {
     this.calls.push(`show:${line.text}`);
   }
   clear(): void {
     this.calls.push('clear');
+  }
+  render(offset: number): void {
+    this.offsets.push(offset);
   }
 }
 
@@ -110,6 +116,41 @@ describe('mountLyricTimeline', () => {
     ticker.tick();
 
     expect(presenter.calls).toEqual(['show:C', 'show:A']);
+  });
+
+  it('行の頭からの経過秒を毎フレーム渡す', () => {
+    // 演出の時計は音の再生位置（M8-5）。描画側に自前の時計を持たせると、
+    // 音を止めても語句が出続け、行の途中へシークすると語句が遅れて出る
+    const { player, ticker, presenter } = setup();
+
+    player.currentTime = 10;
+    ticker.tick();
+    player.currentTime = 11.5;
+    ticker.tick();
+
+    // 1 回目は show と同じフレーム。組み立てた直後から位置が当たっている
+    expect(presenter.offsets).toEqual([0, 1.5]);
+  });
+
+  it('音が止まっていれば同じ位置を渡し続ける', () => {
+    // 止まっている間も呼ばれるが、渡す値が動かないので演出も進まない
+    const { player, ticker, presenter } = setup();
+
+    player.currentTime = 10.5;
+    ticker.tick();
+    ticker.tick();
+
+    expect(presenter.offsets).toEqual([0.5, 0.5]);
+  });
+
+  it('何も出していない間は位置を渡さない', () => {
+    const { player, ticker, presenter } = setup();
+
+    player.currentTime = 12;
+    ticker.tick();
+
+    expect(presenter.calls).toEqual([]);
+    expect(presenter.offsets).toEqual([]);
   });
 
   it('購読を解除すると更新が止まる', () => {

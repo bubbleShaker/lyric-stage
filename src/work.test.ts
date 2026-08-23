@@ -27,9 +27,13 @@ describe('WORK_WINDOW', () => {
     expect(WORK_WINDOW.end).toBeGreaterThan(WORK_WINDOW.start);
   });
 
-  it('20 秒台に収まっている（文字PV として作り込める尺）', () => {
+  it('手で作り込める尺に収まっている', () => {
+    // M8-5 でいったん 12 秒（3 行）に縮めた。語句ごとの刻みは 1 つずつ手で置くので、
+    // 噛み合わせが決まる前に尺を伸ばすと、直す所が増えるだけで得るものが無い。
+    // 上限は M8-0 で決めたラスサビ 1 ブロック（約 27 秒）。ここへ戻すのが M8-5 の後。
+    // 下限は「作品と呼べる長さ」— 1 行だけ出して終わりにならないための歯止め
     const length = WORK_WINDOW.end - WORK_WINDOW.start;
-    expect(length).toBeGreaterThan(15);
+    expect(length).toBeGreaterThan(10);
     expect(length).toBeLessThan(35);
   });
 });

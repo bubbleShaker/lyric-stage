@@ -61,8 +61,31 @@ body {
   height: 100dvh;
 }
 
-/* 構図の枠。**GSAP はこの要素を決して触らない。**
+/* 語句の枠が並ぶ箱（M8-5）。中身は src/stage/lyric-stage.ts が作って捨てる。
+
+   **遠近法の消失点をここに張る。** perspective は「この要素の子」に効くので、
+   語句の枠がすべてこの 1 か所を見ることになり、別々の場所に散った語句でも
+   奥行きが同じ空間のものとして揃う。枠ごとに transformPerspective を書くと
+   語句の数だけ消失点ができて、空間が割れて見える。
+
+   値を画面幅に追従させているのは、狭い画面では消失点が近い（＝遠近が強い）方が
+   画に対して同じ効き方になるため。1400px 固定だと横長の画面で効きが薄れる。
+
+   .stage と分けているのは、.stage__message を巻き込まないため。行が変わるたびに
+   この箱の中身は総入れ替えになる（replaceChildren） */
+.stage__lines {
+  position: absolute;
+  inset: 0;
+  perspective: clamp(600px, 70vw, 1400px);
+
+  /* 画面いっぱいを覆うので、クリックは手前の再生コントロールへ通す
+     （背景の canvas と同じ扱い。歌詞は読むもので、押すものではない） */
+  pointer-events: none;
+}
+
+/* 構図の枠。**GSAP はこの要素の transform を決して触らない。**
    演出が動かすのは内側の .stage__text だけで、置き場所・大きさ・傾きはこちらが持つ。
+   （出番が来るまで隠す visibility だけは GSAP が書く。M8-5 の line-timeline.ts）
 
    分けているのは所有権の衝突を避けるため。GSAP の CSSPlugin は transform を
    自分のものとして扱い、要素に書かれた translate / rotate / scale を読み取って
@@ -82,6 +105,11 @@ body {
 
   /* 傾き。ここは GSAP が触らないので rotate プロパティを素直に使える */
   rotate: var(--place-tilt, 0deg);
+
+  /* 中の文字を平面に潰さず、.stage__lines が張った空間に置く。
+     これが無いと、枠が子の 3D 変形を自分の面へ平らに焼き込んでしまい、
+     文字ごとの奥行き（rushIn の z）が「ただの平行移動」になる */
+  transform-style: preserve-3d;
 }
 
 /* --- 構図のアンカー（src/stage/composition.ts が当てる） ---
@@ -162,6 +190,9 @@ body {
   letter-spacing: 0.08em;
   line-height: 1.5;
   text-wrap: balance;
+
+  /* 枠と同じ理由。ここで潰すと文字ごとの z（rushIn）が効かなくなる */
+  transform-style: preserve-3d;
 }
 
 /* 縦書きの演出（src/stage/effects.ts の vertical）が付けるクラス。
