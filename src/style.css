@@ -1,7 +1,43 @@
+/* 歌詞の書体（M8-2a / Issue #39）。Zen Kaku Gothic New Black。
+   SIL Open Font License 1.1 — public/fonts/zen-kaku-gothic-new.LICENSE.txt
+
+   Google Fonts の CDN ではなく自前で持つ。公開ページが外部への接続に依存しないのと、
+   歌詞に出る文字だけに絞れる（3.4 MB → 29 KB）ため。作り直しは
+   `node tools/subset-font.mjs`（README を見よ）。
+
+   **太さは 900 の 1 種類しか持っていない。** 別の太さを使いたくなったら、その太さの
+   woff2 をサブセット化して @font-face を足すこと。持っていない太さを指定すると
+   ブラウザが 900 の字形を機械的に太らせ／細らせて（synthetic weight）画が濁る。
+
+   **「差し替わる前に測ってしまう」問題を font-display では解けない。** SplitText は
+   1 文字ずつの位置を測ってから動かすので、測った後に書体が差し替わると字幅が変わって
+   位置がずれる。block（読み終わるまで描かない）はちらつきを隠すだけで、レイアウトは
+   代替の書体の寸法で確定するため測定はやはりずれる。解いているのは JS 側 —
+   src/stage/display-font.ts が読み終わりを待ってから演出を組み立てる。
+
+   その上で swap にしてある。待つ側が居るので通常は代替の書体で描かれることが無く、
+   万一 woff2 が 404 になったときに「歌詞が 3 秒消える」（block の副作用）のを避けられる。
+   29 KB は index.html で preload してある */
+@font-face {
+  font-family: 'Zen Kaku Gothic New';
+  src: url('/fonts/zen-kaku-gothic-new.woff2') format('woff2');
+  font-weight: 900;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
   --stage-bg: #05060d;
   --stage-fg: #f4f6ff;
   --stage-accent: #7fd7ff;
+
+  /* 歌詞に当てる書体。**UI には当てない**（守っているのは src/font-subset.test.ts）。
+     サブセットに入れたのは歌詞の文字だけなので、UI に広げると「再生」「読み込み中」
+     のような画面の文字だけが下の候補（游ゴシック等）に落ちて、**1 つの UI の中に
+     2 つの書体が混ざる**。しかも字が無い所だけ静かに入れ替わるので目で気付きにくい。
+     加えて見出し用の書体は小さな UI 文字で読みにくい。当てているのは .stage__text だけ */
+  --font-display: 'Zen Kaku Gothic New', 'Hiragino Kaku Gothic ProN', 'Yu Gothic', system-ui,
+    sans-serif;
 
   color-scheme: dark;
   font-family: 'Hiragino Kaku Gothic ProN', 'Yu Gothic', 'Noto Sans JP', system-ui, sans-serif;
@@ -186,9 +222,19 @@ body {
   --size-base: clamp(1.5rem, 5.5vw, 3.6rem);
   font-size: calc(var(--size-step, 1) * var(--size-base));
 
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  line-height: 1.5;
+  /* ここだけが専用の書体を使う（M8-2a）。宣言の理由は :root の --font-display を見よ */
+  font-family: var(--font-display);
+
+  /* 下の 3 つは Zen Kaku Gothic New Black に合わせた値（M8-2a で詰め直した）。
+     游ゴシックの 700 に合わせていた頃は 0.08em / 1.5 だった。
+
+     字間を詰めたのは、極太の書体では文字そのものが塊として効くので、離すと
+     「1 文字ずつ並んだ看板」に見えるため。行間も同じ理由で、見出しの組み方に寄せる。
+     **書体を変えるならこの 3 つも測り直すこと。** 書体ごとに字面（em に対する
+     字の大きさ）が違うので、同じ数値でも見え方が揃わない */
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  line-height: 1.22;
   text-wrap: balance;
 
   /* 枠と同じ理由。ここで潰すと文字ごとの z（rushIn）が効かなくなる */
@@ -222,7 +268,10 @@ body {
   /* 横組み前提の指定を縦組み用に上書きする。
      text-wrap: balance は行の長さを揃える指定で、段組みでは狙いが合わない */
   text-wrap: initial;
-  letter-spacing: 0.12em;
+
+  /* 横組み（0.02em）より広げる。縦組みは字面の下に来る余白が視覚的に効かず、
+     同じ値だと文字が縦に繋がって見える。0.12em だった頃は游ゴシックの 700 が前提 */
+  letter-spacing: 0.06em;
 
   /* 縦組みでは text-align がインライン方向（＝縦）の寄せになるので、枠が横組み用に
      決めた left / right を継承すると段の途中で揃ってしまう。ここで断ち切る

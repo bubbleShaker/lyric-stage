@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>書体プレビュー（開発用）</title>
+  </head>
+  <body>
+    <!--
+      書体の候補を「同じ歌詞・同じ組み方」で並べて見比べるための開発用ページ（M8-2a / Issue #39）。
+      `npm run dev` で /lyric-stage/font-preview.html を開く。
+
+      effect-preview.html と同じく、Vite のビルド入口は index.html だけなので
+      このページは dist に入らない（＝公開サイトには出ない）。
+
+      見せている文字は .stage__text をそのまま当てている。書体だけを差し替えて
+      比べたいので、字間・行間・太さ・大きさの段階は本編と同じ値のまま。
+      **書体を決めてからこれらを詰め直す**（Issue #39 のやること 3）。
+
+      候補の woff2 は public/fonts/ にあるが、選ばれなかったものは .gitignore で
+      追跡していない。手元に無い時は tools/subset-font.mjs で作り直す（README を見よ）。
+    -->
+    <style>
+      /* 候補はここだけに書く。増やすときは @font-face と CANDIDATES の両方に足す */
+      @font-face {
+        font-family: 'Zen Kaku Gothic New';
+        src: url('fonts/zen-kaku-gothic-new.woff2') format('woff2');
+        font-weight: 900;
+        font-display: block;
+      }
+      @font-face {
+        font-family: 'Dela Gothic One';
+        src: url('fonts/dela-gothic-one.woff2') format('woff2');
+        font-weight: 400;
+        font-display: block;
+      }
+      @font-face {
+        font-family: 'Shippori Mincho B1';
+        src: url('fonts/shippori-mincho-b1.woff2') format('woff2');
+        font-weight: 800;
+        font-display: block;
+      }
+      @font-face {
+        font-family: 'Kaisei Decol';
+        src: url('fonts/kaisei-decol.woff2') format('woff2');
+        font-weight: 700;
+        font-display: block;
+      }
+      @font-face {
+        font-family: 'M PLUS 1';
+        src: url('fonts/m-plus-1.woff2') format('woff2');
+        font-weight: 800;
+        font-display: block;
+      }
+      @font-face {
+        font-family: 'RocknRoll One';
+        src: url('fonts/rocknroll-one.woff2') format('woff2');
+        font-weight: 400;
+        font-display: block;
+      }
+
+      body {
+        /* style.css は overflow: hidden（演出のはみ出し対策）。このページは縦に並べて
+           見比べるものなので、そこだけ戻す */
+        overflow: auto;
+        padding: 2rem 1.5rem 6rem;
+      }
+
+      .card {
+        border-top: 1px solid rgb(255 255 255 / 0.14);
+        padding: 2rem 0;
+      }
+
+      .card__name {
+        font-family: system-ui, sans-serif;
+        font-size: 0.85rem;
+        letter-spacing: 0.08em;
+        opacity: 0.6;
+        margin-bottom: 1rem;
+      }
+
+      /* 見本は .stage__text をそのまま当てるので、ここは並べ方だけ決める。
+         行の枠（.stage__frame）は絶対配置なので使わない — このページは構図ではなく
+         書体を見るためのもので、並べて比べる方が違いが読める */
+      .samples {
+        display: flex;
+        flex-direction: column;
+        gap: 1.2rem;
+        align-items: flex-start;
+      }
+
+      /* 縦書きの見本に高さを与えないこと。**段の数は高さで決まる**（縦組みでは高さが
+         行の伸びる向き）ので、ここで固有の高さを置くと本編と違う段組みを見ることになる。
+         本編の制約は style.css の .stage__text--vertical が持つ max-height: 80dvh */
+
+      .toolbar {
+        position: fixed;
+        right: 1rem;
+        bottom: 1rem;
+        display: flex;
+        gap: 0.6rem;
+        align-items: center;
+        padding: 0.6rem 0.9rem;
+        border-radius: 999px;
+        background: rgb(255 255 255 / 0.08);
+        backdrop-filter: blur(12px);
+        font-family: system-ui, sans-serif;
+        font-size: 0.8rem;
+      }
+    </style>
+
+    <main id="cards"></main>
+
+    <div class="toolbar">
+      <label><input type="checkbox" id="toggle-vertical" checked /> 縦書きの見本</label>
+      <label><input type="checkbox" id="toggle-latin" checked /> 英字の行</label>
+    </div>
+
+    <script type="module">
+      import './src/style.css';
+
+      /**
+       * 候補。family は上の @font-face と一致していること。
+       *
+       * **woff2 が手元に無い候補は、黙って OS 標準の書体で描かれる。**
+       * 選ばれなかった候補は .gitignore で追跡していないため、clone 直後はこの状態。
+       * 見比べるには README の手順で作り直すこと。
+       *
+       * family: null は「作品が今使っている設定」（style.css の --font-display）。
+       * 何も上書きしないので、選んだ書体を差し替えるとここも一緒に変わる。
+       *
+       * family は CSS の font-family にそのまま渡す値（＝引用符もここに書く）。
+       */
+      const CANDIDATES = [
+        { label: '★ 今の作品の設定', family: null, weight: null, note: 'src/style.css の --font-display' },
+        { label: 'Zen Kaku Gothic New', family: "'Zen Kaku Gothic New'", weight: 900, note: '素直で強い。今の構図をそのまま格上げする' },
+        { label: 'Dela Gothic One', family: "'Dela Gothic One'", weight: 400, note: '極太の見出し。ラスサビの一撃に効く' },
+        { label: 'Shippori Mincho B1', family: "'Shippori Mincho B1'", weight: 800, note: '明朝。余白と線で見せる' },
+        { label: 'Kaisei Decol', family: "'Kaisei Decol'", weight: 700, note: '明朝寄りの表情のある書体' },
+        { label: 'M PLUS 1', family: "'M PLUS 1'", weight: 800, note: '丸みのある今風' },
+        { label: 'RocknRoll One', family: "'RocknRoll One'", weight: 400, note: '丸みのある今風（太さは 1 種類）' },
+        {
+          label: '差し替える前',
+          family: "'Hiragino Kaku Gothic ProN', 'Yu Gothic', 'Noto Sans JP', system-ui, sans-serif",
+          weight: 700,
+          note: 'OS 標準。Windows では游ゴシック',
+        },
+      ];
+
+      /**
+       * 見本の文字。作品に出る語句をそのまま使う（public/lyrics/shining-star.json の
+       * ラスサビ）。**架空の文章で見比べないこと** — 書体の印象は文字の並びで変わる
+       */
+      const SAMPLES = [
+        { text: 'シャイニング', step: 1.45 },
+        { text: 'スター', step: 1.9 },
+        { text: '無限のイマジネーション', step: 1 },
+        { text: '魔法が使えるような', step: 0.62 },
+        { text: '切なさやトキメキが輝き出す', step: 1.45, vertical: true },
+        { text: "I'll believe of my sensation", step: 0.62, latin: true },
+      ];
+
+      const cards = document.getElementById('cards');
+
+      for (const candidate of CANDIDATES) {
+        const card = document.createElement('section');
+        card.className = 'card';
+
+        const name = document.createElement('p');
+        name.className = 'card__name';
+        name.textContent = `${candidate.label} — ${candidate.note}`;
+        card.append(name);
+
+        const samples = document.createElement('div');
+        samples.className = 'samples';
+
+        for (const sample of SAMPLES) {
+          const el = document.createElement('p');
+          el.className = 'stage__text';
+          if (sample.vertical) el.classList.add('stage__text--vertical');
+          if (sample.latin) el.dataset.kind = 'latin';
+          if (sample.vertical) el.dataset.kind = 'vertical';
+
+          // 構図の段階（--size-step）はクラスではなく直接置く。ここは枠を立てないので
+          el.style.setProperty('--size-step', String(sample.step));
+          // 候補ごとの書体。null（今の作品の設定）は style.css の指定をそのまま使わせる
+          if (candidate.family !== null) {
+            el.style.fontFamily = candidate.family;
+            el.style.fontWeight = String(candidate.weight);
+          }
+          el.textContent = sample.text;
+          samples.append(el);
+        }
+
+        card.append(samples);
+        cards.append(card);
+      }
+
+      /** 見本の出し分け。縦書きと英字は場所を食うので畳めるようにしてある */
+      const bind = (id, kind) => {
+        const box = document.getElementById(id);
+        const apply = () => {
+          for (const el of document.querySelectorAll(`[data-kind='${kind}']`)) {
+            el.style.display = box.checked ? '' : 'none';
+          }
+        };
+        box.addEventListener('change', apply);
+        apply();
+      };
+      bind('toggle-vertical', 'vertical');
+      bind('toggle-latin', 'latin');
+    </script>
+  </body>
+</html>

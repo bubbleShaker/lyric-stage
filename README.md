@@ -12,6 +12,13 @@
 音源はこの作品を再生するための構成要素として置くもので、音楽素材の配布を目的とはしていません。
 楽曲を利用したい場合は必ず魔王魂の公式サイトから入手してください。
 
+- 書体: **Zen Kaku Gothic New** (Black) — https://fonts.google.com/specimen/Zen+Kaku+Gothic+New
+
+書体は [SIL Open Font License 1.1](https://openfontlicense.org/) です。ライセンス全文は
+`public/fonts/zen-kaku-gothic-new.LICENSE.txt` に置いてあり、フォントと一緒に配信されます
+（OFL は再配布にライセンス文の同梱を求めます）。歌詞に出る文字だけに絞ってあるので、
+このリポジトリの woff2 を汎用のフォントとして使うことはできません。
+
 ## 歌詞ファイル
 
 表示する文字は `public/lyrics/*.json` に置きます。既定では作品本編の `shining-star.json` が
@@ -88,12 +95,49 @@ mp3 は **ブラウザから手動で** 取得します。
 差し替えるたびに履歴へ全バイトが積み上がるので、投入は一度で済ませます（Git LFS は使わないこと。
 Actions のチェックアウト設定次第でポインタファイルが公開され、再生できなくなる）。
 
+## 作者向け: 書体を作り直すとき
+
+日本語フォントは素で 3〜6 MB あるので、**歌詞に出る文字だけ**に絞って `public/fonts/` に
+置いています（Zen Kaku Gothic New Black は 3.4 MB → 29 KB）。Google Fonts の CDN を直に
+読まないのは、公開ページを外部への接続に依存させないためです。
+
+歌詞シートに**サブセットに無い文字**を足すと、その文字だけが崩れます。しかも
+**目では気付けません** — ブラウザは字が無いと `font-family` の次の候補へ 1 文字ずつ落ちるので、
+豆腐（□）にすらならず「その字だけ別の書体で、それらしく」出ます。
+`npm test`（`src/font-subset.test.ts`）が歌詞と `*.charset.txt` を突き合わせて落とすので、
+赤くなったら下の手順で作り直してください。
+
+```bash
+pipx install "fonttools[woff]"   # 初回のみ。pyftsubset と ttx が要る
+
+mkdir -p .fonts-src
+curl -o .fonts-src/ZenKakuGothicNew-Black.ttf \
+  https://raw.githubusercontent.com/google/fonts/b8f2790b12018153309b61335c4887ce939fde37/ofl/zenkakugothicnew/ZenKakuGothicNew-Black.ttf
+
+# 追跡しているのは加工後の woff2 だけなので、元が本物かはここでしか確かめられない
+echo "795819a979184981842994d8f4eb9e14ce443d687bd5e731d6ca67ded8f92261  .fonts-src/ZenKakuGothicNew-Black.ttf" | sha256sum -c
+
+node tools/subset-font.mjs .fonts-src/ZenKakuGothicNew-Black.ttf zen-kaku-gothic-new
+```
+
+URL に `main` ではなくコミット SHA を書いているのは、**手元の woff2 が本当にこの ttf 由来かを
+後から確かめられるようにする**ためです（バイナリは目で読めないので、出どころは書き残すしかない）。
+上流を新しくするときは SHA と sha256 の両方を更新します。
+
+書体そのものを選び直すときは `npm run dev` で
+`http://localhost:5173/lyric-stage/font-preview.html` を開きます。候補を同じ歌詞・同じ組み方で
+並べたページで、**選ばれなかった候補の woff2 は追跡していない**ので、上と同じ手順で
+候補ぶんを作ってから開いてください（候補の一覧はそのページの中にあります）。
+
+差し替えたら `src/style.css` の `letter-spacing` / `line-height` / `--size-base` も測り直します。
+書体ごとに字面（em に対する字の大きさ）が違うので、同じ数値でも見え方は揃いません。
+
 ## 開発
 
 ```bash
 npm install
 npm run dev      # http://localhost:5173/lyric-stage/
-npm test         # 公開する歌詞シートの中身も検証する
+npm test         # 公開する歌詞シートと書体のサブセットも検証する
 npm run build
 ```
 

@@ -22,6 +22,18 @@ public/lyrics/*.json
 !public/lyrics/sample.json
 !public/lyrics/shining-star.json
 
+# 書体も同じ扱い（M8-2a）。font-preview.html で見比べるあいだ、選ばれなかった候補の
+# woff2 が public/fonts/ に並ぶので、作品に入れた 1 つだけを名指しで追跡する。
+# ライセンス（OFL）は再配布する woff2 に必ず付ける必要があるので一緒に追跡する
+public/fonts/*
+!public/fonts/zen-kaku-gothic-new.woff2
+!public/fonts/zen-kaku-gothic-new.charset.txt
+!public/fonts/zen-kaku-gothic-new.LICENSE.txt
+
+# サブセット化の元にした素の ttf（数 MB ある）。tools/subset-font.mjs の入力で、
+# 出力（public/fonts/*.woff2）さえあれば公開には要らない
+/.fonts-src/
+
 # 歌詞の下書き。public/ に置くと Pages にそのまま公開されてしまうのでリポジトリ直下に置く
 /ss.txt
 
