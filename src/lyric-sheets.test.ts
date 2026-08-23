@@ -251,6 +251,18 @@ describe('WORK_WINDOW × 本編シート', () => {
     expect(last.time + (last.duration ?? 0)).toBeLessThanOrEqual(length);
   });
 
+  it('最後の行が語句ごと区間の終わりまでに収まる', () => {
+    // M8-5 で生まれた新しい壊れ方 — 最終行には次の行が無いので、刻みすぎても
+    // 「行の猶予に収まる」の検査に掛からず、**語句が出揃う前に区間が終わる**。
+    // 区間の終わりを猶予として、本番と同じ組み立てで測る
+    const last = sliced.lines[sliced.lines.length - 1];
+    const timeline = buildLineTimeline(last, (part) => dummyTarget(part.text.length));
+    const span = timeline.duration();
+    timeline.kill();
+
+    expect(last.time + span).toBeLessThanOrEqual(WORK_WINDOW.end - WORK_WINDOW.start);
+  });
+
   it('切り出しても全行に effect が残っている', () => {
     expect(
       sliced.lines.every((line) => line.effect !== undefined && isEffectName(line.effect)),

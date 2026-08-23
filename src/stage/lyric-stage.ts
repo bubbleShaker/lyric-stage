@@ -52,20 +52,17 @@ export class LyricStage implements LyricPresenter {
 
     // 設定は行を出すたびに読む。曲の途中で OS の設定を変えても次の行から効く
     // （購読して切り替える作りにしても、演出は 1 秒未満で終わるので違いが出ない）
-    const timeline = buildLineTimeline(line, (part, layout) => this.appendPart(part, layout), {
+    // 返ってくるタイムラインは止まっている（GSAP 自身の時計には乗らない）。
+    // 進めるのは render() だけ ＝ 音の再生位置
+    this.timeline = buildLineTimeline(line, (part, layout) => this.appendPart(part, layout), {
       reducedMotion: this.prefersReducedMotion(),
     });
-
-    // **GSAP 自身の時計から外す。** 進めるのは render() だけ（＝音の再生位置）。
-    // 止めずに置くと、音を止めても残りの語句が出続けて行が勝手に組み上がる
-    timeline.pause();
-    this.timeline = timeline;
   }
 
   /** 行の頭からの経過秒に合わせて描く。進める役はこれだけ */
   render(offset: number): void {
-    // 負の値（行が始まる前）や行より後ろは端で止める。gsap も端で頭打ちにするが、
-    // 負の位置は「最後まで進んだ状態」と解釈されうるので自分で潰しておく
+    // 負の値（行が始まる前）は 0 に潰す。gsap は後ろ側を端で頭打ちにするが、
+    // 負の位置は「最後まで進んだ状態」と解釈されうる
     this.timeline?.time(Math.max(0, offset));
   }
 

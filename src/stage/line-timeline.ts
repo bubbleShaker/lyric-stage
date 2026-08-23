@@ -14,6 +14,10 @@ import { resolveEffect, type EffectLayout, type EffectTimeline } from './effects
  * 「どの語句を・いつ・どの演出で」だけを持つ。この分担のおかげで、
  * 行の尺の検査（`src/lyric-sheets.test.ts`）が本番と同じ組み立てを、
  * ダミーの当て先を渡すだけで測れる。
+ *
+ * 純粋ではある**が無害ではない** — 受け取った当て先には gsap が値を書く
+ * （隠す `autoAlpha` と、演出が動かすもの）。要素なら CSS、ただのオブジェクトなら
+ * そのプロパティに書かれるので、検査はダミーを渡して結果を読める。
  */
 
 /** 語句 1 つぶんの当て先 */
@@ -38,11 +42,7 @@ export interface PartTarget {
  * （M4-2 の決定）。分割してから組み方を変えると、横組みで測った区切りのまま
  * 縦組みで出ることになる。
  */
-export type PartTargetFactory = (
-  part: ResolvedPart,
-  layout: EffectLayout | null,
-  index: number,
-) => PartTarget;
+export type PartTargetFactory = (part: ResolvedPart, layout: EffectLayout | null) => PartTarget;
 
 export interface BuildLineOptions {
   /** OS の「視差効果を減らす」設定が有効か */
@@ -54,11 +54,15 @@ export function buildLineTimeline(
   createTarget: PartTargetFactory,
   { reducedMotion = false }: BuildLineOptions = {},
 ): EffectTimeline {
-  const timeline = gsap.timeline();
+  // **止まった状態で作る。** 進めるのは外から与える時計（音の再生位置）だけで、
+  // GSAP 自身の時計には乗せない。乗せると、音を止めても残りの語句が出続けて
+  // 行が勝手に組み上がる。組み立てる側で pause() を呼ぶ約束にすると、
+  // その 1 行が消えた時に**全テストが緑のまま**その壊れ方が戻ってくる
+  const timeline = gsap.timeline({ paused: true });
 
-  partsOf(line).forEach((part, index) => {
+  partsOf(line).forEach((part) => {
     const { layout, build } = resolveEffect(part.effect, { reducedMotion });
-    const target = createTarget(part, layout, index);
+    const target = createTarget(part, layout);
 
     // **出番が来るまで枠ごと隠す。** 語句は行の頭でまとめて組み立てるので、
     // 何もしないと at=1.85 の語句が最初から素の姿で置かれてしまう。
@@ -75,5 +79,18 @@ export function buildLineTimeline(
     timeline.add(build({ root: target.root, chars: target.chars }), part.at);
   });
 
+  // **一度だけ動かして、時刻 0 の姿を確定させる。** gsap は playhead が動いていない
+  // タイムラインを描き直さないので、組み立てただけでは「時刻 0 で出る語句」に
+  // 何も当たらない（先頭で一時停止していると画面が空になる）。ここで往復させておくと、
+  // 以降は time(0) も普通に効く
+  timeline.time(FIRST_FRAME).time(0);
+
   return timeline;
 }
+
+/**
+ * 「動かした」と gsap に認めさせるだけの、ごく短い時間（秒）。
+ *
+ * 1 フレーム（60fps で 16.7ms）よりずっと短いので、この間に進む演出は無い。
+ */
+const FIRST_FRAME = 0.0001;

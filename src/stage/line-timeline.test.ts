@@ -34,8 +34,6 @@ function build(line: LyricLine) {
     targets.push(target);
     return target;
   });
-  // 時計は外（音の再生位置）から与える。gsap 自身の時計では進めない
-  timeline.pause();
   return { timeline, targets };
 }
 
@@ -64,22 +62,25 @@ describe('buildLineTimeline', () => {
     timeline.kill();
   });
 
-  it('組み立てた時点ではどの語句も見えていない', () => {
+  it('止まった状態で返る（進めるのは外から与える時計だけ）', () => {
+    // 組み立てる側で pause() を呼ぶ約束にすると、その 1 行が消えた時に
+    // 全テストが緑のまま「音を止めても語句が出続ける」が戻ってくる
+    const { timeline } = build(line);
+
+    expect(timeline.paused()).toBe(true);
+    timeline.kill();
+  });
+
+  it('出番の来ていない語句は見えない', () => {
     // **これが M8-5 の要**。語句は行の頭でまとめて組み立てるので、隠さないと
     // at=1 の語句が最初から素の姿で置かれる。演出が opacity 0 から始まることに
     // 頼ると、そうでない演出を足した日に静かに破れる
     const { targets, timeline } = build(line);
 
-    expect(alphaOf(targets)).toEqual([0, 0]);
-    timeline.kill();
-  });
+    // 組み立て直後（＝時刻 0）。時刻 0 の語句だけが見えている
+    expect(alphaOf(targets)).toEqual([1, 0]);
 
-  it('出番が来た語句だけが見える', () => {
-    const { targets, timeline } = build(line);
-
-    // 0 ちょうどではなく少し進めて見る。gsap は playhead が動いていない
-    // タイムラインを描き直さないので、time(0) では組み立て直後と区別が付かない
-    timeline.time(0.01);
+    timeline.time(0.5);
     expect(alphaOf(targets)).toEqual([1, 0]);
 
     timeline.time(1.01);
@@ -88,11 +89,22 @@ describe('buildLineTimeline', () => {
     timeline.kill();
   });
 
+  it('行の頭より後ろから始まる語句は、時刻 0 でも見えない', () => {
+    const { targets, timeline } = build({
+      time: 0,
+      text: 'A',
+      parts: [{ text: 'A', at: 0.5 }],
+    });
+
+    expect(alphaOf(targets)).toEqual([0]);
+    timeline.kill();
+  });
+
   it('戻せば後の語句はまた隠れる（シークで巻き戻した時）', () => {
     const { targets, timeline } = build(line);
 
     timeline.time(1.01);
-    timeline.time(0.01);
+    timeline.time(0);
 
     expect(alphaOf(targets)).toEqual([1, 0]);
     timeline.kill();
@@ -118,9 +130,9 @@ describe('buildLineTimeline', () => {
   });
 
   it('語句ごとに違う演出を当てられる', () => {
-    // 行の effect に畳まれていないこと。zoomLine は行の要素だけを動かすので、
-    // 文字を当てにする演出と混ざっていれば子の数で分かる
-    const { timeline } = build({
+    // 行の effect に畳まれていないこと。同じ位置・同じ文字数で演出だけを変え、
+    // 行の長さが**後の語句に当てた演出の長さで決まる**ことを見る
+    const withGlitch = build({
       time: 0,
       text: 'AB',
       parts: [
@@ -128,10 +140,19 @@ describe('buildLineTimeline', () => {
         { text: 'B', at: 0.5, effect: 'glitch' },
       ],
     });
+    const allCalm = build({
+      time: 0,
+      text: 'AB',
+      parts: [
+        { text: 'A', at: 0, effect: 'calm' },
+        { text: 'B', at: 0.5, effect: 'calm' },
+      ],
+    });
 
-    // 語句 2 つぶんの「隠す set」と演出の timeline
-    expect(timeline.getChildren(false).length).toBe(4);
-    timeline.kill();
+    expect(withGlitch.timeline.duration()).not.toBeCloseTo(allCalm.timeline.duration());
+
+    withGlitch.timeline.kill();
+    allCalm.timeline.kill();
   });
 
   it('動きを減らす設定では静かな演出に落ちる', () => {

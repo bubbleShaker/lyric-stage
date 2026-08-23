@@ -46,14 +46,23 @@
        * このページには音が無いので、代わりにここが経過時間を渡す。
        * 止めたい時は window.hold = true、コマ送りは stage.render(秒) で。
        */
+      // 時計は 1 本だけ。呼ぶたびにループを増やすと、古いループが新しい行に
+      // 別の時刻を書き込み続けて再生位置が飛ぶ
+      let frame = null;
       const start = (line) => {
+        if (frame !== null) cancelAnimationFrame(frame);
         stage.show(line);
-        const t0 = performance.now();
+
+        let last = performance.now();
+        let elapsed = 0;
         const step = (now) => {
-          if (!window.hold) stage.render((now - t0) / 1000);
-          requestAnimationFrame(step);
+          // hold 中は経過を足さない（基準時刻を止めないと、解除した瞬間に跳ねる）
+          if (!window.hold) elapsed += (now - last) / 1000;
+          last = now;
+          stage.render(elapsed);
+          frame = requestAnimationFrame(step);
         };
-        requestAnimationFrame(step);
+        frame = requestAnimationFrame(step);
       };
 
       /**

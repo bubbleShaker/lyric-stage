@@ -29,6 +29,8 @@ export const AUDIO_PATH = 'audio/maou_14_shining_star.mp3';
  * 入れるにあたり、先に短い尺で噛み合わせを確かめるために置いた仮の終わり
  * （3 行 = 4 小節ぶん）。語句の刻み方が決まったら `203.82` に戻して 7 行へ広げる。
  * 尺を伸ばしてから直すと、直す所が 7 行ぶんに増えるだけで得るものが無い。
+ * **戻す段取りは [Issue #37](https://github.com/bubbleShaker/lyric-stage/issues/37)。**
+ * この暫定値は公開ページに出ているので、戻し忘れないこと。
  *
  * **音源は曲の全長のまま置く。** 魔王魂の利用ルールで加工版は置けないので、
  * 切り出しはこの値と WindowedPlayback / sliceSheet が受け持つ。
