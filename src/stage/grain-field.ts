@@ -51,7 +51,9 @@ const GRAIN_SETS = 4;
  * 同心円状の縞（バンディング）が出る。粒を密に撒くと境界がばらけて縞が消える
  * ＝ 粒がディザとして働く。420 個では疎すぎて縞が残った（実際に見て決めた）。
  *
- * 12 コマ/秒でしか描き直さないので、この数でも 1 秒あたりの塗りは 3 万回ほど。
+ * この数を許せるのは描き直しを抑えているから。**抑えは 2 つ揃って初めて効く** —
+ * コマの量子化（`GRAIN_FPS`）と強さの量子化（`INTENSITY_STEPS`）で、
+ * どちらか片方でも生の値に戻すと 60 コマ/秒で 2600 個を塗り直すことになる。
  */
 const GRAINS_PER_SET = 2600;
 
@@ -69,6 +71,25 @@ const GRAIN_SEED = 0x6a17;
 
 /** 盛り上がりが粒をどれだけ明るくするか。控えめ — 粒が文字と競ってはいけない */
 const GRAIN_GAIN = 0.55;
+
+/**
+ * 盛り上がりを何段に刻むか。**これが無いと描き直しの判定が働かない。**
+ *
+ * `createLoudness` の `level()` は毎フレーム平滑化される連続値（`smoothLevel`）で、
+ * 音が鳴っている間は**必ず前フレームと違う値**になる。生のまま控えに入れると
+ * 「同じコマなら描かない」の条件が常に false になり、12 コマ/秒のつもりが
+ * 60 コマ/秒で 2600 個の粒を塗り直すことになる（レビュー指摘 🔴）。
+ *
+ * 32 段にしてあるのは、粒の濃さ（0.06〜0.34 の帯）でも光の半径（短辺の 36〜60%）でも
+ * 1 段の差が目に見えないため。**控えと描画の両方でこの値を使う**こと —
+ * 片方だけ刻むと、控えは「同じ」と言っているのに絵が違う状態になる。
+ */
+const INTENSITY_STEPS = 32;
+
+/** 盛り上がりを段に丸める。控えに入れる値と描く値を揃えるための関数 */
+export function quantizeIntensity(level: number): number {
+  return Math.round(level * INTENSITY_STEPS) / INTENSITY_STEPS;
+}
 
 /**
  * 中心の光の広がり（画面の短辺に対する割合）と、音でどれだけ広がるか。
@@ -129,7 +150,12 @@ export function createGrainSets(
  */
 export function grainSetIndex(time: number, setCount: number): number {
   // 負の時刻は 0 に畳む。剰余が負になると配列の外を引く
-  // （`sets[-1]` は undefined で、for...of が例外になる）
+  // （`sets[-1]` は undefined で、for...of が例外になる）。
+  //
+  // **これは仮定ではなく通る経路。** `WindowedPlayback.currentTime` は区間の
+  // 手前で実際に負を返す（助走の 1 小節ぶん）。その間は 0 番の組で止まる —
+  // 歌が始まる前なので、ちらつかない方がむしろ画として正しい
+  // （回し続けたいなら `((f % n) + n) % n`）
   const frame = Math.max(0, Math.floor(time * GRAIN_FPS));
 
   return frame % setCount;
@@ -211,7 +237,9 @@ export class GrainField implements Backdrop {
     // **粒も光も消さない。** 動かない粒は粒のままで、背景ごと消すと作品が別物になる
     const reduced = this.prefersReducedMotion();
     const setIndex = reduced ? 0 : grainSetIndex(time, this.grainSets.length);
-    const level = reduced ? 0 : this.intensity();
+    // 段に丸めてから控えに入れる。生の値は毎フレーム変わるので、
+    // 丸めないと下の判定が一度も効かない（INTENSITY_STEPS の説明を見よ）
+    const level = reduced ? 0 : quantizeIntensity(this.intensity());
 
     // 描き直すかどうかは**描画の入力すべて**で決める。入力が増えたらここにも足すこと。
     // 時刻ではなく「何番の組か」を控えるので、同じコマの間は描画が飛ぶ

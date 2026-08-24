@@ -7,6 +7,7 @@ import {
   grainAlpha,
   grainSetIndex,
   GrainField,
+  quantizeIntensity,
   type Grain,
 } from './grain-field';
 import { PALETTE } from './palette';
@@ -43,6 +44,16 @@ describe('createGrainSets', () => {
     }
   });
 
+  it('粒の大きさは 1〜2px に収まる', () => {
+    // 上限を見ないと、1 + weight * 50 のような値にしても他の検査は全部通る
+    // （「大きい粒ほど濃い」も「画面の大きさに引きずられない」も成り立つ）。
+    // 数 px を超えると粒ではなく点や四角に見えて、フィルムグレインでなくなる
+    for (const grain of createGrainSets(4, 200, seededRandom(7)).flat()) {
+      expect(grain.size).toBeGreaterThanOrEqual(1);
+      expect(grain.size).toBeLessThanOrEqual(2);
+    }
+  });
+
   it('大きい粒ほど濃い（大きくて見えない粒が混ざらない）', () => {
     const grains = createGrainSets(1, 200, seededRandom(7))[0].sort((a, b) => a.size - b.size);
     const alphas = grains.map((grain) => grain.alpha);
@@ -69,6 +80,23 @@ describe('grainSetIndex', () => {
     // 剰余が負になると sets[-1] が undefined になり、for...of が例外を投げる。
     // 背景が落ちるだけでは済まず、Ticker の購読ごと巻き込む
     expect(grainSetIndex(-1, 4)).toBe(0);
+  });
+});
+
+describe('quantizeIntensity', () => {
+  it('ごく小さな揺れを同じ値に畳む', () => {
+    // level() は毎フレーム平滑化される連続値なので、丸めないと
+    // 「同じコマなら描かない」の判定が一度も効かない
+    expect(quantizeIntensity(0.5004)).toBe(quantizeIntensity(0.4998));
+  });
+
+  it('段をまたぐ違いは残す（反応が死なない）', () => {
+    expect(quantizeIntensity(0.5)).not.toBe(quantizeIntensity(0.6));
+  });
+
+  it('端は端のまま（無音と振り切りが動く）', () => {
+    expect(quantizeIntensity(0)).toBe(0);
+    expect(quantizeIntensity(1)).toBe(1);
   });
 });
 
@@ -119,13 +147,30 @@ describe('glowStops', () => {
   });
 
   it('静かでも消えない（地が真っ黒になると画が死ぬ）', () => {
-    expect(glowStops(0)[0][1]).not.toBe(`${PALETTE.mute}00`);
+    expect(centerAlpha(0)).toBeGreaterThan(0);
   });
 
   it('盛り上がると濃くなる', () => {
-    expect(glowStops(1)[0][1]).not.toBe(glowStops(0)[0][1]);
+    // 「違う値になる」だけを見ると向きを検査していないので、GLOW_ALPHA_GAIN を
+    // 負にしても通ってしまう（＝音が大きいほど暗くなっても緑）
+    expect(centerAlpha(1)).toBeGreaterThan(centerAlpha(0));
+  });
+
+  it('中心から外へ向かって薄くなる（不透明度の順）', () => {
+    const alphas = glowStops(0.5).map(([, color]) => alphaOf(color));
+
+    expect(alphas).toEqual([...alphas].sort((a, b) => b - a));
   });
 });
+
+/** `#rrggbbaa` の末尾 2 桁を数値で読む。色の値に依存せず向きだけを見るため */
+function alphaOf(color: string): number {
+  return Number.parseInt(color.slice(-2), 16);
+}
+
+function centerAlpha(intensity: number): number {
+  return alphaOf(glowStops(intensity)[0][1]);
+}
 
 /**
  * Canvas の代わりに渡す偽物。描いた粒とグラデーションを記録するだけ。
@@ -146,18 +191,32 @@ class FakeContext {
   fillStyle: unknown = '';
   /** 描き直した回数。「描かなかった」ことを見るために数える */
   clears = 0;
-  readonly grains: { x: number; y: number; size: number; alpha: number }[] = [];
+  readonly grains: { x: number; y: number; size: number; alpha: number; color: unknown }[] = [];
   gradient: FakeGradient | null = null;
+  /** 光の外側の半径。渡し方（短辺か長辺か）を検査するために控える */
+  glowRadius: number | null = null;
 
   clearRect(): void {
     this.clears += 1;
     this.grains.length = 0;
     this.gradient = null;
+    this.glowRadius = null;
   }
 
-  createRadialGradient(): FakeGradient {
+  // 引数を捨てると「短辺を渡している」ことを誰も見なくなる（レビュー指摘 🟡）。
+  // glowRadius 単体の検査は短辺を渡す前提で書かれているので、呼ぶ側が
+  // Math.max に変わっても気付けない
+  createRadialGradient(
+    _x0: number,
+    _y0: number,
+    _r0: number,
+    _x1: number,
+    _y1: number,
+    r1: number,
+  ): FakeGradient {
     const gradient = new FakeGradient();
     this.gradient = gradient;
+    this.glowRadius = r1;
     return gradient;
   }
 
@@ -165,7 +224,9 @@ class FakeContext {
     // 光は「グラデーションで画面全体を塗る」1 回、粒は「色で小さく塗る」多数。
     // 塗り色がグラデーションかどうかで見分ける
     if (this.fillStyle instanceof FakeGradient) return;
-    this.grains.push({ x, y, size: width, alpha: this.globalAlpha });
+    // 色まで控える。記録しないと、粒を文字と同じ白で塗っても全検査が緑になる
+    // （M8-2 が潰そうとしている失敗そのもの。レビュー指摘 🟡）
+    this.grains.push({ x, y, size: width, alpha: this.globalAlpha, color: this.fillStyle });
   }
 }
 
@@ -217,6 +278,27 @@ describe('GrainField', () => {
 
     expect(surface.fake.grains.length).toBeGreaterThan(0);
     expect(surface.fake.gradient?.stops.length).toBeGreaterThan(0);
+  });
+
+  it('粒は mute で塗る（文字と同じ明度帯に上げない）', () => {
+    // M8-2 の眼目。ink（文字と同じ白）で塗ってしまうと、画面全体に散った
+    // 細かい点が文字と競る — 星空でやった失敗の作り直しになる
+    const surface = new FakeSurface();
+    new GrainField(surface, () => false, () => 0).render(0);
+
+    expect(new Set(surface.fake.grains.map((grain) => grain.color))).toEqual(
+      new Set([PALETTE.mute]),
+    );
+  });
+
+  it('光の半径は画面の短辺から決める', () => {
+    // 呼ぶ側が Math.max に変わると、縦長の画面で光が横にはみ出して
+    // 「ただ全体が明るいだけ」の絵になる。glowRadius 単体の検査は
+    // 短辺を渡す前提なので、配線はここでしか見ていない
+    const surface = new FakeSurface(1920, 600);
+    new GrainField(surface, () => false, () => 0.5).render(0);
+
+    expect(surface.fake.glowRadius).toBeCloseTo(glowRadius(600, 0.5));
   });
 
   it('コマが変われば別の粒に切り替わる', () => {
@@ -335,7 +417,8 @@ describe('GrainField', () => {
       expect(excited.x).toBe(grain.x);
       expect(excited.y).toBe(grain.y);
     });
-    expect(loud.fake.gradient?.stops[0][1]).not.toBe(quiet.fake.gradient?.stops[0][1]);
+    // 題名どおり半径も見る。色の差だけを見ていると「広がる」を誰も検査していない
+    expect(loud.fake.glowRadius).toBeGreaterThan(quiet.fake.glowRadius ?? 0);
   });
 
   it('強さが変われば、同じコマでも描き直す', () => {
@@ -345,6 +428,36 @@ describe('GrainField', () => {
 
     field.render(5);
     level = 0.7;
+    field.render(5);
+
+    expect(surface.fake.clears).toBe(2);
+  });
+
+  it('強さのごく小さな揺れでは描き直さない', () => {
+    // **これが無いと 12 コマ/秒の前提が崩れる**（レビュー指摘 🔴）。
+    // createLoudness の level() は毎フレーム平滑化される連続値なので、
+    // 生のまま控えに入れると条件が一度も一致せず、60 コマ/秒で 2600 個の粒を
+    // 塗り直すことになる。段に丸めているから同じコマの間は 1 回で済む
+    const surface = new FakeSurface();
+    let level = 0.5;
+    const field = new GrainField(surface, () => false, () => level);
+
+    field.render(5);
+    for (const wobble of [0.5004, 0.4998, 0.5011, 0.4995]) {
+      level = wobble;
+      field.render(5.01);
+    }
+
+    expect(surface.fake.clears).toBe(1);
+  });
+
+  it('強さが段をまたげば描き直す（丸めても反応は死なない）', () => {
+    const surface = new FakeSurface();
+    let level = 0.5;
+    const field = new GrainField(surface, () => false, () => level);
+
+    field.render(5);
+    level = 0.6;
     field.render(5);
 
     expect(surface.fake.clears).toBe(2);
