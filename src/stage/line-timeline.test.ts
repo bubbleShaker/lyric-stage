@@ -248,7 +248,9 @@ describe('語句に貼り付く図形（M8-3a）', () => {
   });
 
   it('行に書いた図形は、刻んだ語句には出ない', () => {
-    // partsOf が継がせないことの、組み立て側から見た姿（domain/lyrics.test.ts と対）
+    // partsOf が継がせないことの、組み立て側から見た姿（domain/lyrics.test.ts と対）。
+    // **この形の入力はパーサが入口で弾く**ので、ここが見ているのは
+    // 「手で組んだ行でも継がない」という domain の不変条件の方
     const { targets, timeline } = build({
       time: 0,
       text: 'AB',

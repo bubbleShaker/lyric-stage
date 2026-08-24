@@ -140,18 +140,26 @@ describe('CSS との対応', () => {
     expect(missing).toStrictEqual([]);
   });
 
-  it('図形はどれも縦組みの変種を持っている', () => {
-    // 縦組みでは行の伸びる向きも「行の下」に当たる辺も変わる。書き忘れると
-    // **横組みの向きのまま縦組みの語句に出る**（例外も警告も出ない）。
-    // 作品の縦書きの行にはまだ図形を当てていないので、目でも気付けない
-    const missing = Object.values(decors)
-      .map((entry) => entry.className)
-      .filter(
-        (className) =>
-          !new RegExp(`\\.${DECOR_LAYOUT_CLASS.vertical}\\.${className}(?![\\w-])`).test(css),
-      );
+  const layoutCases = Object.entries(DECOR_LAYOUT_CLASS).flatMap(([layout, layoutClass]) =>
+    Object.entries(decors).map(([name, entry]): [string, string, string] => [
+      layout,
+      name,
+      `${layoutClass}|${entry.className}`,
+    ]),
+  );
 
-    expect(missing).toStrictEqual([]);
+  // 組み方ごとに変種を要求する。DECOR_LAYOUT_CLASS を回すのは、組み方が増えたとき
+  // この検査だけ付いてこないのを避けるため（レビュー指摘 🟡）
+  it.each(layoutCases)('%s の組み方に図形 %s の変種がある', (_layout, _name, pair) => {
+    // 書き忘れると**横組みの向きのまま縦組みの語句に出る**（例外も警告も出ない）。
+    // 作品の縦書きの行にはまだ図形を当てていないので、目でも気付けない。
+    // 2 枚のクラスはどちらの順に書いてもよいので、両方の並びを許す
+    const [layoutClass, className] = pair.split('|');
+    const written =
+      new RegExp(`\\.${layoutClass}\\.${className}(?![\\w-])`).test(css) ||
+      new RegExp(`\\.${className}\\.${layoutClass}(?![\\w-])`).test(css);
+
+    expect(written).toBe(true);
   });
 
   /** そのクラスを含むセレクタの規則の中身を集める */

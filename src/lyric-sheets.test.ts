@@ -80,6 +80,25 @@ describe.each(Object.entries(SHEET_SOURCES))('%s.json', (_name, source) => {
     expect(unknown).toStrictEqual([]);
   });
 
+  it('面の図形が、奥行きを動かす演出の語句に当たっていない', () => {
+    // 語句の枠は preserve-3d なので、図形と文字は**同じ 3D 空間に居る**。
+    // 木の順（図形を文字より前に挿す）が効くのは同じ奥行きにある間だけで、
+    // 奥から迫る演出（rushIn は文字を z: -1400 から、swing は語句ごと z: -260 から）
+    // の最中は文字の方が奥へ行く。面の図形はそこで文字を丸ごと隠す。
+    //
+    // **画面でしか気付けない噛み合わせ**なので、演出のタイムラインが奥行きの
+    // プロパティを動かすかどうかを実際に組み立てて見る（演出名を並べた表にすると、
+    // 演出を足したときに更新を忘れる）。
+    // 知らない図形名の検査と同じ理由で、作品の区間に限らず全シート・全行に課す
+    const hidden = sheet.lines
+      .flatMap((line) => partsOf(line))
+      .filter((part) => part.decor.some((name) => isDecorName(name) && decors[name].solid))
+      .filter((part) => movesInDepth(part.effect))
+      .map((part) => `${part.text}: ${part.effect}`);
+
+    expect(hidden).toStrictEqual([]);
+  });
+
   it('語句が行の猶予の中で出る', () => {
     // at は行の time からの相対秒。行が消えた後の時刻を書いても、その語句は
     // 一度も画に出ないまま終わる（画面を見ても「なぜか出ない語句」にしか見えない）
@@ -344,23 +363,6 @@ describe('WORK_WINDOW × 本編シート', () => {
     expect(parts.some((part) => part.decor.length > 0)).toBe(true);
   });
 
-  it('面の図形が、奥行きを動かす演出の語句に当たっていない', () => {
-    // 語句の枠は preserve-3d なので、図形と文字は**同じ 3D 空間に居る**。
-    // 木の順（図形を文字より前に挿す）が効くのは同じ奥行きにある間だけで、
-    // 奥から迫る演出（rushIn は文字を z: -1400 から、swing は語句ごと z: -260 から)
-    // の最中は文字の方が奥へ行く。面の図形はそこで文字を丸ごと隠す。
-    //
-    // **画面でしか気付けない噛み合わせ**なので、演出のタイムラインが奥行きの
-    // プロパティを動かすかどうかを実際に組み立てて見る（演出名を並べた表にすると、
-    // 演出を足したときに更新を忘れる）
-    const hidden = parts
-      .filter((part) => part.decor.some((name) => isDecorName(name) && decors[name].solid))
-      .filter((part) => movesInDepth(part.effect))
-      .map((part) => `${part.text}: ${part.effect}`);
-
-    expect(hidden).toStrictEqual([]);
-  });
-
   it('作品の行が語句に刻まれている', () => {
     // M8-5 の狙いそのもの。1 行を丸ごと出す行が作品に残っていたら、そこだけ
     // 動きが単調になる。区間を広げた時に、刻み忘れの行をここで名指しして落とす
@@ -378,11 +380,30 @@ describe('WORK_WINDOW × 本編シート', () => {
  */
 function movesInDepth(effect: string | undefined): boolean {
   const timeline = resolveEffect(effect).build(dummyTarget(2));
-  const moves = timeline
-    .getChildren(true)
-    .some((child) =>
-      ['z', 'rotationX', 'rotationY'].some((property) => Object.hasOwn(child.vars, property)),
+  // **書き方の違いで漏れないよう、3 通りの置き場所を辿る**（レビュー指摘 🟡）。
+  // gsap は同じ動きを何通りにも書けるので、片方だけを見ると
+  // 「後から足した演出だけが検査をすり抜ける」——この検査が守りたい当のケースになる。
+  //
+  // - `fromTo` の始点は `vars` ではなく `vars.startAt` に入る
+  // - `rotateX` / `rotateY` / `translateZ` は正式な別名で、そのままキーになる
+  // - `keyframes` で書くと `vars` は keyframes だけを持つ
+  //
+  // Z 軸まわりの回転（rotation / rotateZ）は画面の中で回るだけなので見ない
+  const properties = ['z', 'rotationX', 'rotationY', 'rotateX', 'rotateY', 'translateZ'];
+  const touchesDepth = (vars: unknown): boolean => {
+    if (typeof vars !== 'object' || vars === null) return false;
+    if (Array.isArray(vars)) return vars.some(touchesDepth);
+
+    const record = vars as Record<string, unknown>;
+
+    return (
+      properties.some((property) => Object.hasOwn(record, property)) ||
+      touchesDepth(record.startAt) ||
+      touchesDepth(record.keyframes)
     );
+  };
+
+  const moves = timeline.getChildren(true).some((child) => touchesDepth(child.vars));
   timeline.kill();
 
   return moves;

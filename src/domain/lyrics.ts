@@ -292,10 +292,14 @@ function parseDecor(value: unknown, owner: string): string[] {
   if (value.length === 0) throw new LyricSheetError(`${where} が空です`);
 
   const names = value.map((name, order) => {
-    // 前後の空白も弾く。`' band '` は実在の名前と見分けが付かないのに、
-    // 語彙の側では未知の名前として静かに落ちる
-    if (typeof name !== 'string' || name.trim() === '' || name.trim() !== name) {
+    if (typeof name !== 'string' || name.trim() === '') {
       throw new LyricSheetError(`${where}[${order}] が空でない文字列ではありません`);
+    }
+    // 前後の空白も弾く。`' band '` は実在の名前と見分けが付かないのに、
+    // 語彙の側では未知の名前として静かに落ちる。**理由を分けて出す** —
+    // 「空でない文字列ではありません」だと、目に見えない空白を探す手掛かりが無い
+    if (name.trim() !== name) {
+      throw new LyricSheetError(`${where}[${order}] の前後に空白があります: 「${name}」`);
     }
     return name;
   });
