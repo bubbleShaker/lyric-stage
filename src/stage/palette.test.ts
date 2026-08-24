@@ -21,8 +21,18 @@ import styleCss from '../style.css?raw';
  * 1 だけでは、この「変数を通さずに書かれた色」を捕まえられない。
  */
 
+/**
+ * コメントを落とした `style.css`。
+ *
+ * **このファイルはコメントで色を名指しする書き方をする**（「地（#0a0a0c）との差が
+ * 小さすぎて」のような説明が実際に入る）。素で走査すると、そういう説明を 1 行
+ * 足しただけで「変数を通さない色がある」と落ちる。**説明を書くことが検査に
+ * 引っかかる**のは、コメントを厚く書くこのリポジトリの流儀と正面からぶつかる。
+ */
+const withoutComments = styleCss.replace(/\/\*[\s\S]*?\*\//g, '');
+
 /** `:root { ... }` の中身。ここだけが色を宣言してよい場所 */
-const rootBlock = /:root\s*\{([\s\S]*?)\n\}/.exec(styleCss)?.[1];
+const rootBlock = /:root\s*\{([\s\S]*?)\n\}/.exec(withoutComments)?.[1];
 
 /** `style.css` に書かれた `--stage-*` の宣言（名前 → 値） */
 function declaredVariables(): Map<string, string> {
@@ -62,8 +72,12 @@ describe('配色の単一の情報源', () => {
     //
     // 白の透過（rgb(255 255 255 / 0.12)）は対象外にしてある。あれは
     // 「ガラスの厚み」を表す指定で、パレットの色ではない（下に敷いたものを
-    // 透かすのが狙いなので、パレットのどの段とも対応しない）
-    const outside = styleCss.replace(rootBlock ?? '', '');
+    // 透かすのが狙いなので、パレットのどの段とも対応しない）。
+    //
+    // **見ているのは 16 進の書き方だけ。** rgb() / hsl() / color-mix() で書いた
+    // 色はすり抜ける。塞ぐには CSS を本当に解析するしかなく、そこまでの手間に
+    // 見合わない — このファイルの色はすべて 16 進で書く、が実際の約束
+    const outside = withoutComments.replace(rootBlock ?? '', '');
     const hardcoded = outside.match(/#[0-9a-fA-F]{3,8}\b/g) ?? [];
 
     expect(hardcoded).toStrictEqual([]);
