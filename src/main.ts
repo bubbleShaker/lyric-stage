@@ -14,6 +14,7 @@ import { GrainField } from './stage/grain-field';
 import { LyricStage } from './stage/lyric-stage';
 import { createLoudness, systemAudioContext } from './stage/loudness';
 import { ScaledCanvas, systemPixelRatio } from './stage/scaled-canvas';
+import { mountScreenDecor } from './stage/screen-decor';
 import { mountTransport } from './stage/transport';
 import { mountTransportIdle } from './stage/transport-idle';
 import { WindowedPlayback } from './stage/windowed-playback';
@@ -45,6 +46,13 @@ const player = new WindowedPlayback(new AudioPlayer(media, assetUrl(AUDIO_PATH))
 // 文字も背景も動くので、同じ設定を両方へ渡す
 const prefersReducedMotion = systemReducedMotion();
 const stage = new LyricStage(requiredElement('stage-lines'), prefersReducedMotion);
+
+// 画面に敷く図形（M8-3b / Issue #45）。分割線と四隅のマークは静的なので、
+// 敷いたら以降は触らない（動きが無いので prefersReducedMotion も要らない）。
+// 返り値のレイヤーは捨てている — 掴む必要が出るのは M8-4（ビート同期の衝撃）から。
+// body 直下に置くのは、.stage が「中の要素はすべて absolute である前提」で
+// 組まれているため（style.css）
+mountScreenDecor(document.body);
 
 const toggle = requiredElement<HTMLButtonElement>('transport-toggle');
 const transportRoot = requiredElement('transport');
