@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { DECOR_LAYOUT_CLASS, decors, isDecorName, resolveDecor } from './decor';
+import { DECOR_BASE_CLASS, DECOR_LAYOUT_CLASS, decors, isDecorName, resolveDecor } from './decor';
 // Vite の ?raw で CSS を文字列として読む（composition.test.ts と同じ手）
 import styleCss from '../style.css?raw';
 
@@ -103,14 +103,20 @@ describe('レジストリ', () => {
 });
 
 describe('CSS との対応', () => {
+  // **コメントを落としてから走査する。** このリポジトリはコメントでクラス名や
+  // カスタムプロパティ名を書くので、素で見ると「説明を 1 行足しただけで緑になる」
+  // （palette.test.ts が色の走査で同じ手当てをしている）
+  const css = styleCss.replace(/\/\*[\s\S]*?\*\//g, '');
+
   // レジストリは「名前 → クラス」の唯一の関門だが、**その先の対応関係は無防備**。
   // 'stage__decor--bnad' と打ち間違えても型検査もテストも全部通り、起きるのは
   // 「図形だけが出ない」という例外も警告も出ない壊れ方（M8-1 のレビュー指摘と同じ穴）。
   const declared = (className: string) =>
     // 「.クラス名」の直後がクラス名として続かない位置（-- で始まる別のクラスと区別する）
-    new RegExp(`\\.${className}(?![\\w-])`).test(styleCss);
+    new RegExp(`\\.${className}(?![\\w-])`).test(css);
 
   const cases: [string, string][] = [
+    ['図形の基底', DECOR_BASE_CLASS],
     ...Object.entries(decors).map(([name, entry]): [string, string] => [`図形 ${name}`, entry.className]),
     ...Object.entries(DECOR_LAYOUT_CLASS).map(([name, className]): [string, string] => [
       `組み方 ${name}`,
@@ -134,10 +140,24 @@ describe('CSS との対応', () => {
     expect(missing).toStrictEqual([]);
   });
 
+  it('図形はどれも縦組みの変種を持っている', () => {
+    // 縦組みでは行の伸びる向きも「行の下」に当たる辺も変わる。書き忘れると
+    // **横組みの向きのまま縦組みの語句に出る**（例外も警告も出ない）。
+    // 作品の縦書きの行にはまだ図形を当てていないので、目でも気付けない
+    const missing = Object.values(decors)
+      .map((entry) => entry.className)
+      .filter(
+        (className) =>
+          !new RegExp(`\\.${DECOR_LAYOUT_CLASS.vertical}\\.${className}(?![\\w-])`).test(css),
+      );
+
+    expect(missing).toStrictEqual([]);
+  });
+
   /** そのクラスを含むセレクタの規則の中身を集める */
   function rulesFor(className: string): string[] {
     const pattern = new RegExp(`([^{}]*\\.${className}(?![\\w-])[^{}]*)\\{([^}]*)\\}`, 'g');
 
-    return [...styleCss.matchAll(pattern)].map(([, , body]) => body);
+    return [...css.matchAll(pattern)].map(([, , body]) => body);
   }
 });

@@ -189,14 +189,14 @@
           "at": 0,
           "effect": "rushIn",
           "place": { "at": "middle-left", "size": "lg", "nudge": { "y": -0.08 }, "tilt": -3 },
-          "decor": ["band"]
+          "decor": ["rule"]
         },
         {
           "text": "スター",
           "at": 1.128,
           "effect": "zoom",
           "place": { "at": "top-right", "size": "xl", "nudge": { "x": -0.02 }, "tilt": 4 },
-          "decor": ["rule"]
+          "decor": ["band"]
         },
         {
           "text": "綴れば",
@@ -251,14 +251,13 @@
           "at": 1.128,
           "effect": "bounce",
           "place": { "at": "top-right", "size": "lg", "nudge": { "y": 0.02 }, "tilt": 5 },
-          "decor": ["rule"]
+          "decor": ["band", "rule"]
         },
         {
           "text": "ような",
           "at": 2.254,
           "effect": "swing",
-          "place": { "at": "bottom-left", "size": "lg", "nudge": { "x": 0.06 } },
-          "decor": ["band", "rule"]
+          "place": { "at": "bottom-left", "size": "lg", "nudge": { "x": 0.06 } }
         }
       ]
     },

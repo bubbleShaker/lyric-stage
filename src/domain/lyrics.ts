@@ -207,6 +207,14 @@ function parseLyricLine(value: unknown, index: number): LyricLine {
   if (duration !== undefined && (typeof duration !== 'number' || !(duration > 0))) {
     throw new LyricSheetError(`lines[${index}].duration が正の数値ではありません`);
   }
+  // 図形は行から語句へ継がない（partsOf を見よ）。刻んだ行に行の decor を書くと
+  // **検証も型も検査も通るのに、画には何も出ない**。継がないと決めた以上、
+  // 継がない指定を書けてしまう方を塞ぐ（`decor: []` を書き掛けとして弾くのと同じ立場）
+  if (parts !== undefined && decor !== undefined) {
+    throw new LyricSheetError(
+      `lines[${index}] は語句に刻まれているので、decor は語句の側に書きます`,
+    );
+  }
 
   // ここで組み直すので、**知らない項目は黙って落ちる**。新しい項目を足したら
   // 必ずこの行にも足すこと（place は M8-1、parts は M8-5 で足した）
@@ -284,7 +292,9 @@ function parseDecor(value: unknown, owner: string): string[] {
   if (value.length === 0) throw new LyricSheetError(`${where} が空です`);
 
   const names = value.map((name, order) => {
-    if (typeof name !== 'string' || name.trim() === '') {
+    // 前後の空白も弾く。`' band '` は実在の名前と見分けが付かないのに、
+    // 語彙の側では未知の名前として静かに落ちる
+    if (typeof name !== 'string' || name.trim() === '' || name.trim() !== name) {
       throw new LyricSheetError(`${where}[${order}] が空でない文字列ではありません`);
     }
     return name;

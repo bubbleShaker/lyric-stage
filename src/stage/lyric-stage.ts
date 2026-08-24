@@ -3,7 +3,7 @@ import type { LyricLine, ResolvedPart } from '../domain/lyrics';
 import type { LyricPresenter } from '../domain/ports';
 import type { ReducedMotionQuery } from '../lib/reduced-motion';
 import { resolveComposition } from './composition';
-import { DECOR_LAYOUT_CLASS } from './decor';
+import { DECOR_BASE_CLASS, DECOR_LAYOUT_CLASS } from './decor';
 import { LAYOUT_CLASS, type EffectLayout, type EffectTimeline } from './effects';
 import { buildLineTimeline, type PartTarget } from './line-timeline';
 
@@ -125,8 +125,13 @@ export class LyricStage implements LyricPresenter {
    * 図形 1 つぶんの当て先を、語句の枠の中・**文字の直前**に挿す（M8-3a）。
    *
    * 枠は `transform-style: preserve-3d` を持つので、同じ奥行きにある要素の重なりは
-   * 木の順で決まる（z-index は効かない）。文字より前に置けば必ず奥に描かれ、
-   * 帯が歌詞を覆う心配が無い。順序を呼ぶ側の都合に委ねない。
+   * 木の順で決まる（z-index は効かない）。文字より前に置けば奥に描かれる。
+   * 順序を呼ぶ側の都合に委ねない。
+   *
+   * **ただし「必ず」ではない。** 木の順が効くのは同じ奥行きにある間だけで、
+   * 奥から迫る演出（`rushIn` / `swing`）の最中は文字の方が奥へ行く。面の図形は
+   * そこで文字を隠すので、噛み合わせは `DecorEntry.solid` として持ち、
+   * `src/lyric-sheets.test.ts` が落とす。
    *
    * 頭に挿す（prepend）のではなく文字の直前に挿すのは、**シートに書いた順が
    * そのまま奥から手前の順になる**ようにするため。頭に挿すと順が逆になり、
@@ -138,7 +143,7 @@ export class LyricStage implements LyricPresenter {
     layout: EffectLayout | null,
   ): HTMLElement {
     const decor = document.createElement('div');
-    decor.className = 'stage__decor';
+    decor.className = DECOR_BASE_CLASS;
     decor.classList.add(className);
     // 図形は文字の兄弟なので writing-mode が届かない。伸びる向きと敷く辺を
     // 揃えるために、組み方はクラスで別に伝える（stage/decor.ts）

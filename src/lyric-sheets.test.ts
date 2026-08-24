@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { parseLyricSheet, partsOf, sliceSheet, type LyricLine } from './domain/lyrics';
 import { isAnchorName, isSizeName } from './stage/composition';
-import { isDecorName } from './stage/decor';
+import { decors, isDecorName } from './stage/decor';
 import { effects, isEffectName, resolveEffect } from './stage/effects';
 import { buildLineTimeline } from './stage/line-timeline';
 import { DEFAULT_SHEET_NAME, WORK_WINDOW } from './work';
@@ -63,6 +63,21 @@ describe.each(Object.entries(SHEET_SOURCES))('%s.json', (_name, source) => {
       .map(({ line, joined }) => `${line.text} ≠ ${joined}`);
 
     expect(mismatched).toStrictEqual([]);
+  });
+
+  it('知らない図形名が書かれていない', () => {
+    // 未知の名前は既定に落ちるのではなく**完全に消える**ので、綴りの間違いは
+    // 「なぜかその語句にだけ帯が出ない」という形になる。画面を見ても分からない。
+    //
+    // 演出やアンカーの検査と違って作品の区間に限らないのは、区間の外や開発用の
+    // シートに書いた綴り間違いも、区間を広げた時にそのまま出てくるため
+    const unknown = sheet.lines
+      .flatMap((line) => partsOf(line))
+      .flatMap((part) =>
+        part.decor.filter((name) => !isDecorName(name)).map((name) => `${part.text}: ${name}`),
+      );
+
+    expect(unknown).toStrictEqual([]);
   });
 
   it('語句が行の猶予の中で出る', () => {
@@ -323,20 +338,27 @@ describe('WORK_WINDOW × 本編シート', () => {
     expect(repeated).toStrictEqual([]);
   });
 
-  it('知らない図形名が書かれていない', () => {
-    // 未知の名前は落ちて何も出ないので、綴りの間違いは「なぜかその語句にだけ
-    // 帯が出ない」という形になる。画面を見ても分からないので名指しして落とす
-    const unknown = parts.flatMap((part) =>
-      part.decor.filter((name) => !isDecorName(name)).map((name) => `${part.text}: ${name}`),
-    );
-
-    expect(unknown).toStrictEqual([]);
-  });
-
   it('作品のどこかに図形が置かれている', () => {
     // シートから decor を消しても**全テストが緑のまま**、画から面と線だけが消える
     // （M8-3a そのものが静かに無効になる）。1 つも無い状態を落とす
     expect(parts.some((part) => part.decor.length > 0)).toBe(true);
+  });
+
+  it('面の図形が、奥行きを動かす演出の語句に当たっていない', () => {
+    // 語句の枠は preserve-3d なので、図形と文字は**同じ 3D 空間に居る**。
+    // 木の順（図形を文字より前に挿す）が効くのは同じ奥行きにある間だけで、
+    // 奥から迫る演出（rushIn は文字を z: -1400 から、swing は語句ごと z: -260 から)
+    // の最中は文字の方が奥へ行く。面の図形はそこで文字を丸ごと隠す。
+    //
+    // **画面でしか気付けない噛み合わせ**なので、演出のタイムラインが奥行きの
+    // プロパティを動かすかどうかを実際に組み立てて見る（演出名を並べた表にすると、
+    // 演出を足したときに更新を忘れる）
+    const hidden = parts
+      .filter((part) => part.decor.some((name) => isDecorName(name) && decors[name].solid))
+      .filter((part) => movesInDepth(part.effect))
+      .map((part) => `${part.text}: ${part.effect}`);
+
+    expect(hidden).toStrictEqual([]);
   });
 
   it('作品の行が語句に刻まれている', () => {
@@ -347,6 +369,24 @@ describe('WORK_WINDOW × 本編シート', () => {
     expect(whole).toStrictEqual([]);
   });
 });
+
+/**
+ * その演出が語句を画面の平面から離すか（奥行き方向へ動かすか）。
+ *
+ * 実際に組み立てて、トゥイーンが触るプロパティを見る。z だけでなく面の回転も
+ * 見るのは、回った面は端が z=0 の平面を突き抜けるため。
+ */
+function movesInDepth(effect: string | undefined): boolean {
+  const timeline = resolveEffect(effect).build(dummyTarget(2));
+  const moves = timeline
+    .getChildren(true)
+    .some((child) =>
+      ['z', 'rotationX', 'rotationY'].some((property) => Object.hasOwn(child.vars, property)),
+    );
+  timeline.kill();
+
+  return moves;
+}
 
 /** その行が画面に出ていられる秒数。次の行が来るか duration が切れるかの早い方 */
 function gapAfter(lines: readonly LyricLine[], index: number): number {

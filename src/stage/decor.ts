@@ -33,6 +33,18 @@ export interface DecorEntry {
   /** 当てる CSS クラス。形と向きはすべてここに預けている */
   readonly className: string;
   readonly build: DecorBuild;
+  /**
+   * 塗り（面）かどうか。**3D の重なりに効く。**
+   *
+   * 語句の枠は `transform-style: preserve-3d` なので、図形と文字は同じ 3D 空間に
+   * 居る。木の順で奥に置いても、それが効くのは**同じ奥行きにある間だけ**で、
+   * 奥から迫る演出（`rushIn` は文字を `z: -1400` から、`swing` は語句ごと
+   * `z: -260` から動かす）の最中は**文字の方が図形より奥**に来る。
+   *
+   * 面はそこで文字を隠してしまう（線なら実害が無い）。この噛み合わせは
+   * `src/lyric-sheets.test.ts` が「面 × 奥行きを動かす演出」として落とす。
+   */
+  readonly solid: boolean;
 }
 
 /**
@@ -60,14 +72,23 @@ export const decors = {
    *
    * 文字PV の骨格そのもの。地の上に浮いている語句を画面に留める重しになる。
    */
-  band: { className: 'stage__decor--band', build: grow(0.42) },
+  band: { className: 'stage__decor--band', build: grow(0.42), solid: true },
 
   /** 罫 — 語句の下（縦組みなら脇）を走る細い線。帯より軽く、視線の流れを作る */
-  rule: { className: 'stage__decor--rule', build: grow(0.34) },
+  rule: { className: 'stage__decor--rule', build: grow(0.34), solid: false },
 
   /** 枠 — 語句を囲む輪郭線。拭き取るように現れる（意味の与え方は style.css） */
-  box: { className: 'stage__decor--box', build: grow(0.5) },
+  box: { className: 'stage__decor--box', build: grow(0.5), solid: false },
 } satisfies Record<string, DecorEntry>;
+
+/**
+ * 図形の当て先が必ず持つクラス（位置と大きさの基準）。
+ *
+ * 図形ごとのクラスと同じく、**打ち間違えても型検査も全テストも通る**。落ちるのは
+ * `position: absolute` と `font-size` で、図形が通常フローの箱として語句を押し下げる。
+ * `decor.test.ts` が `style.css` に実在することを見張る。
+ */
+export const DECOR_BASE_CLASS = 'stage__decor';
 
 export type DecorName = keyof typeof decors;
 
@@ -119,7 +140,7 @@ export function resolveDecor(
 
     const entry = decors[name];
 
-    return [reducedMotion ? { className: entry.className, build: still } : entry];
+    return [reducedMotion ? { ...entry, build: still } : entry];
   });
 }
 

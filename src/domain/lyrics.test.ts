@@ -278,6 +278,20 @@ describe('parseLyricSheet（図形 = decor）', () => {
     expect(() => parseLine({ decor: [1] })).toThrow();
   });
 
+  it('刻んだ行に行の図形を書いた指定を弾く', () => {
+    // 図形は行から継がないので、書いても画には何も出ない（検証も型も検査も通る）。
+    // 継がないと決めた以上、継がない指定を書けてしまう方を塞ぐ
+    expect(() =>
+      parseLine({ decor: ['band'], parts: [{ text: 'AB', at: 0 }] }),
+    ).toThrow();
+  });
+
+  it('前後に空白の付いた名前を弾く', () => {
+    // 実在の名前と見分けが付かないのに、語彙の側では未知の名前として静かに落ちる
+    expect(() => parseLine({ decor: [' band'] })).toThrow();
+    expect(() => parseLine({ decor: ['band '] })).toThrow();
+  });
+
   it('同じ図形を 2 度書いた指定を弾く', () => {
     // 同じ場所にぴったり重なるので、画面では 1 つにしか見えない
     expect(() => parseLine({ decor: ['band', 'band'] })).toThrow();
