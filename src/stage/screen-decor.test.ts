@@ -11,7 +11,13 @@ import {
 // Vite の ?raw で CSS を文字列として読む（decor.test.ts / palette.test.ts と同じ手）
 import styleCss from '../style.css?raw';
 
-/** 上下の辺。隅は必ず「上下のどちらか」と「左右のどちらか」を 1 つずつ取る */
+/**
+ * 上下の辺。隅は必ず「上下のどちらか」と「左右のどちらか」を 1 つずつ取る。
+ *
+ * ここだけは `MARK_EDGES` から導けない（どの辺が上下かは名前からは決まらない）ので、
+ * **辺を増やしたらここも触ること**（レビュー指摘 🟢）。触り忘れると、増えた辺を
+ * 使う隅がこの検査を素通りする。
+ */
 const UP_DOWN_EDGES: readonly MarkEdge[] = ['top', 'bottom'];
 
 describe('四隅のマーク', () => {

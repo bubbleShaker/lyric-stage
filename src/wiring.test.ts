@@ -30,8 +30,13 @@ function withoutComments(source: string): string {
 
 describe('画面に敷く図形（M8-3b）', () => {
   // この 1 行が消えても、型検査もほかの検査も全部緑のまま**画面から図形だけが消える**
-  // （M8-3a で「作品のどこかに図形が置かれている」を検査にしたのと同じ穴）
-  const calls = /mountScreenDecor\(/;
+  // （M8-3a で「作品のどこかに図形が置かれている」を検査にしたのと同じ穴）。
+  //
+  // **探すのは行頭の呼び出しに限る**（レビュー指摘 🟢）。剥がす側だけを頼りにすると、
+  // 行末コメント（`const x = f(); // mountScreenDecor(...) は M8-4 で戻す`）への退避が
+  // すり抜ける。剥がす側を強めて URL の // まで巻き込むより、探す側を狭める方が確実
+  // — 呼び出しはどちらのページでも文の頭にある
+  const calls = /^[^\S\n]*mountScreenDecor\(/m;
 
   it('本編（main.ts）が敷いている', () => {
     expect(withoutComments(mainTs)).toMatch(calls);
