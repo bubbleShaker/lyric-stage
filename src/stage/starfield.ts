@@ -1,10 +1,17 @@
 import type { IntensityQuery } from '../lib/intensity';
 import { seededRandom } from '../lib/random';
 import type { ReducedMotionQuery } from '../lib/reduced-motion';
+import type { Backdrop } from './backdrop';
+import { PALETTE } from './palette';
 import type { DrawSurface } from './scaled-canvas';
 
 /**
  * 背景の星空。Canvas 2D で毎フレーム描く。
+ *
+ * **M8-2（Issue #41）で `Backdrop` の実装の 1 つに格下げした。今は使われていない。**
+ * 文字PV 化にあたって背景を粒と光（`GrainField`）に差し替えたが、消してはいない —
+ * 星空に戻す判断も、`LayeredBackdrop` で一番奥に薄く重ねる判断も、まだ残してある。
+ * 使うかどうかを決めているのは `main.ts` の 1 行だけ。
  *
  * gsap は使わない。星は数百個あり、1 つずつトゥイーンを張る対象ではないため
  * （GSAP に任せる価値があるのは「文字の登場」のような時間の組み立て）。
@@ -32,10 +39,17 @@ export interface Star {
   readonly color: string;
 }
 
-/** 星の色。多くは白、少し青みがかったものを混ぜ、たまに空の色を差す */
-const WHITE = '#f4f6ff';
-const PALE_BLUE = '#cfe4ff';
-const CYAN = '#7fd7ff';
+/**
+ * 星の色。多くは文字と同じ白、少し沈んだものを混ぜ、たまに差し色を置く。
+ *
+ * M8-2（Issue #41）でパレットから引くようにした。それまでは `#f4f6ff` / `#cfe4ff` /
+ * `#7fd7ff` を直に持っていて、`style.css` の `--stage-fg` / `--stage-accent` と
+ * **同じ色が 2 か所に書かれている**状態だった。今は色を持つのは `palette.ts` だけ。
+ *
+ * 青みの段（旧 `PALE_BLUE`）は無くなった。配色がモノトーンになり、
+ * 中間の明度は `mute` が担うため。
+ */
+const { ink: INK, mute: MUTE, accent: ACCENT } = PALETTE;
 
 /** 瞬きの深さ。0 なら瞬かず、1 なら消えるまで暗くなる */
 const TWINKLE_DEPTH = 0.45;
@@ -59,7 +73,7 @@ export function createStars(count: number, random: () => number): Star[] {
       phase: random() * Math.PI * 2,
       // 手前の星ほどゆっくり瞬く。遠くの小さい星が細かくちらつく方が空らしい
       speed: 2.4 - depth * 1.6,
-      color: colorRoll < 0.08 ? CYAN : colorRoll < 0.4 ? PALE_BLUE : WHITE,
+      color: colorRoll < 0.08 ? ACCENT : colorRoll < 0.4 ? MUTE : INK,
     };
   });
 }
@@ -103,7 +117,7 @@ interface DrawnFrame {
   readonly intensity: number;
 }
 
-export class Starfield {
+export class Starfield implements Backdrop {
   private readonly surface: DrawSurface;
   private readonly prefersReducedMotion: ReducedMotionQuery;
   private readonly intensity: IntensityQuery;
