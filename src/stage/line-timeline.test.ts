@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import gsap from 'gsap';
+import { describe, expect, it, vi } from 'vitest';
 import type { LyricLine } from '../domain/lyrics';
 import { buildLineTimeline, type PartTarget } from './line-timeline';
 
@@ -9,11 +10,19 @@ import { buildLineTimeline, type PartTarget } from './line-timeline';
  * frame に当たる autoAlpha は数値としてそのまま乗るため、
  * 「出番の前は隠れている」がここで読める（本物では visibility + opacity になる）。
  */
-function dummyTarget(count: number): PartTarget {
+function dummyTarget(count: number): PartTarget & { readonly decorClasses: string[] } {
+  // 図形を頼まれた回数と名前を控える。本物では枠の中に要素が立つ（M8-3a）
+  const decorClasses: string[] = [];
+
   return {
     frame: {} as HTMLElement,
     root: {} as HTMLElement,
     chars: Array.from({ length: count }, () => ({}) as unknown as Element),
+    decorClasses,
+    createDecor: (className) => {
+      decorClasses.push(className);
+      return {} as HTMLElement;
+    },
   };
 }
 
@@ -27,8 +36,11 @@ function alphaOf(targets: PartTarget[]): number[] {
   return targets.map((target) => Number((target.frame as unknown as { autoAlpha: number }).autoAlpha));
 }
 
+/** ダミーの当て先。図形の控えを読めるよう、PartTarget より広い型で持つ */
+type DummyTarget = ReturnType<typeof dummyTarget>;
+
 function build(line: LyricLine) {
-  const targets: PartTarget[] = [];
+  const targets: DummyTarget[] = [];
   const timeline = buildLineTimeline(line, (part) => {
     const target = dummyTarget(part.text.length);
     targets.push(target);
@@ -173,6 +185,81 @@ describe('buildLineTimeline', () => {
       .filter((prop) => ['xPercent', 'yPercent', 'rotation', 'scale', 'z'].includes(prop));
 
     expect(used).toStrictEqual([]);
+    timeline.kill();
+  });
+});
+
+describe('語句に貼り付く図形（M8-3a）', () => {
+  it('書いた図形の数だけ当て先を頼む', () => {
+    const { targets, timeline } = build({
+      time: 0,
+      text: 'AB',
+      parts: [
+        { text: 'A', at: 0, decor: ['band', 'rule'] },
+        { text: 'B', at: 1 },
+      ],
+    });
+
+    expect(targets.map((target) => target.decorClasses)).toEqual([
+      ['stage__decor--band', 'stage__decor--rule'],
+      [],
+    ]);
+    timeline.kill();
+  });
+
+  it('知らない図形名の当て先は作らない', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const { targets, timeline } = build({ time: 0, text: 'A', decor: ['bnad'] });
+
+    expect(targets[0].decorClasses).toEqual([]);
+    // 回数ではなく中身を見る。ダミーの当て先には CSSPlugin が効かないので、
+    // gsap 自身も「Invalid property autoAlpha」と警告する（この環境だけの雑音）
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('bnad'));
+
+    timeline.kill();
+    warn.mockRestore();
+  });
+
+  it('図形は語句と同じ時刻から始まる', () => {
+    // 前倒しにしない（M8-3a）。図形だけ先に引く画も作れるが、それは語句の at を
+    // 早めれば書ける。ここでずらすと、シートに書いた時刻と画に出る時刻が食い違い、
+    // 耳で刻みを詰める作業（Issue #37）が狂う
+    const { timeline } = build({
+      time: 0,
+      text: 'AB',
+      parts: [
+        { text: 'A', at: 0 },
+        { text: 'B', at: 1.5, decor: ['band'] },
+      ],
+    });
+
+    // startTime() は「親から見た位置」なので、根の直下の子を見る
+    // （図形の組み立ては 1 本のタイムラインとして丸ごと差し込まれる）
+    const starts = timeline
+      .getChildren(false)
+      .filter((child): child is gsap.core.Timeline => child instanceof gsap.core.Timeline)
+      .filter((child) => child.getChildren(true).some((t) => Object.hasOwn(t.vars, '--decor-grow')))
+      .map((child) => child.startTime());
+
+    expect(starts).toHaveLength(1);
+    expect(starts[0]).toBeCloseTo(1.5);
+    timeline.kill();
+  });
+
+  it('行に書いた図形は、刻んだ語句には出ない', () => {
+    // partsOf が継がせないことの、組み立て側から見た姿（domain/lyrics.test.ts と対）
+    const { targets, timeline } = build({
+      time: 0,
+      text: 'AB',
+      decor: ['band'],
+      parts: [
+        { text: 'A', at: 0 },
+        { text: 'B', at: 1 },
+      ],
+    });
+
+    expect(targets.map((target) => target.decorClasses)).toEqual([[], []]);
     timeline.kill();
   });
 });

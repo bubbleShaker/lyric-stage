@@ -1,5 +1,6 @@
 import gsap from 'gsap';
 import { partsOf, type LyricLine, type ResolvedPart } from '../domain/lyrics';
+import { resolveDecor } from './decor';
 import { resolveEffect, type EffectLayout, type EffectTimeline } from './effects';
 
 /**
@@ -33,6 +34,14 @@ export interface PartTarget {
   readonly root: HTMLElement;
   /** SplitText が分解した 1 文字ずつの要素 */
   readonly chars: Element[];
+  /**
+   * 図形の当て先を 1 つ立てて返す（M8-3a）。**文字より奥に置かれる。**
+   *
+   * 「立てた要素の配列」を受け取る形にしなかったのは、**数と順序が図形の列と
+   * 一致していることを規約でしか守れなくなる**ため。作る所と使う所が
+   * この 1 行で繋がっていれば、取り違えようが無い。
+   */
+  readonly createDecor: (className: string) => HTMLElement;
 }
 
 /**
@@ -76,6 +85,14 @@ export function buildLineTimeline(
     // 開発用ページ / テストのダミー）に約束を配らないため
     gsap.set(target.frame, { autoAlpha: 0 });
     timeline.set(target.frame, { autoAlpha: 1 }, part.at);
+
+    // 図形は文字と**同じ時刻から**始める（M8-3a）。少し先に引いてから文字を乗せる
+    // 手もあるが、それは語句の `at` を早めれば書ける。ここで前倒しにすると、
+    // シートに書いた時刻と画に出る時刻がずれて、耳で詰める作業（Issue #37）が狂う
+    for (const decor of resolveDecor(part.decor, { reducedMotion })) {
+      timeline.add(decor.build(target.createDecor(decor.className)), part.at);
+    }
+
     timeline.add(build({ root: target.root, chars: target.chars }), part.at);
   });
 

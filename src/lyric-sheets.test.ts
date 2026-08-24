@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { parseLyricSheet, partsOf, sliceSheet, type LyricLine } from './domain/lyrics';
 import { isAnchorName, isSizeName } from './stage/composition';
+import { isDecorName } from './stage/decor';
 import { effects, isEffectName, resolveEffect } from './stage/effects';
 import { buildLineTimeline } from './stage/line-timeline';
 import { DEFAULT_SHEET_NAME, WORK_WINDOW } from './work';
@@ -322,6 +323,22 @@ describe('WORK_WINDOW × 本編シート', () => {
     expect(repeated).toStrictEqual([]);
   });
 
+  it('知らない図形名が書かれていない', () => {
+    // 未知の名前は落ちて何も出ないので、綴りの間違いは「なぜかその語句にだけ
+    // 帯が出ない」という形になる。画面を見ても分からないので名指しして落とす
+    const unknown = parts.flatMap((part) =>
+      part.decor.filter((name) => !isDecorName(name)).map((name) => `${part.text}: ${name}`),
+    );
+
+    expect(unknown).toStrictEqual([]);
+  });
+
+  it('作品のどこかに図形が置かれている', () => {
+    // シートから decor を消しても**全テストが緑のまま**、画から面と線だけが消える
+    // （M8-3a そのものが静かに無効になる）。1 つも無い状態を落とす
+    expect(parts.some((part) => part.decor.length > 0)).toBe(true);
+  });
+
   it('作品の行が語句に刻まれている', () => {
     // M8-5 の狙いそのもの。1 行を丸ごと出す行が作品に残っていたら、そこだけ
     // 動きが単調になる。区間を広げた時に、刻み忘れの行をここで名指しして落とす
@@ -359,6 +376,9 @@ function dummyTarget(count: number) {
     frame: {} as HTMLElement,
     root: {} as HTMLElement,
     chars: Array.from({ length: count }, () => ({}) as unknown as Element),
+    // 図形（M8-3a）も本番と同じ経路で組まれるので、当て先だけ返す。
+    // 図形が行の尺に入ることも、これで「行の猶予に収まる」の検査が見てくれる
+    createDecor: () => ({}) as HTMLElement,
   };
 }
 
