@@ -39,18 +39,30 @@ export const SCREEN_DECOR_GRID_CLASS = 'screen-decor__grid';
 /** 四隅のマークが共通で持つクラス（大きさ・線の太さ・色） */
 export const SCREEN_DECOR_MARK_CLASS = 'screen-decor__mark';
 
-/** マークが線を引く辺。位置の指定にもそのまま使う */
-export type MarkEdge = 'top' | 'right' | 'bottom' | 'left';
+/**
+ * マークが線を引きうる 4 辺。位置の指定にもそのまま使う。
+ *
+ * 型を列から導いているのは、**辺を増やしたときに検査が静かに片肺にならない**ため
+ * （レビュー指摘 🟡）。列と型を別々に書くと、`screen-decor.test.ts` の走査だけが
+ * 古い 4 辺を見たまま緑になる。
+ */
+export const MARK_EDGES = ['top', 'right', 'bottom', 'left'] as const;
+
+export type MarkEdge = (typeof MARK_EDGES)[number];
 
 export interface ScreenMark {
   /** 隅ごとのクラス。位置と、どちらの辺に線を引くかを持つ */
   readonly className: string;
   /**
-   * その隅が線を引く 2 辺。**`style.css` と対で守る値。**
+   * その隅が線を引く 2 辺（縦の辺 1 つ + 横の辺 1 つ）。**`style.css` と対で守る値。**
    *
    * 写し間違えて `top-right` が左の辺を引くと、かぎ括弧が内側を向く。
    * 4 つ並んでいると向きの違いは目で追いにくいので、`screen-decor.test.ts` が
    * 「その隅の規則が、この 2 辺だけを引いているか」を見る。
+   *
+   * **クラス名との整合も検査する**（レビュー指摘 🟡）。CSS と揃えて書き換えれば
+   * `--top-right` が左の辺を引く形も全部緑で通ってしまうので、名前に出ている辺と
+   * ここの辺が一致していることを別途見る。
    */
   readonly edges: readonly [MarkEdge, MarkEdge];
 }

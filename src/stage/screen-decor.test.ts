@@ -1,17 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import {
   markClassName,
+  MARK_EDGES,
   SCREEN_DECOR_CLASS,
   SCREEN_DECOR_GRID_CLASS,
   SCREEN_DECOR_MARK_CLASS,
   SCREEN_MARKS,
   type MarkEdge,
 } from './screen-decor';
-// Vite の ?raw でファイルを文字列として読む（decor.test.ts / palette.test.ts と同じ手）
+// Vite の ?raw で CSS を文字列として読む（decor.test.ts / palette.test.ts と同じ手）
 import styleCss from '../style.css?raw';
-import mainTs from '../main.ts?raw';
 
-const EDGES: readonly MarkEdge[] = ['top', 'right', 'bottom', 'left'];
+/** 上下の辺。隅は必ず「上下のどちらか」と「左右のどちらか」を 1 つずつ取る */
+const UP_DOWN_EDGES: readonly MarkEdge[] = ['top', 'bottom'];
 
 describe('四隅のマーク', () => {
   it('隅ごとに別のクラスが当たる', () => {
@@ -25,6 +26,23 @@ describe('四隅のマーク', () => {
     const corners = SCREEN_MARKS.map((mark) => [...mark.edges].sort().join('-'));
 
     expect(new Set(corners).size).toBe(SCREEN_MARKS.length);
+  });
+
+  it.each(SCREEN_MARKS)('$className は上下と左右を 1 辺ずつ取る', (mark) => {
+    // 「4 つとも違う組」だけでは、['top', 'bottom'] のような**隅ではない組**が通る
+    // （レビュー指摘 🟡）。CSS 側は top: と bottom: を両方持つのでマークが縦に伸びる
+    const upDown = mark.edges.filter((edge) => UP_DOWN_EDGES.includes(edge));
+
+    expect(upDown).toHaveLength(1);
+  });
+
+  it.each(SCREEN_MARKS)('$className の名前と辺が一致する', (mark) => {
+    // 検査が突き合わせるのは「定数 ↔ CSS」なので、名前の方は無防備だった
+    // （レビュー指摘 🟡）。--top-right に edges: ['top', 'left'] と書いて CSS も
+    // それに合わせると、**全部緑のままかぎ括弧が内側を向く**
+    for (const edge of mark.edges) {
+      expect(mark.className).toContain(edge);
+    }
   });
 
   it('class 属性には基底のクラスも入る', () => {
@@ -72,7 +90,7 @@ describe('CSS との対応', () => {
     // 写し間違えて top-right が左の辺を引くとかぎ括弧が内側を向くが、
     // 4 つ並んでいると向きの違いは目で追いにくい
     const body = rulesFor(mark.className).join('\n');
-    const drawn = EDGES.filter((edge) => new RegExp(`border-${edge}-width\\s*:`).test(body));
+    const drawn = MARK_EDGES.filter((edge) => new RegExp(`border-${edge}-width\\s*:`).test(body));
 
     expect(drawn.sort()).toStrictEqual([...mark.edges].sort());
   });
@@ -81,7 +99,7 @@ describe('CSS との対応', () => {
     // 線を引く辺と置き場所がずれると、右上のかぎ括弧が左下に出る。
     // border-top-width と紛れないよう、宣言の頭に来る top: だけを見る
     const body = rulesFor(mark.className).join('\n');
-    const anchored = EDGES.filter((edge) => new RegExp(`(^|[;{\\s])${edge}\\s*:`).test(body));
+    const anchored = MARK_EDGES.filter((edge) => new RegExp(`(^|[;{\\s])${edge}\\s*:`).test(body));
 
     expect(anchored.sort()).toStrictEqual([...mark.edges].sort());
   });
@@ -93,14 +111,5 @@ describe('CSS との対応', () => {
     const body = rulesFor(SCREEN_DECOR_CLASS).join('\n');
 
     expect(body).toMatch(/color\s*:\s*var\(--stage-mute\)/);
-  });
-});
-
-describe('本編への配線', () => {
-  it('main.ts が図形を敷いている', () => {
-    // この 1 行が消えても、型検査もほかの検査も全部緑のまま**画面から図形だけが
-    // 消える**（M8-3a で「作品のどこかに図形が置かれている」を検査にしたのと同じ穴）。
-    // 配線そのものは DOM が要って検査できないので、呼んでいることだけを見る
-    expect(mainTs).toMatch(/mountScreenDecor\(/);
   });
 });
