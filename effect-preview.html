@@ -38,9 +38,14 @@
       import { GrainField } from './src/stage/grain-field.ts';
       import { LyricStage } from './src/stage/lyric-stage.ts';
       import { ScaledCanvas, systemPixelRatio } from './src/stage/scaled-canvas.ts';
+      import { mountScreenDecor } from './src/stage/screen-decor.ts';
       import './src/style.css';
 
       gsap.registerPlugin(SplitText);
+
+      // 画面に敷く図形（M8-3b / Issue #45）。背景（#41）と同じ理由でこのページにも出す
+      // — 分割線と四隅の中に語句が置かれた画を見ないと、構図も図形の濃さも決められない
+      mountScreenDecor(document.body);
 
       // 本編（src/main.ts）と同じく、書体が届いてから測る（M8-2a）。
       // SplitText は 1 文字ずつの位置を測ってから動かすので、代替の書体のまま測ると

@@ -104,6 +104,93 @@ body {
   pointer-events: none;
 }
 
+/* --- 画面に敷く図形（M8-3b / Issue #45。組み立ては src/stage/screen-decor.ts） ---
+
+   三分割の分割線と四隅のマーク。M8-3a の図形が**語句**に貼り付くのに対し、
+   こちらは**画面**に貼り付く（語句と一緒には動かないので、シートに口は無い）。
+
+   背景の canvas と同じ z-index: -1 に置く。負の z-index の要素どうしは DOM の順で
+   描かれるので、後から足すこのレイヤーが粒の上・歌詞の下に入る。
+
+   色はここで一度だけ currentColor に流し、子は色を書かない。**16 進で直に書くと
+   src/stage/palette.test.ts が落とす**（変数を通さない色は、パレットを差し替えても
+   そこだけ古いまま残るため）。濃さは子ごとの opacity で決める */
+.screen-decor {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  color: var(--stage-mute);
+
+  /* 四隅のマークを画面の縁からどれだけ離すか。vmin なので、横長でも縦長でも
+     画面の短い辺に対して同じ間合いになる */
+  --screen-decor-inset: clamp(0.9rem, 3.2vmin, 2.4rem);
+
+  /* 画面いっぱいを覆うので、クリックは手前の再生コントロールへ通す
+     （背景の canvas・.stage__lines と同じ扱い） */
+  pointer-events: none;
+}
+
+/* 三分割の分割線。画面の端から端まで走らせる（四隅のマークだけが内側に入る）。
+
+   4 本の線を 4 枚の背景画像で引く。linear-gradient(currentColor 0 0) は
+   「その色一色の画像」を作る書き方で、大きさと位置は background-size /
+   background-position が決める。要素を 4 つ立てるより、線の間隔を 1 か所で読める。
+
+   **薄さがこの図形の要**。0.16 より濃くすると、背景の粒と競って画が賑やかになる
+   （全面の方眼グリッドを採らなかったのと同じ理由。Issue #45） */
+.screen-decor__grid {
+  position: absolute;
+  inset: 0;
+  opacity: 0.16;
+
+  background-image: linear-gradient(currentColor 0 0), linear-gradient(currentColor 0 0),
+    linear-gradient(currentColor 0 0), linear-gradient(currentColor 0 0);
+  background-repeat: no-repeat;
+  background-size: 1px 100%, 1px 100%, 100% 1px, 100% 1px;
+  background-position: 33.33% 0, 66.67% 0, 0 33.33%, 0 66.67%;
+}
+
+/* 四隅のマーク。2 辺だけに線を持つ箱＝かぎ括弧。
+
+   border-width を 0 から始めて、隅ごとの規則が自分の 2 辺だけを立てる。
+   どの隅がどの辺を引くかは src/stage/screen-decor.ts の SCREEN_MARKS と対で、
+   写し間違い（かぎ括弧が内側を向く）は screen-decor.test.ts が落とす */
+.screen-decor__mark {
+  position: absolute;
+  width: clamp(1.4rem, 4.5vmin, 3rem);
+  height: clamp(1.4rem, 4.5vmin, 3rem);
+  border: 0 solid currentColor;
+  opacity: 0.5;
+}
+
+.screen-decor__mark--top-left {
+  top: var(--screen-decor-inset);
+  left: var(--screen-decor-inset);
+  border-top-width: 2px;
+  border-left-width: 2px;
+}
+
+.screen-decor__mark--top-right {
+  top: var(--screen-decor-inset);
+  right: var(--screen-decor-inset);
+  border-top-width: 2px;
+  border-right-width: 2px;
+}
+
+.screen-decor__mark--bottom-right {
+  bottom: var(--screen-decor-inset);
+  right: var(--screen-decor-inset);
+  border-bottom-width: 2px;
+  border-right-width: 2px;
+}
+
+.screen-decor__mark--bottom-left {
+  bottom: var(--screen-decor-inset);
+  left: var(--screen-decor-inset);
+  border-bottom-width: 2px;
+  border-left-width: 2px;
+}
+
 /* 構図の座標系を張る箱（M8-1）。
    中の行は position: absolute で置くので、ここが「画面のどこ」の基準になる。
    絶対配置の基準は padding box なので、padding を足しても割合の指定は縮まない。
