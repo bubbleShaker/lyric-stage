@@ -252,13 +252,59 @@ describe('parseLyricSheet（語句 = parts）', () => {
   });
 });
 
+describe('parseLyricSheet（図形 = decor）', () => {
+  const parseLine = (line: object) =>
+    parseLyricSheet({ title: 'テスト', lines: [{ time: 0, text: 'AB', ...line }] }).lines[0];
+
+  it('図形の名前をそのまま保持する', () => {
+    // 実在する名前かどうかは見ない（語彙は stage/decor.ts の担当）。
+    // ここが見るのは形だけ
+    expect(parseLine({ decor: ['band', 'rule'] }).decor).toEqual(['band', 'rule']);
+    expect(parseLine({ parts: [{ text: 'A', at: 0, decor: ['box'] }] }).parts?.[0].decor).toEqual([
+      'box',
+    ]);
+  });
+
+  it('配列でない指定を弾く', () => {
+    expect(() => parseLine({ decor: 'band' })).toThrow();
+    expect(() => parseLine({ decor: { band: true } })).toThrow();
+  });
+
+  it('中身の無い指定を弾く', () => {
+    // 空配列は省略と同じ意味にしかならない。書き掛けとして落とす
+    expect(() => parseLine({ decor: [] })).toThrow();
+    expect(() => parseLine({ decor: [''] })).toThrow();
+    expect(() => parseLine({ decor: ['  '] })).toThrow();
+    expect(() => parseLine({ decor: [1] })).toThrow();
+  });
+
+  it('刻んだ行に行の図形を書いた指定を弾く', () => {
+    // 図形は行から継がないので、書いても画には何も出ない（検証も型も検査も通る）。
+    // 継がないと決めた以上、継がない指定を書けてしまう方を塞ぐ
+    expect(() =>
+      parseLine({ decor: ['band'], parts: [{ text: 'AB', at: 0 }] }),
+    ).toThrow();
+  });
+
+  it('前後に空白の付いた名前を弾く', () => {
+    // 実在の名前と見分けが付かないのに、語彙の側では未知の名前として静かに落ちる
+    expect(() => parseLine({ decor: [' band'] })).toThrow();
+    expect(() => parseLine({ decor: ['band '] })).toThrow();
+  });
+
+  it('同じ図形を 2 度書いた指定を弾く', () => {
+    // 同じ場所にぴったり重なるので、画面では 1 つにしか見えない
+    expect(() => parseLine({ decor: ['band', 'band'] })).toThrow();
+  });
+});
+
 describe('partsOf', () => {
   it('刻んでいない行は 1 語句として返す', () => {
     // 表示側から「刻んである行」「刻んでいない行」の分岐を消すための正規化
     const line = { time: 0, text: 'A', effect: 'zoom', place: { at: 'top-left', size: 'md' } };
 
     expect(partsOf(line)).toEqual([
-      { text: 'A', at: 0, effect: 'zoom', place: { at: 'top-left', size: 'md' } },
+      { text: 'A', at: 0, effect: 'zoom', place: { at: 'top-left', size: 'md' }, decor: [] },
     ]);
   });
 
@@ -273,8 +319,8 @@ describe('partsOf', () => {
     };
 
     expect(partsOf(line)).toEqual([
-      { text: 'A', at: 0, effect: 'zoom', place },
-      { text: 'B', at: 1, effect: 'fade', place },
+      { text: 'A', at: 0, effect: 'zoom', place, decor: [] },
+      { text: 'B', at: 1, effect: 'fade', place, decor: [] },
     ]);
   });
 
@@ -292,13 +338,35 @@ describe('partsOf', () => {
       at: 0,
       effect: 'fade',
       place: { at: 'bottom-right', size: 'xl' },
+      decor: [],
     });
   });
 
   it('演出も構図も無い行でも落ちない', () => {
     expect(partsOf({ time: 0, text: 'A' })).toEqual([
-      { text: 'A', at: 0, effect: undefined, place: undefined },
+      { text: 'A', at: 0, effect: undefined, place: undefined, decor: [] },
     ]);
+  });
+
+  it('刻んでいない行は行の図形をそのまま持つ', () => {
+    // 1 語句の行として扱うので、行に書いた decor がその語句の decor になる
+    const line = { time: 0, text: 'A', decor: ['band'] };
+
+    expect(partsOf(line)[0].decor).toEqual(['band']);
+  });
+
+  it('**図形だけは行から継がない**', () => {
+    // effect / place と違う扱い（M8-3a）。継ぐと刻んだ行の語句すべてに同じ帯が
+    // 出て画が埋まり、図形を足した狙いと逆になる。この 1 行が消えると
+    // 「なぜか全部の語句に帯が出る」になるので、方針そのものを検査にしておく
+    const line = {
+      time: 0,
+      text: 'AB',
+      decor: ['band'],
+      parts: [{ text: 'A', at: 0 }, { text: 'B', at: 1, decor: ['rule'] }],
+    };
+
+    expect(partsOf(line).map((part) => part.decor)).toEqual([[], ['rule']]);
   });
 });
 

@@ -20,6 +20,8 @@ export interface LyricLine {
   place?: LyricPlacement;
   /** 語句ごとの刻み。M8-5 で足した。省略時は行がそのまま 1 語句 */
   parts?: LyricPart[];
+  /** 行に貼り付く図形。M8-3a で足した。刻んだ行では使わない（`LyricPart.decor` を見よ） */
+  decor?: string[];
 }
 
 /**
@@ -44,6 +46,17 @@ export interface LyricPart {
   effect?: string;
   /** 語句の構図。省略時は行の `place` を継ぐ（＝同じ場所に重なる） */
   place?: LyricPlacement;
+  /**
+   * 語句に貼り付く図形の名前（M8-3a）。帯・罫・枠。
+   *
+   * **`effect` や `place` と違い、行からは継がない**（`partsOf` を見よ）。継ぐと
+   * 刻んだ行の語句すべてに同じ帯が出て画が埋まり、**図形を足した狙いと逆になる**。
+   * 図形は「この語句をここに留める」ための重みなので、置く語句を選ぶ側の指定になる。
+   *
+   * 名前の語彙（どれが実在するか）はここでは持たない。レジストリは
+   * `stage/decor.ts` にあり、綴りの間違いは `src/lyric-sheets.test.ts` が落とす。
+   */
+  decor?: string[];
 }
 
 /**
@@ -104,6 +117,8 @@ export interface ResolvedPart {
   readonly at: number;
   readonly effect: string | undefined;
   readonly place: LyricPlacement | undefined;
+  /** 貼り付く図形の名前。**無ければ空の配列**（undefined ではない） */
+  readonly decor: readonly string[];
 }
 
 /**
@@ -115,7 +130,9 @@ export interface ResolvedPart {
  */
 export function partsOf(line: LyricLine): ResolvedPart[] {
   if (line.parts === undefined) {
-    return [{ text: line.text, at: 0, effect: line.effect, place: line.place }];
+    return [
+      { text: line.text, at: 0, effect: line.effect, place: line.place, decor: line.decor ?? [] },
+    ];
   }
 
   return line.parts.map((part) => ({
@@ -123,6 +140,10 @@ export function partsOf(line: LyricLine): ResolvedPart[] {
     at: part.at,
     effect: part.effect ?? line.effect,
     place: part.place ?? line.place,
+    // **decor だけは行から継がない**（M8-3a）。effect と place は「この語句だけ
+    // 変えたい」時に書く上書きだが、図形は置く語句を選ぶもの。行から配ると
+    // 刻んだ行の全語句に同じ帯が出て、画を締めるどころか埋めることになる
+    decor: part.decor ?? [],
   }));
 }
 
@@ -166,9 +187,13 @@ function parseLyricLine(value: unknown, index: number): LyricLine {
   // 綴りを間違えた項目は名指しで落とす（place / parts の中と同じ番人）。
   // 黙って落とすと、`parst` と書いた行が**検証も刻みも素通りして 1 語句で出る**。
   // 画面には歌詞が出ているので、書いた本人にも原因が分からない
-  rejectUnknownKeys(line, ['time', 'text', 'effect', 'duration', 'place', 'parts'], `lines[${index}]`);
+  rejectUnknownKeys(
+    line,
+    ['time', 'text', 'effect', 'duration', 'place', 'parts', 'decor'],
+    `lines[${index}]`,
+  );
 
-  const { time, text, effect, duration, place, parts } = line;
+  const { time, text, effect, duration, place, parts, decor } = line;
 
   if (typeof time !== 'number' || !Number.isFinite(time) || time < 0) {
     throw new LyricSheetError(`lines[${index}].time が 0 以上の数値ではありません`);
@@ -182,6 +207,14 @@ function parseLyricLine(value: unknown, index: number): LyricLine {
   if (duration !== undefined && (typeof duration !== 'number' || !(duration > 0))) {
     throw new LyricSheetError(`lines[${index}].duration が正の数値ではありません`);
   }
+  // 図形は行から語句へ継がない（partsOf を見よ）。刻んだ行に行の decor を書くと
+  // **検証も型も検査も通るのに、画には何も出ない**。継がないと決めた以上、
+  // 継がない指定を書けてしまう方を塞ぐ（`decor: []` を書き掛けとして弾くのと同じ立場）
+  if (parts !== undefined && decor !== undefined) {
+    throw new LyricSheetError(
+      `lines[${index}] は語句に刻まれているので、decor は語句の側に書きます`,
+    );
+  }
 
   // ここで組み直すので、**知らない項目は黙って落ちる**。新しい項目を足したら
   // 必ずこの行にも足すこと（place は M8-1、parts は M8-5 で足した）
@@ -192,6 +225,7 @@ function parseLyricLine(value: unknown, index: number): LyricLine {
     ...(duration ? { duration } : {}),
     ...(place !== undefined ? { place: parsePlacement(place, `lines[${index}]`) } : {}),
     ...(parts !== undefined ? { parts: parseParts(parts, `lines[${index}]`) } : {}),
+    ...(decor !== undefined ? { decor: parseDecor(decor, `lines[${index}]`) } : {}),
   };
 }
 
@@ -219,9 +253,9 @@ function parseParts(value: unknown, owner: string): LyricPart[] {
 function parsePart(value: unknown, where: string): LyricPart {
   if (!isPlainObject(value)) throw new LyricSheetError(`${where} がオブジェクトではありません`);
 
-  rejectUnknownKeys(value, ['text', 'at', 'effect', 'place'], where);
+  rejectUnknownKeys(value, ['text', 'at', 'effect', 'place', 'decor'], where);
 
-  const { text, at, effect, place } = value;
+  const { text, at, effect, place, decor } = value;
 
   if (typeof text !== 'string' || text.trim() === '') {
     throw new LyricSheetError(`${where}.text が空でない文字列ではありません`);
@@ -240,7 +274,44 @@ function parsePart(value: unknown, where: string): LyricPart {
     at,
     ...(effect ? { effect } : {}),
     ...(place !== undefined ? { place: parsePlacement(place, where) } : {}),
+    ...(decor !== undefined ? { decor: parseDecor(decor, where) } : {}),
   };
+}
+
+/**
+ * 貼り付く図形の名前の列。**形だけを見る**（実在するかは `stage/decor.ts` の担当）。
+ *
+ * 列にしてあるのは「帯 + 罫」のように重ねられるようにするため。順序に意味は無い。
+ */
+function parseDecor(value: unknown, owner: string): string[] {
+  const where = `${owner}.decor`;
+
+  if (!Array.isArray(value)) throw new LyricSheetError(`${where} が配列ではありません`);
+  // 空配列は「書いたのに何も指定していない」状態。省略と同じ意味にしかならないので、
+  // 書き掛けとして弾く（place.nudge が空のときと同じ扱い）
+  if (value.length === 0) throw new LyricSheetError(`${where} が空です`);
+
+  const names = value.map((name, order) => {
+    if (typeof name !== 'string' || name.trim() === '') {
+      throw new LyricSheetError(`${where}[${order}] が空でない文字列ではありません`);
+    }
+    // 前後の空白も弾く。`' band '` は実在の名前と見分けが付かないのに、
+    // 語彙の側では未知の名前として静かに落ちる。**理由を分けて出す** —
+    // 「空でない文字列ではありません」だと、目に見えない空白を探す手掛かりが無い
+    if (name.trim() !== name) {
+      throw new LyricSheetError(`${where}[${order}] の前後に空白があります: 「${name}」`);
+    }
+    return name;
+  });
+
+  // 同じ図形を 2 度書くと、**同じ場所にぴったり重なって 1 つにしか見えない**。
+  // 画面では気付けないので入口で落とす
+  const duplicated = [...new Set(names.filter((name, order) => names.indexOf(name) !== order))];
+  if (duplicated.length > 0) {
+    throw new LyricSheetError(`${where} に同じ名前が 2 度あります: ${duplicated.join(', ')}`);
+  }
+
+  return names;
 }
 
 /**

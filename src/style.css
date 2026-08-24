@@ -52,6 +52,17 @@
   --font-display: 'Zen Kaku Gothic New', 'Hiragino Kaku Gothic ProN', 'Yu Gothic', system-ui,
     sans-serif;
 
+  /* 歌詞の大きさの基準（M8-3a で .stage__text から移した）。
+     **図形（.stage__decor）は文字の兄弟なので、文字の font-size を継げない。**
+     基準をここに置けば文字も図形も同じ「基準 × 段階」で決まり、図形の余白を
+     em で書ける＝大きさの段階（sm〜xl）に自動で追従する。
+
+     置き場所が :root なのは、**枠を立てずに .stage__text だけを使うページがある**ため
+     （font-preview.html は書体を見比べる道具なので構図の枠を使わない）。枠に置くと
+     そちらの見本だけが基準を失い、font-size ごと無効になって 16px で並ぶ。
+     縦組みは行そのものが自分で置き換える（自分の要素への宣言は継承に必ず勝つ） */
+  --size-base: clamp(1.5rem, 5.5vw, 3.6rem);
+
   color-scheme: dark;
   font-family: 'Hiragino Kaku Gothic ProN', 'Yu Gothic', 'Noto Sans JP', system-ui, sans-serif;
 }
@@ -161,6 +172,92 @@ body {
   transform-style: preserve-3d;
 }
 
+/* --- 語句に貼り付く図形（M8-3a / Issue #43。名前は src/stage/decor.ts） ---
+
+   帯・罫・枠。**構図（枠）と動き（文字）に対して直交する第 3 の軸**として、
+   語句の外・文字の兄弟として置く。枠が position: absolute なので、ここの
+   絶対配置は枠の箱＝語句の大きさに貼り付く。
+
+   **進み具合（--decor-grow）は JS が 0 → 1 に動かすだけで、それが何を意味するかは
+   ここが決める。** 伸びる向きは組み方で変わる（横組みは横へ、縦組みは下へ）ので、
+   両方に書くと同じ判断が 2 か所になる。形をここが持っている以上、向きもここが持つ。
+
+   余白を em で書けるよう、文字と同じ「基準 × 段階」で font-size を決める。
+   **縦組みでも基準は横組みのまま**（.stage__text--vertical の置き換えは行に
+   当たるので届かない）。はみ出し幅が文字側の em と 1 割ほどずれるが、
+   0.28em の 1 割は 2px 前後なので許容する */
+.stage__decor {
+  position: absolute;
+  font-size: calc(var(--size-step, 1) * var(--size-base));
+
+  /* 画面いっぱいの .stage__lines と同じ理由。図形は読むものでも押すものでもない */
+  pointer-events: none;
+}
+
+/* 帯 — 語句の後ろに敷く面。上を大きく空けているのは、極太 900 の字面が
+   行の高さの中で下寄りに来るため。左右へはみ出させると「語句に貼り付いた面」
+   ではなく「語句が乗っている帯」に見える */
+.stage__decor--band {
+  inset: 26% -0.28em 8% -0.28em;
+  background: var(--stage-dim);
+
+  /* 引かれるように現れる。origin を左に置くので左から右へ伸びる */
+  transform-origin: left center;
+  transform: scaleX(var(--decor-grow, 0));
+}
+
+/* 罫 — 語句の下を走る細い線。帯より軽く、視線の流れだけを作る。
+
+   **枠の下端より少し外に出す。** 中に収めると帯の下辺とぴったり重なり
+   （帯は下 8% まで、罫は 4% あたりに来る）、帯と重ねた語句で罫が
+   「帯の縁が明るいだけ」に見える。実測で分かった */
+.stage__decor--rule {
+  inset: auto -0.28em -0.1em -0.28em;
+  height: 0.07em;
+  background: var(--stage-mute);
+
+  transform-origin: left center;
+  transform: scaleX(var(--decor-grow, 0));
+}
+
+/* 枠 — 語句を囲む輪郭線。左から拭き取るように現れる。
+   clip-path は border ごと切るので、線が縮むのではなく「まだ引かれていない」ように見える */
+.stage__decor--box {
+  inset: -0.18em -0.3em;
+  border: 0.05em solid var(--stage-mute);
+  clip-path: inset(0 calc((1 - var(--decor-grow, 0)) * 100%) 0 0);
+}
+
+/* --- 縦組みのときの図形（src/stage/lyric-stage.ts が当てる） ---
+
+   縦組み（vertical-rl）では行が上から下へ伸び、段は右から左へ進む。つまり
+   「行の下」＝左側、「行の伸びる向き」＝下向き。上の 3 つを 90 度回した形になる。
+
+   クラスを 2 枚重ねているのは詳細度のため。1 枚だと横組み用の指定と同じ強さになり、
+   どちらが効くかが style.css の並び順だけで決まる */
+.stage__decor--vertical.stage__decor--band {
+  inset: -0.28em 26% -0.28em 8%;
+
+  transform-origin: center top;
+  transform: scaleY(var(--decor-grow, 0));
+}
+
+.stage__decor--vertical.stage__decor--rule {
+  /* 縦組みで「行の下」に当たるのは**左**（段が右から左へ進むので、行の進む先が左）。
+     高さは上下の inset に任せる（横組みで指定した height を戻す） */
+  inset: -0.28em auto -0.28em -0.1em;
+  width: 0.07em;
+  height: auto;
+
+  transform-origin: center top;
+  transform: scaleY(var(--decor-grow, 0));
+}
+
+.stage__decor--vertical.stage__decor--box {
+  inset: -0.3em -0.18em;
+  clip-path: inset(0 0 calc((1 - var(--decor-grow, 0)) * 100%) 0);
+}
+
 /* --- 構図のアンカー（src/stage/composition.ts が当てる） ---
 
    端の余白は横 7% / 縦 10%。縦を厚めに取るのは、行の高さが幅よりずっと小さく、
@@ -230,9 +327,10 @@ body {
      両方を font-size に直接書くと、クラスの詳細度が同じせいで後に書いた方だけが
      効いてしまう（縦書きが構図の段階を黙って潰す）。掛け算に分ければぶつからない。
 
-     段階の既定値は var() の中に書く。**ここで --size-step: 1 と宣言してはいけない。**
-     自分の要素への宣言は継承した値に必ず勝つので、枠が選んだ段階が黙って潰れる */
-  --size-base: clamp(1.5rem, 5.5vw, 3.6rem);
+     **どちらもここでは宣言しない。** 段階は枠（.stage__frame）が、基準は :root が配る
+     （基準は M8-3a でここから移した。図形が同じ大きさを要るため）。自分の要素への
+     宣言は継承した値に必ず勝つので、ここで既定値を書くと枠が選んだものが黙って潰れる。
+     既定値を書くなら var() の中（段階の 1 がそれ） */
   font-size: calc(var(--size-step, 1) * var(--size-base));
 
   /* ここだけが専用の書体を使う（M8-2a）。宣言の理由は :root の --font-display を見よ */

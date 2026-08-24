@@ -188,13 +188,15 @@
           "text": "シャイニング",
           "at": 0,
           "effect": "rushIn",
-          "place": { "at": "middle-left", "size": "lg", "nudge": { "y": -0.08 }, "tilt": -3 }
+          "place": { "at": "middle-left", "size": "lg", "nudge": { "y": -0.08 }, "tilt": -3 },
+          "decor": ["rule"]
         },
         {
           "text": "スター",
           "at": 1.128,
           "effect": "zoom",
-          "place": { "at": "top-right", "size": "xl", "nudge": { "x": -0.02 }, "tilt": 4 }
+          "place": { "at": "top-right", "size": "xl", "nudge": { "x": -0.02 }, "tilt": 4 },
+          "decor": ["band"]
         },
         {
           "text": "綴れば",
@@ -214,7 +216,8 @@
           "text": "無限の",
           "at": 0,
           "effect": "swing",
-          "place": { "at": "top-left", "size": "md", "nudge": { "y": 0.04 }, "tilt": -4 }
+          "place": { "at": "top-left", "size": "md", "nudge": { "y": 0.04 }, "tilt": -4 },
+          "decor": ["box"]
         },
         {
           "text": "イマジ",
@@ -226,7 +229,8 @@
           "text": "ネーション",
           "at": 1.879,
           "effect": "glitch",
-          "place": { "at": "bottom-left", "size": "lg", "nudge": { "x": 0.04 }, "tilt": 3 }
+          "place": { "at": "bottom-left", "size": "lg", "nudge": { "x": 0.04 }, "tilt": 3 },
+          "decor": ["band"]
         }
       ]
     },
@@ -246,7 +250,8 @@
           "text": "使える",
           "at": 1.128,
           "effect": "bounce",
-          "place": { "at": "top-right", "size": "lg", "nudge": { "y": 0.02 }, "tilt": 5 }
+          "place": { "at": "top-right", "size": "lg", "nudge": { "y": 0.02 }, "tilt": 5 },
+          "decor": ["band", "rule"]
         },
         {
           "text": "ような",

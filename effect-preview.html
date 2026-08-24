@@ -33,6 +33,7 @@
       import { neverReduceMotion } from './src/lib/reduced-motion.ts';
       import { ANCHOR_CLASS, SIZE_CLASS } from './src/stage/composition.ts';
       import { loadDeclaredFonts } from './src/stage/display-font.ts';
+      import { decors } from './src/stage/decor.ts';
       import { effects } from './src/stage/effects.ts';
       import { GrainField } from './src/stage/grain-field.ts';
       import { LyricStage } from './src/stage/lyric-stage.ts';
@@ -120,10 +121,11 @@
 
       console.info(
         [
-          `play('文字', '演出名', 構図) / playParts([{ text, at, effect, place }, ...]) で試せます。`,
+          `play('文字', '演出名', 構図) / playParts([{ text, at, effect, place, decor }, ...]) で試せます。`,
           `演出名: ${Object.keys(effects).join(' / ')}`,
           `at: ${Object.keys(ANCHOR_CLASS).join(' / ')}`,
           `size: ${Object.keys(SIZE_CLASS).join(' / ')}`,
+          `decor（語句に貼り付く図形。playParts でのみ指定）: ${Object.keys(decors).join(' / ')}`,
           `背景の盛り上がりは window.loud = 0〜1 で動かせます。`,
         ].join('\n'),
       );

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { parseLyricSheet, partsOf, sliceSheet, type LyricLine } from './domain/lyrics';
 import { isAnchorName, isSizeName } from './stage/composition';
+import { decors, isDecorName } from './stage/decor';
 import { effects, isEffectName, resolveEffect } from './stage/effects';
 import { buildLineTimeline } from './stage/line-timeline';
 import { DEFAULT_SHEET_NAME, WORK_WINDOW } from './work';
@@ -62,6 +63,40 @@ describe.each(Object.entries(SHEET_SOURCES))('%s.json', (_name, source) => {
       .map(({ line, joined }) => `${line.text} ≠ ${joined}`);
 
     expect(mismatched).toStrictEqual([]);
+  });
+
+  it('知らない図形名が書かれていない', () => {
+    // 未知の名前は既定に落ちるのではなく**完全に消える**ので、綴りの間違いは
+    // 「なぜかその語句にだけ帯が出ない」という形になる。画面を見ても分からない。
+    //
+    // 演出やアンカーの検査と違って作品の区間に限らないのは、区間の外や開発用の
+    // シートに書いた綴り間違いも、区間を広げた時にそのまま出てくるため
+    const unknown = sheet.lines
+      .flatMap((line) => partsOf(line))
+      .flatMap((part) =>
+        part.decor.filter((name) => !isDecorName(name)).map((name) => `${part.text}: ${name}`),
+      );
+
+    expect(unknown).toStrictEqual([]);
+  });
+
+  it('面の図形が、奥行きを動かす演出の語句に当たっていない', () => {
+    // 語句の枠は preserve-3d なので、図形と文字は**同じ 3D 空間に居る**。
+    // 木の順（図形を文字より前に挿す）が効くのは同じ奥行きにある間だけで、
+    // 奥から迫る演出（rushIn は文字を z: -1400 から、swing は語句ごと z: -260 から）
+    // の最中は文字の方が奥へ行く。面の図形はそこで文字を丸ごと隠す。
+    //
+    // **画面でしか気付けない噛み合わせ**なので、演出のタイムラインが奥行きの
+    // プロパティを動かすかどうかを実際に組み立てて見る（演出名を並べた表にすると、
+    // 演出を足したときに更新を忘れる）。
+    // 知らない図形名の検査と同じ理由で、作品の区間に限らず全シート・全行に課す
+    const hidden = sheet.lines
+      .flatMap((line) => partsOf(line))
+      .filter((part) => part.decor.some((name) => isDecorName(name) && decors[name].solid))
+      .filter((part) => movesInDepth(part.effect))
+      .map((part) => `${part.text}: ${part.effect}`);
+
+    expect(hidden).toStrictEqual([]);
   });
 
   it('語句が行の猶予の中で出る', () => {
@@ -322,6 +357,12 @@ describe('WORK_WINDOW × 本編シート', () => {
     expect(repeated).toStrictEqual([]);
   });
 
+  it('作品のどこかに図形が置かれている', () => {
+    // シートから decor を消しても**全テストが緑のまま**、画から面と線だけが消える
+    // （M8-3a そのものが静かに無効になる）。1 つも無い状態を落とす
+    expect(parts.some((part) => part.decor.length > 0)).toBe(true);
+  });
+
   it('作品の行が語句に刻まれている', () => {
     // M8-5 の狙いそのもの。1 行を丸ごと出す行が作品に残っていたら、そこだけ
     // 動きが単調になる。区間を広げた時に、刻み忘れの行をここで名指しして落とす
@@ -330,6 +371,43 @@ describe('WORK_WINDOW × 本編シート', () => {
     expect(whole).toStrictEqual([]);
   });
 });
+
+/**
+ * その演出が語句を画面の平面から離すか（奥行き方向へ動かすか）。
+ *
+ * 実際に組み立てて、トゥイーンが触るプロパティを見る。z だけでなく面の回転も
+ * 見るのは、回った面は端が z=0 の平面を突き抜けるため。
+ */
+function movesInDepth(effect: string | undefined): boolean {
+  const timeline = resolveEffect(effect).build(dummyTarget(2));
+  // **書き方の違いで漏れないよう、3 通りの置き場所を辿る**（レビュー指摘 🟡）。
+  // gsap は同じ動きを何通りにも書けるので、片方だけを見ると
+  // 「後から足した演出だけが検査をすり抜ける」——この検査が守りたい当のケースになる。
+  //
+  // - `fromTo` の始点は `vars` ではなく `vars.startAt` に入る
+  // - `rotateX` / `rotateY` / `translateZ` は正式な別名で、そのままキーになる
+  // - `keyframes` で書くと `vars` は keyframes だけを持つ
+  //
+  // Z 軸まわりの回転（rotation / rotateZ）は画面の中で回るだけなので見ない
+  const properties = ['z', 'rotationX', 'rotationY', 'rotateX', 'rotateY', 'translateZ'];
+  const touchesDepth = (vars: unknown): boolean => {
+    if (typeof vars !== 'object' || vars === null) return false;
+    if (Array.isArray(vars)) return vars.some(touchesDepth);
+
+    const record = vars as Record<string, unknown>;
+
+    return (
+      properties.some((property) => Object.hasOwn(record, property)) ||
+      touchesDepth(record.startAt) ||
+      touchesDepth(record.keyframes)
+    );
+  };
+
+  const moves = timeline.getChildren(true).some((child) => touchesDepth(child.vars));
+  timeline.kill();
+
+  return moves;
+}
 
 /** その行が画面に出ていられる秒数。次の行が来るか duration が切れるかの早い方 */
 function gapAfter(lines: readonly LyricLine[], index: number): number {
@@ -359,6 +437,9 @@ function dummyTarget(count: number) {
     frame: {} as HTMLElement,
     root: {} as HTMLElement,
     chars: Array.from({ length: count }, () => ({}) as unknown as Element),
+    // 図形（M8-3a）も本番と同じ経路で組まれるので、当て先だけ返す。
+    // 図形が行の尺に入ることも、これで「行の猶予に収まる」の検査が見てくれる
+    createDecor: () => ({}) as HTMLElement,
   };
 }
 
