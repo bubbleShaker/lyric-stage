@@ -6,6 +6,7 @@
  * 複数曲に対応するときは、ここを差し替えるか JSON へ移す。
  */
 
+import type { BeatGrid } from './domain/beat';
 import { WHOLE_SONG, type WorkWindow } from './domain/work-window';
 
 /** 作品本編の歌詞シート名。?lyrics= の指定が無いときはこれを読む */
@@ -53,6 +54,23 @@ export const WORK_WINDOW: WorkWindow = { start: 176.77, end: 188.79 };
 export function workWindowFor(sheetName: string): WorkWindow {
   return sheetName === DEFAULT_SHEET_NAME ? WORK_WINDOW : WHOLE_SONG;
 }
+
+/**
+ * 拍の格子（M8-4 / Issue #49）。**この曲の実測値。**
+ *
+ * 79.85 BPM（1 拍 0.7514 秒 / 1 小節 3.0055 秒）は M8-0 で `WORK_WINDOW` を
+ * 決めたときに測ったもの。起点は**曲の先頭からの秒数**で書く — 区間で切り出した
+ * 後の時間軸で使うときは `shiftBeatGrid(BEAT_GRID, window.start)` で付け替える。
+ * ここを区間起点（0）で書いてしまうと、区間を切らないシート（`?lyrics=sample` は
+ * `WHOLE_SONG`）で格子が曲の頭から数え直され、**拍が曲とずれたまま画だけ動く**。
+ *
+ * `176.77` を起点にしているのは、そこが歌の 1 小節前＝拍の頭だと分かっているから
+ * （`WORK_WINDOW.start` と同じ値。どの拍を書いてもよいので、既に測ってある拍を使う）。
+ *
+ * 曲を差し替えたらここを測り直す。ずれているかどうかは画を見れば分かる
+ * （拍の頭で叩かれないと、瞬きも揺れも音から浮いて見える）。
+ */
+export const BEAT_GRID: BeatGrid = { bpm: 79.85, origin: 176.77 };
 
 /**
  * 背景が反応する音量の幅。**実測で決めた、この曲固有の値。**

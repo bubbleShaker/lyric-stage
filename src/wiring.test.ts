@@ -37,7 +37,10 @@ describe('画面に敷く図形（M8-3b）', () => {
   // 行末コメント（`const x = f(); // mountScreenDecor(...) は M8-4 で戻す`）への退避が
   // すり抜ける。剥がす側を強めて URL の // まで巻き込むより、探す側を狭める方が確実
   // — 呼び出しはどちらのページでも文の頭にある
-  const calls = /^[^\S\n]*mountScreenDecor\(/m;
+  //
+  // **返り値を受ける形も許す**（M8-4）。光の膜を敷く先としてレイヤーを掴むように
+  // なったので、`const screenDecor = ...` の形が本番の書き方になった
+  const calls = /^[^\S\n]*(const \w+ = )?mountScreenDecor\(/m;
 
   it('本編（main.ts）が敷いている', () => {
     expect(withoutComments(mainTs)).toMatch(calls);
@@ -48,6 +51,34 @@ describe('画面に敷く図形（M8-3b）', () => {
     // （ページ自身のコメントがそう宣言している）。腐ると「密度を判断する道具」が
     // 本番と違う画を出し、構図や図形の濃さを誤って決めることになる
     expect(withoutComments(effectPreviewHtml)).toMatch(calls);
+  });
+});
+
+describe('ビート同期の衝撃（M8-4）', () => {
+  // 光の膜を敷くのも、毎フレームの書き込み口を作るのもこの 1 行。落としても
+  // 型検査も他の検査も緑のまま、**画面が拍で叩かれなくなるだけ**
+  // （M8-3b の mountScreenDecor と同じ穴・同じ手）
+  const mounts = /^[^\S\n]*(const \w+ = )?mountBeatImpact\(/m;
+
+  it('本編（main.ts）が組み立てている', () => {
+    expect(withoutComments(mainTs)).toMatch(mounts);
+  });
+
+  it('演出プレビュー（effect-preview.html）も組み立てている', () => {
+    // 拍で叩かれている中に語句が置かれた画を見ないと、演出の動きが
+    // 足りているかを判断できない（背景・図形をこのページに出したのと同じ理由）
+    expect(withoutComments(effectPreviewHtml)).toMatch(mounts);
+  });
+
+  it('毎フレーム、作品の再生位置を渡している', () => {
+    // 演出の時計は音の再生位置（M8-5 の 🔴）。**GSAP 自身の時計や実時間で回すと、
+    // シークや停止で拍だけが置いていかれる。**本編は player.currentTime を渡すこと
+    // （プレビューは音が無いので経過時間で回す。あちらは別の判断）
+    // **毎フレームであることも見る**（レビュー指摘 🟢）。呼び出しだけを探すと、
+    // ticker の外へ出して 1 回だけ呼ぶ形にしても緑のまま通る
+    expect(withoutComments(mainTs)).toMatch(
+      /ticker\.subscribe\(\(\) => beatImpact\.render\(player\.currentTime\)\)/,
+    );
   });
 });
 

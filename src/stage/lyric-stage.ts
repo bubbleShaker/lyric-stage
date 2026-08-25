@@ -23,6 +23,12 @@ import { SUB_CLASS, SUB_TEXT_CLASS } from './sub-text';
  *
  * `#stage-lines` の中身はこのクラスの所有物として扱う。他所から足した要素は
  * 次の行で消える。
+ *
+ * **ただし要素そのものの inline style は別の持ち主が居る**（M8-4）。
+ * `stage/beat-impact.ts` が拍ごとに `--beat-shake-x/y` を書く。子（中身）と
+ * style で持ち主が分かれているだけなので今は無害だが、このクラスが root の
+ * style を触り始めると取り合いになる（`.stage__frame` の transform を GSAP と
+ * 分け合わないのと同じ線）。
  */
 export class LyricStage implements LyricPresenter {
   private readonly root: HTMLElement;
