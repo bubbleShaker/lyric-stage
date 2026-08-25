@@ -208,6 +208,29 @@ body {
   border-left-width: 2px;
 }
 
+/* 拍で瞬く光の膜（M8-4 / Issue #49。敷くのは src/stage/beat-impact.ts）。
+
+   JS が書くのは --beat-flash（0〜1）だけで、**どれだけ明るくなるかはここが決める**
+   （M8-3a の --decor-grow と同じ分担）。読み忘れると、拍は刻まれているのに
+   画は静止したままになるので、beat-impact.test.ts がここで読んでいることを見張る。
+
+   **0.06 という係数がこの膜の要**。明滅は光過敏性発作の誘因になりうるので、
+   速さ（下限 0.4 秒 = 2.5Hz）は src/domain/beat.ts が構造で守り、**明度差は
+   ここで抑える**。地（--stage-bg）の上でこの薄さでも「叩かれた」ことは伝わる
+   （実測: #0a0a0c → #171719。相対輝度 0.31% → 0.96% で、WCAG 2.3.1 が
+   「明滅」と数える 10% の変化には届かない）。検査が見ているのは係数の桁だけなので、
+   **塗りや合成の仕方を変えるときは画を見て確かめること**。
+
+   色はレイヤーが流している currentColor（mute）ではなく文字と同じ ink。
+   光は白い方が「光った」と読める（薄い灰だと画が濁るだけになる）。
+   16 進で直に書くと src/stage/palette.test.ts が落とす */
+.screen-decor__flash {
+  position: absolute;
+  inset: 0;
+  background: var(--stage-ink);
+  opacity: calc(var(--beat-flash, 0) * 0.06);
+}
+
 /* 構図の座標系を張る箱（M8-1）。
    中の行は position: absolute で置くので、ここが「画面のどこ」の基準になる。
    絶対配置の基準は padding box なので、padding を足しても割合の指定は縮まない。
@@ -245,6 +268,33 @@ body {
   /* 画面いっぱいを覆うので、クリックは手前の再生コントロールへ通す
      （背景の canvas と同じ扱い。歌詞は読むもので、押すものではない） */
   pointer-events: none;
+
+  /* 拍ごとの揺れ（M8-4 / Issue #49。書き込むのは src/stage/beat-impact.ts）。
+
+     **揺らすのはここで、.stage__frame ではない。** あちらは構図（M8-1）が
+     transform を持ち、GSAP がそれを自分のものとして扱うので取り合いになる
+     （行を跨いで前の行の寄せ方が residue として残る）。親を揺らせば
+     中の構図はそのまま乗る。
+
+     perspective はこの要素**自身の箱**を基準にするので、箱ごと動かしても
+     子との位置関係は変わらない ＝ 遠近の効きは揺れても崩れない（実測で確認）。
+
+     **transform は 0 のときも当たり続ける**（揺れない設定でも translate3d(0,0,0)）。
+     この箱は常に合成レイヤーになり、新しいスタッキング文脈と、fixed な子孫の
+     包含ブロックを作る。中身が構図の枠だけの今は影響が無いが、負の z-index や
+     position: fixed の子をここへ足すと意味が変わる（レビュー指摘 🟢）。
+
+     JS が書くのは向き（-1〜1）だけで、**何 px 揺れるかはここが決める**。
+     画面の短い辺に追従させているのは、狭い画面で揺れが目立ちすぎないため
+     （px 固定にすると、携帯では画面の 3% が動くことになる）。
+     .stage ではなくこの箱に当てるのは、.stage__message を揺らさないため */
+  --beat-shake-amp: clamp(3px, 1vmin, 10px);
+
+  transform: translate3d(
+    calc(var(--beat-shake-x, 0) * var(--beat-shake-amp)),
+    calc(var(--beat-shake-y, 0) * var(--beat-shake-amp)),
+    0
+  );
 }
 
 /* 構図の枠。**GSAP はこの要素の transform を決して触らない。**

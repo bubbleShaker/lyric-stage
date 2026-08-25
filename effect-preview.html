@@ -30,7 +30,9 @@
     <script type="module">
       import gsap from 'gsap';
       import { SplitText } from 'gsap/SplitText';
+      import { createBeatPulse, createFlashPulse } from './src/domain/beat.ts';
       import { neverReduceMotion } from './src/lib/reduced-motion.ts';
+      import { mountBeatImpact } from './src/stage/beat-impact.ts';
       import { ANCHOR_CLASS, SIZE_CLASS } from './src/stage/composition.ts';
       import { loadDeclaredFonts } from './src/stage/display-font.ts';
       import { decors } from './src/stage/decor.ts';
@@ -39,13 +41,33 @@
       import { LyricStage } from './src/stage/lyric-stage.ts';
       import { ScaledCanvas, systemPixelRatio } from './src/stage/scaled-canvas.ts';
       import { mountScreenDecor } from './src/stage/screen-decor.ts';
+      import { BEAT_GRID } from './src/work.ts';
       import './src/style.css';
 
       gsap.registerPlugin(SplitText);
 
       // 画面に敷く図形（M8-3b / Issue #45）。背景（#41）と同じ理由でこのページにも出す
       // — 分割線と四隅の中に語句が置かれた画を見ないと、構図も図形の濃さも決められない
-      mountScreenDecor(document.body);
+      const screenDecor = mountScreenDecor(document.body);
+
+      // ビート同期の衝撃（M8-4 / Issue #49）。背景・図形と同じ理由でこのページにも出す
+      // — 画が拍で叩かれている中に語句が置かれないと、演出の動きが足りているか判断できない。
+      //
+      // **格子の起点は 0。** 本編の時計は音の再生位置だが、このページの時計は
+      // ページを開いてからの経過時間なので、曲の先頭起点の秒数（BEAT_GRID.origin）を
+      // そのまま使うと拍の位相が曲と無関係にずれる（速さだけを借りる）。
+      // 強さは背景と同じ window.loud（音が無いので手で動かす）
+      const lines = document.getElementById('stage-lines');
+      const beatGrid = { bpm: BEAT_GRID.bpm, origin: 0 };
+      const beatImpact = mountBeatImpact(
+        { layer: screenDecor, lines },
+        {
+          flash: createFlashPulse(beatGrid, { division: 1, decay: 0.5 }),
+          shake: createBeatPulse(beatGrid, { division: 2, decay: 0.45 }),
+        },
+        neverReduceMotion,
+        () => window.loud,
+      );
 
       // 本編（src/main.ts）と同じく、書体が届いてから測る（M8-2a）。
       // SplitText は 1 文字ずつの位置を測ってから動かすので、代替の書体のまま測ると
@@ -55,7 +77,7 @@
 
       // ここは演出そのものを見る道具なので、OS の「視差効果を減らす」設定に関わらず
       // 素の演出を出す。本編（src/main.ts）は systemReducedMotion() を渡す
-      const stage = new LyricStage(document.getElementById('stage-lines'), neverReduceMotion);
+      const stage = new LyricStage(lines, neverReduceMotion);
 
       /**
        * 行を出して、時計を回す。
@@ -115,6 +137,8 @@
       );
       const spin = (now) => {
         backdrop.render(now / 1000);
+        // 拍の衝撃も背景と同じ時計で回す（歌詞の時計とは別。行を出す前から画が拍で動く）
+        beatImpact.render(now / 1000);
         requestAnimationFrame(spin);
       };
       requestAnimationFrame(spin);
@@ -132,7 +156,7 @@
           `size: ${Object.keys(SIZE_CLASS).join(' / ')}`,
           `decor（語句に貼り付く図形。playParts でのみ指定）: ${Object.keys(decors).join(' / ')}`,
           `sub（語句に添える英字。playParts でのみ指定。例 sub: 'LIKE MAGIC'）`,
-          `背景の盛り上がりは window.loud = 0〜1 で動かせます。`,
+          `背景の盛り上がりと拍の衝撃は window.loud = 0〜1 で動かせます。`,
         ].join('\n'),
       );
     </script>

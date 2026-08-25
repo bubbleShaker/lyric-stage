@@ -1,6 +1,7 @@
 import gsap from 'gsap';
 import { SplitText } from 'gsap/SplitText';
 import { loadLyricSheet, lyricSheetNameFromLocation } from './app/load-lyric-sheet';
+import { createBeatPulse, createFlashPulse, shiftBeatGrid } from './domain/beat';
 import { sliceSheet } from './domain/lyrics';
 import { mountLyricTimeline } from './app/lyric-timeline';
 import { Ticker } from './app/ticker';
@@ -9,6 +10,7 @@ import { requiredElement } from './lib/dom';
 import { systemReducedMotion } from './lib/reduced-motion';
 import { AudioPlayer } from './stage/audio-player';
 import type { Backdrop } from './stage/backdrop';
+import { mountBeatImpact } from './stage/beat-impact';
 import { loadDeclaredFonts } from './stage/display-font';
 import { GrainField } from './stage/grain-field';
 import { LyricStage } from './stage/lyric-stage';
@@ -18,7 +20,7 @@ import { mountScreenDecor } from './stage/screen-decor';
 import { mountTransport } from './stage/transport';
 import { mountTransportIdle } from './stage/transport-idle';
 import { WindowedPlayback } from './stage/windowed-playback';
-import { AUDIO_PATH, DEFAULT_SHEET_NAME, LOUDNESS_RANGE, workWindowFor } from './work';
+import { AUDIO_PATH, BEAT_GRID, DEFAULT_SHEET_NAME, LOUDNESS_RANGE, workWindowFor } from './work';
 import './style.css';
 
 // GSAP のプラグインは使う前に gsap 本体へ登録する。登録することで gsap 側が
@@ -45,14 +47,33 @@ const player = new WindowedPlayback(new AudioPlayer(media, assetUrl(AUDIO_PATH))
 // OS の「視差効果を減らす」設定。読み方だけを渡し、いつ読むかは受け取った側が決める。
 // 文字も背景も動くので、同じ設定を両方へ渡す
 const prefersReducedMotion = systemReducedMotion();
-const stage = new LyricStage(requiredElement('stage-lines'), prefersReducedMotion);
+const lines = requiredElement('stage-lines');
+const stage = new LyricStage(lines, prefersReducedMotion);
 
 // 画面に敷く図形（M8-3b / Issue #45）。分割線と四隅のマークは静的なので、
 // 敷いたら以降は触らない（動きが無いので prefersReducedMotion も要らない）。
-// 返り値のレイヤーは捨てている — 掴む必要が出るのは M8-4（ビート同期の衝撃）から。
 // body 直下に置くのは、.stage が「中の要素はすべて absolute である前提」で
-// 組まれているため（style.css）
-mountScreenDecor(document.body);
+// 組まれているため（style.css）。返り値のレイヤーは M8-4 が光の膜を敷く先
+const screenDecor = mountScreenDecor(document.body);
+
+// ビート同期の衝撃（M8-4 / Issue #49）。**格子が「いつ」を、実音が「どれだけ」を決める。**
+// 格子は曲の先頭起点で測ってあるので、区間で切り出した時間軸へ起点を付け替える
+// （歌詞に対して sliceSheet が行う付け替えと同じこと）。
+//
+// 光るのは拍ごと、揺れるのは 8 分ごと。**下限（2.5Hz）が掛かるのは光る側だけ** —
+// 揺れは明滅ではないので発作の閾値の話に乗らず、前庭系への配慮は
+// prefersReducedMotion が受け持つ（domain/beat.ts）。createFlashPulse でしか
+// 作れない型を光る側が要求するので、8 分の刻みを取り違えて渡すと型検査が止める
+const beatGrid = shiftBeatGrid(BEAT_GRID, workWindow.start);
+const beatImpact = mountBeatImpact(
+  { layer: screenDecor, lines },
+  {
+    flash: createFlashPulse(beatGrid, { division: 1, decay: 0.5 }),
+    shake: createBeatPulse(beatGrid, { division: 2, decay: 0.45 }),
+  },
+  prefersReducedMotion,
+  loudness.level,
+);
 
 const toggle = requiredElement<HTMLButtonElement>('transport-toggle');
 const transportRoot = requiredElement('transport');
@@ -92,6 +113,9 @@ ticker.subscribe(() => {
 ticker.subscribe(transport.render);
 // 解析値の取り込みは背景より先。同じフレームの値を背景が読む
 ticker.subscribe(loudness.sample);
+// 拍の衝撃も同じフレームの解析値を読む。時計は曲の再生位置なので、
+// シークすれば瞬きも揺れも一緒に飛ぶ（背景と同じ扱い）
+ticker.subscribe(() => beatImpact.render(player.currentTime));
 
 // 背景は装飾。canvas を塞ぐブラウザや context を作れない状況でも、
 // 歌詞と音（作品の本体）は動かなければならないので、失敗をここで受け止める。

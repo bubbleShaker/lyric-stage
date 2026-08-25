@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { secondsPerBeat } from './domain/beat';
 import { WHOLE_SONG } from './domain/work-window';
-import { DEFAULT_SHEET_NAME, WORK_WINDOW, workWindowFor } from './work';
+import { BEAT_GRID, DEFAULT_SHEET_NAME, WORK_WINDOW, workWindowFor } from './work';
 
 /**
  * 作品固有の値そのものを検証する。
@@ -25,6 +26,19 @@ describe('WORK_WINDOW', () => {
   it('区間として成立している', () => {
     expect(WORK_WINDOW.start).toBeGreaterThanOrEqual(0);
     expect(WORK_WINDOW.end).toBeGreaterThan(WORK_WINDOW.start);
+  });
+
+  it('区間の頭が拍の上に載っている', () => {
+    // 拍の格子は**曲の先頭起点**で書いてある。区間の頭が拍からずれていると、
+    // 切り出した後の時間軸で叩く位置が音から浮く（画は動くので気付きにくい）。
+    // Issue #37 で区間を広げるときも、頭は拍の上に置くこと。
+    //
+    // **今は両方が同じ値なので差は必ず 0**（レビュー指摘 🟢）。この検査が効くのは
+    // 片方だけ動かしたときで、許容（0.05 拍 ≒ 38ms）は「拍の頭として測り直した値が
+    // 端数を持つ」ことを見込んだ幅
+    const beats = (WORK_WINDOW.start - BEAT_GRID.origin) / secondsPerBeat(BEAT_GRID);
+
+    expect(Math.abs(beats - Math.round(beats))).toBeLessThan(0.05);
   });
 
   it('手で作り込める尺に収まっている', () => {
