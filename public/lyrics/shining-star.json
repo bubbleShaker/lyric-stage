@@ -268,25 +268,100 @@
       "time": 188.79,
       "text": "世界が広がる",
       "effect": "zoom",
-      "place": { "at": "bottom-right", "size": "xl", "tilt": -5 }
+      "place": { "at": "bottom-right", "size": "xl", "tilt": -5 },
+      "parts": [
+        {
+          "text": "世界が",
+          "at": 0,
+          "effect": "typewriter",
+          "place": { "at": "top-center", "size": "md", "nudge": { "y": 0.04 }, "tilt": -2 }
+        },
+        {
+          "text": "広がる",
+          "at": 1.128,
+          "effect": "zoomLine",
+          "place": { "at": "bottom-right", "size": "xl", "nudge": { "x": -0.03 }, "tilt": 4 },
+          "sub": "OPENS UP"
+        }
+      ]
     },
     {
       "time": 191.8,
       "text": "I'll believe of my sensation",
       "effect": "glitch",
-      "place": { "at": "top-left", "size": "sm", "nudge": { "y": 0.06 }, "tilt": 2 }
+      "place": { "at": "top-left", "size": "sm", "nudge": { "y": 0.06 }, "tilt": 2 },
+      "parts": [
+        {
+          "text": "I'll believe",
+          "at": 0,
+          "effect": "glitch",
+          "place": { "at": "middle-left", "size": "md", "nudge": { "y": -0.02 }, "tilt": -2 },
+          "decor": ["rule"]
+        },
+        {
+          "text": "of my sensation",
+          "at": 1.128,
+          "effect": "typewriter",
+          "place": { "at": "top-right", "size": "sm", "nudge": { "y": 0.06 }, "tilt": 3 }
+        }
+      ]
     },
     {
       "time": 194.8,
       "text": "今も降り募る想いよ",
       "effect": "fade",
-      "place": { "at": "bottom-left", "size": "lg", "nudge": { "y": -0.04 } }
+      "place": { "at": "bottom-left", "size": "lg", "nudge": { "y": -0.04 } },
+      "parts": [
+        {
+          "text": "今も",
+          "at": 0,
+          "effect": "fade",
+          "place": { "at": "middle-center", "size": "md", "nudge": { "y": -0.08 }, "tilt": 2 }
+        },
+        {
+          "text": "降り募る",
+          "at": 0.751,
+          "effect": "rushIn",
+          "place": { "at": "bottom-left", "size": "lg", "nudge": { "x": 0.05 }, "tilt": -3 },
+          "decor": ["box"]
+        },
+        {
+          "text": "想いよ",
+          "at": 1.879,
+          "effect": "swing",
+          "place": { "at": "middle-right", "size": "xl", "nudge": { "y": 0.06 } },
+          "sub": "MY FEELINGS"
+        }
+      ]
     },
     {
       "time": 197.81,
       "text": "切なさやトキメキが輝き出す",
       "effect": "vertical",
-      "place": { "at": "top-right", "size": "lg" }
+      "place": { "at": "top-right", "size": "lg" },
+      "parts": [
+        {
+          "text": "切なさや",
+          "at": 0,
+          "effect": "vertical",
+          "place": { "at": "top-left", "size": "lg", "nudge": { "x": 0.03 } },
+          "decor": ["rule"]
+        },
+        {
+          "text": "トキメキが",
+          "at": 1.879,
+          "effect": "bounce",
+          "place": { "at": "bottom-center", "size": "lg", "nudge": { "y": -0.04 }, "tilt": 3 },
+          "decor": ["band"]
+        },
+        {
+          "text": "輝き出す",
+          "at": 3.757,
+          "effect": "shatter",
+          "place": { "at": "middle-center", "size": "xl", "nudge": { "x": 0.04 }, "tilt": -2 },
+          "sub": "STARTS TO SHINE"
+        }
+      ]
     },
     {
       "time": 203.82,
