@@ -349,9 +349,10 @@ describe('WORK_WINDOW × 本編シート', () => {
     expect(WORK_WINDOW.end).toBeLessThan(AUDIO_DURATION_SECONDS);
   });
 
-  it('切り出すとラスサビの頭 3 行が残る', () => {
-    // M8-5 で 7 行 → 3 行に縮めた。語句の刻み方を短い尺で確かめてから広げる
-    expect(sliced.lines).toHaveLength(3);
+  it('切り出すとラスサビの 7 行が残る', () => {
+    // M8-0 で決めた作品の姿。M8-5 の間だけ 3 行に縮めていたのを Issue #37 で戻した。
+    // 行数を書いておくと、time を詰め直したとき（M6-3）に区間から溢れた行を名指しできる
+    expect(sliced.lines).toHaveLength(7);
   });
 
   it('区間の頭に助走がある（いきなり歌から始まらない）', () => {
