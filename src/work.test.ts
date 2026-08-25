@@ -28,17 +28,23 @@ describe('WORK_WINDOW', () => {
     expect(WORK_WINDOW.end).toBeGreaterThan(WORK_WINDOW.start);
   });
 
-  it('区間の頭が拍の上に載っている', () => {
+  it('区間の頭と終わりが拍の上に載っている', () => {
     // 拍の格子は**曲の先頭起点**で書いてある。区間の頭が拍からずれていると、
     // 切り出した後の時間軸で叩く位置が音から浮く（画は動くので気付きにくい）。
     // Issue #37 で区間を広げるときも、頭は拍の上に置くこと。
     //
-    // **今は両方が同じ値なので差は必ず 0**（レビュー指摘 🟢）。この検査が効くのは
-    // 片方だけ動かしたときで、許容（0.05 拍 ≒ 38ms）は「拍の頭として測り直した値が
-    // 端数を持つ」ことを見込んだ幅
-    const beats = (WORK_WINDOW.start - BEAT_GRID.origin) / secondsPerBeat(BEAT_GRID);
+    // **頭の方は BEAT_GRID.origin と同じ値なので差は必ず 0**（レビュー指摘 🟢）。
+    // この検査が効くのは片方だけ動かしたときで、許容（0.05 拍 ≒ 38ms）は
+    // 「拍の頭として測り直した値が端数を持つ」ことを見込んだ幅。
+    //
+    // **終わりも見る**（Issue #37 のレビュー指摘）。区間の終わりが拍から外れると、
+    // 尺の最後だけ拍が半端な所で切れる。今は 36 拍ちょうど（27.05 秒）
+    const perBeat = secondsPerBeat(BEAT_GRID);
+    const offGrid = [WORK_WINDOW.start, WORK_WINDOW.end]
+      .map((time) => (time - BEAT_GRID.origin) / perBeat)
+      .filter((beats) => Math.abs(beats - Math.round(beats)) >= 0.05);
 
-    expect(Math.abs(beats - Math.round(beats))).toBeLessThan(0.05);
+    expect(offGrid).toStrictEqual([]);
   });
 
   it('手で作り込める尺に収まっている', () => {
@@ -47,8 +53,11 @@ describe('WORK_WINDOW', () => {
     //
     // 下限は「作品と呼べる長さ」。M8-5 の間だけ 12 秒（3 行）に縮めていたので
     // 10 秒まで下げていたが、Issue #37 で 7 行へ戻したので歯止めも戻す。
-    // **これが縮めた状態への戻り道を塞ぐ**（縮めた尺は公開ページに出るのに、
-    // 止めるものが PLAN のチェックボックスしか無かった）
+    //
+    // **縮めた状態への戻り道を塞いでいるのはこちらではない**（レビュー指摘 🟡）。
+    // 20 秒は 5 行でも 6 行でも通るので、ここは「1 行だけ出して終わりにならない」
+    // 歯止めに留まる。行数を守るのは lyric-sheets.test.ts の
+    // 「切り出すとラスサビの 7 行が残る」の方
     const length = WORK_WINDOW.end - WORK_WINDOW.start;
     expect(length).toBeGreaterThan(20);
     expect(length).toBeLessThan(35);

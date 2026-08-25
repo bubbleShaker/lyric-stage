@@ -4,7 +4,8 @@ import { isAnchorName, isSizeName } from './stage/composition';
 import { decors, isDecorName } from './stage/decor';
 import { effects, isEffectName, resolveEffect } from './stage/effects';
 import { buildLineTimeline } from './stage/line-timeline';
-import { DEFAULT_SHEET_NAME, WORK_WINDOW } from './work';
+import { secondsPerBeat } from './domain/beat';
+import { BEAT_GRID, DEFAULT_SHEET_NAME, WORK_WINDOW } from './work';
 // Vite の ?raw は対象ファイルを文字列として読み込む。fs を使わずに済むので
 // Node の型定義をアプリ側の tsconfig に持ち込まなくてよい。
 import sampleJson from '../public/lyrics/sample.json?raw';
@@ -231,6 +232,12 @@ describe(`${DEFAULT_SHEET_NAME}.json`, () => {
     // 1 番・2 番・ラスサビの対応する行を同じ演出で揃える、という割り当ての方針
     // （M4-3 で決めた）。繰り返しを「型」として見せることで曲の構成が画で分かる。
     // 方針を変えるときは、この検査ごと書き換える。
+    //
+    // **ここだけは partsOf を通していない**（他の演出系の検査は M8-5 で全部
+    // 語句の層へ移した）。作品の区間だけを刻んである以上、同じ歌詞に「刻んだ版」と
+    // 「刻んでいない版」が並ぶのは普通の状態で、語句の層で突き合わせると必ず落ちる。
+    // 裏返すと、**語句の層では M4-3 の「型」を誰も見張っていない**（レビュー指摘 🟡）。
+    // 区間を広げて同じ歌詞が 2 度刻まれたら、そこは目で揃えること
     const byText = new Map<string, Set<string | undefined>>();
     for (const line of sheet.lines) {
       const seen = byText.get(line.text) ?? new Set();
@@ -351,7 +358,8 @@ describe('WORK_WINDOW × 本編シート', () => {
 
   it('切り出すとラスサビの 7 行が残る', () => {
     // M8-0 で決めた作品の姿。M8-5 の間だけ 3 行に縮めていたのを Issue #37 で戻した。
-    // 行数を書いておくと、time を詰め直したとき（M6-3）に区間から溢れた行を名指しできる
+    // **短く縮めた状態に戻ることを止めているのはここ**（work.test.ts の尺の下限は
+    // 5 行でも 6 行でも通るので、行数まではこちらでしか守れない）
     expect(sliced.lines).toHaveLength(7);
   });
 
@@ -447,6 +455,24 @@ describe('WORK_WINDOW × 本編シート', () => {
     // 図形と同じ穴（M8-3c）。シートから sub を消しても**全テストが緑のまま**、
     // 画から英字だけが消える。1 つも無い状態を落とす
     expect(parts.some((part) => part.sub !== undefined)).toBe(true);
+  });
+
+  it('語句が出る時刻が拍の格子に載っている', () => {
+    // **`at` は 8 分（0.5 拍）の格子の上に置く**（Issue #37 で刻みの根拠にした）。
+    // シートに書いてあるのは `0.751` のような裸の秒数で、`work.ts` の `BEAT_GRID`
+    // とは何も繋がっていない。曲を差し替えて BPM を測り直した日に、**`at` だけが
+    // 古い格子に残る** — M8-4 の衝撃は新しい格子で叩かれるので、語句の登場と
+    // 拍がすれ違ったまま画だけは動く（この repo が一番嫌う壊れ方）。
+    //
+    // 許容（20ms）は秒数を 10ms に丸めて書いていることぶん。耳で詰めた結果として
+    // 格子から意図的に外したくなったら、その時にこの検査を緩める判断をすること
+    const half = secondsPerBeat(BEAT_GRID) / 2;
+    const offGrid = sliced.lines
+      .flatMap((line) => partsOf(line).map((part) => ({ line, part, steps: part.at / half })))
+      .filter(({ steps }) => Math.abs(steps - Math.round(steps)) * half > 0.02)
+      .map(({ line, part, steps }) => `${line.text} の「${part.text}」: at=${part.at}（${steps.toFixed(2)} 個目の 8 分）`);
+
+    expect(offGrid).toStrictEqual([]);
   });
 
   it('作品の行が語句に刻まれている', () => {
