@@ -6,6 +6,7 @@ import { resolveComposition } from './composition';
 import { DECOR_BASE_CLASS, DECOR_LAYOUT_CLASS } from './decor';
 import { LAYOUT_CLASS, type EffectLayout, type EffectTimeline } from './effects';
 import { buildLineTimeline, type PartTarget } from './line-timeline';
+import { SUB_CLASS, SUB_TEXT_CLASS } from './sub-text';
 
 /**
  * 1 行ぶんの語句を画面に出す係。
@@ -118,7 +119,37 @@ export class LyricStage implements LyricPresenter {
       root: text,
       chars: split.chars,
       createDecor: (className) => this.insertDecor(text, className, layout),
+      createSub: (sub) => this.insertSub(text, sub),
     };
+  }
+
+  /**
+   * 英字サブテキストの当て先を、語句の枠の中・文字の直前に挿す（M8-3c）。
+   *
+   * 図形と同じ位置（文字より奥）に置く。英字は語句の箱の外に載るので重なりは
+   * 起きないが、**添え物が文字より手前に来ない**という並びをここで揃えておく。
+   *
+   * 組み方のクラスは当てない。縦組みでも英字は横組みのまま段の頭に載せる
+   * （理由は `stage/sub-text.ts`）。
+   */
+  private insertSub(text: HTMLElement, sub: string): HTMLElement {
+    const box = document.createElement('div');
+    box.className = SUB_CLASS;
+
+    // 箱の中に字そのものを包む要素を 1 枚立てる。拭き取り（clip-path）は
+    // 箱ではなくこちらに掛かる — 箱は枠（＝語句）の幅なので、そのまま切ると
+    // **語句より長い英字のはみ出した分が永久に描かれない**（stage/sub-text.ts）
+    const glyphs = document.createElement('span');
+    glyphs.className = SUB_TEXT_CLASS;
+    // 歌詞と同じく外部 JSON から来る文字列なので、必ず textContent で入れる
+    glyphs.textContent = sub;
+
+    box.append(glyphs);
+    text.before(box);
+
+    // gsap が動かすのは箱の側。カスタムプロパティは継承するので、
+    // 拭き取りを掛けている内側の要素にそのまま届く
+    return box;
   }
 
   /**

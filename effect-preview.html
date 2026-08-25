@@ -126,11 +126,12 @@
 
       console.info(
         [
-          `play('文字', '演出名', 構図) / playParts([{ text, at, effect, place, decor }, ...]) で試せます。`,
+          `play('文字', '演出名', 構図) / playParts([{ text, at, effect, place, decor, sub }, ...]) で試せます。`,
           `演出名: ${Object.keys(effects).join(' / ')}`,
           `at: ${Object.keys(ANCHOR_CLASS).join(' / ')}`,
           `size: ${Object.keys(SIZE_CLASS).join(' / ')}`,
           `decor（語句に貼り付く図形。playParts でのみ指定）: ${Object.keys(decors).join(' / ')}`,
+          `sub（語句に添える英字。playParts でのみ指定。例 sub: 'LIKE MAGIC'）`,
           `背景の盛り上がりは window.loud = 0〜1 で動かせます。`,
         ].join('\n'),
       );

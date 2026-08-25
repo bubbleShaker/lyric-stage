@@ -2,6 +2,7 @@ import gsap from 'gsap';
 import { partsOf, type LyricLine, type ResolvedPart } from '../domain/lyrics';
 import { resolveDecor } from './decor';
 import { resolveEffect, type EffectLayout, type EffectTimeline } from './effects';
+import { buildSubText } from './sub-text';
 
 /**
  * 1 行を、語句ごとの登場が並んだ 1 本のタイムラインに組み立てる（M8-5）。
@@ -42,6 +43,15 @@ export interface PartTarget {
    * この 1 行で繋がっていれば、取り違えようが無い。
    */
   readonly createDecor: (className: string) => HTMLElement;
+  /**
+   * 英字サブテキストの当て先を立てて返す（M8-3c）。**中身も入れて返す。**
+   *
+   * 図形（`createDecor`）はクラス名を渡すが、こちらは**文字列そのもの**を渡す
+   * — 英字は語句ごとに違う中身なので、レジストリではなくシートが持っている。
+   * 当て先の中に文字を入れるのは作る側の仕事にした（歌詞と同じく、外から来た
+   * 文字列を DOM へ入れる所を 1 か所に閉じ込めるため）。
+   */
+  readonly createSub: (text: string) => HTMLElement;
 }
 
 /**
@@ -91,6 +101,12 @@ export function buildLineTimeline(
     // シートに書いた時刻と画に出る時刻がずれて、耳で詰める作業（Issue #37）が狂う
     for (const decor of resolveDecor(part.decor, { reducedMotion })) {
       timeline.add(decor.build(target.createDecor(decor.className)), part.at);
+    }
+
+    // 英字も図形と同じ時刻から（M8-3c）。語句・図形・英字が同時に動き出すことで、
+    // 1 つの語句が「1 つの画」として立ち上がる
+    if (part.sub !== undefined) {
+      timeline.add(buildSubText(target.createSub(part.sub), { reducedMotion }), part.at);
     }
 
     timeline.add(build({ root: target.root, chars: target.chars }), part.at);

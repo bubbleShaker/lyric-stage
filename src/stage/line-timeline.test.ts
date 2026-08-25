@@ -10,18 +10,40 @@ import { buildLineTimeline, type PartTarget } from './line-timeline';
  * frame に当たる autoAlpha は数値としてそのまま乗るため、
  * 「出番の前は隠れている」がここで読める（本物では visibility + opacity になる）。
  */
-function dummyTarget(count: number): PartTarget & { readonly decorClasses: string[] } {
+function dummyTarget(
+  count: number,
+): PartTarget & {
+  readonly decorClasses: string[];
+  readonly subTexts: string[];
+  /** 図形・英字に渡した当て先そのもの。gsap が書いた値を後から読むために控える */
+  readonly extras: Record<string, unknown>[];
+} {
   // 図形を頼まれた回数と名前を控える。本物では枠の中に要素が立つ（M8-3a）
   const decorClasses: string[] = [];
+  // 英字も同じ（M8-3c）。こちらは名前ではなく中身そのものが渡る
+  const subTexts: string[] = [];
+  const extras: Record<string, unknown>[] = [];
+
+  const extra = () => {
+    const element: Record<string, unknown> = {};
+    extras.push(element);
+    return element as unknown as HTMLElement;
+  };
 
   return {
     frame: {} as HTMLElement,
     root: {} as HTMLElement,
     chars: Array.from({ length: count }, () => ({}) as unknown as Element),
     decorClasses,
+    subTexts,
+    extras,
     createDecor: (className) => {
       decorClasses.push(className);
-      return {} as HTMLElement;
+      return extra();
+    },
+    createSub: (text) => {
+      subTexts.push(text);
+      return extra();
     },
   };
 }
@@ -187,6 +209,36 @@ describe('buildLineTimeline', () => {
     expect(used).toStrictEqual([]);
     timeline.kill();
   });
+
+  it('動きを減らす設定が図形と英字にも届く', () => {
+    // `resolveDecor` / `buildSubText` へ渡す `{ reducedMotion }` を落としても、上の
+    // 「静かな演出に落ちる」は演出のプロパティしか見ていないので**緑のまま**になる
+    // （レビュー指摘 🟡）。畳んだ姿は「時刻 0 で既に出来上がっている」ことで分かる
+    const targets: DummyTarget[] = [];
+    const timeline = buildLineTimeline(
+      { time: 0, text: 'A', decor: ['band'], sub: 'MAGIC' },
+      (part) => {
+        const target = dummyTarget(part.text.length);
+        targets.push(target);
+        return target;
+      },
+      { reducedMotion: true },
+    );
+
+    // 「時刻 0 の姿」を見ていることを明示する（再レビュー指摘 🟡）。組み立て直後の値は
+    // gsap が生成時に書いたものなので、往復させておく方が意図が読める
+    timeline.time(0.0001).time(0);
+
+    const values = targets[0].extras.flatMap((element) =>
+      ['--decor-grow', '--sub-reveal']
+        .filter((property) => Object.hasOwn(element, property))
+        .map((property) => Number(element[property])),
+    );
+
+    // 図形と英字で 2 つ。どちらも伸びる過程を飛ばして終わりの姿になっている
+    expect(values).toStrictEqual([1, 1]);
+    timeline.kill();
+  });
 });
 
 describe('語句に貼り付く図形（M8-3a）', () => {
@@ -262,6 +314,61 @@ describe('語句に貼り付く図形（M8-3a）', () => {
     });
 
     expect(targets.map((target) => target.decorClasses)).toEqual([[], []]);
+    timeline.kill();
+  });
+});
+
+describe('語句に添える英字（M8-3c）', () => {
+  it('書いた語句にだけ当て先を頼み、中身をそのまま渡す', () => {
+    const { targets, timeline } = build({
+      time: 0,
+      text: 'AB',
+      parts: [
+        { text: 'A', at: 0, sub: 'LIKE MAGIC' },
+        { text: 'B', at: 1 },
+      ],
+    });
+
+    expect(targets.map((target) => target.subTexts)).toEqual([['LIKE MAGIC'], []]);
+    timeline.kill();
+  });
+
+  it('英字は語句と同じ時刻から始まる', () => {
+    // 図形と同じ（M8-3a の理由をそのまま踏襲）。語句・図形・英字が同時に動き出す
+    const { timeline } = build({
+      time: 0,
+      text: 'AB',
+      parts: [
+        { text: 'A', at: 0 },
+        { text: 'B', at: 1.5, sub: 'INFINITE' },
+      ],
+    });
+
+    const starts = timeline
+      .getChildren(false)
+      .filter((child): child is gsap.core.Timeline => child instanceof gsap.core.Timeline)
+      .filter((child) => child.getChildren(true).some((t) => Object.hasOwn(t.vars, '--sub-reveal')))
+      .map((child) => child.startTime());
+
+    expect(starts).toHaveLength(1);
+    expect(starts[0]).toBeCloseTo(1.5);
+    timeline.kill();
+  });
+
+  it('行に書いた英字は、刻んだ語句には出ない', () => {
+    // 図形と同じ扱い（M8-3c）。この形の入力はパーサが入口で弾くので、ここが見ているのは
+    // 「手で組んだ行でも継がない」という domain の不変条件の方
+    const { targets, timeline } = build({
+      time: 0,
+      text: 'AB',
+      sub: 'MAGIC',
+      parts: [
+        { text: 'A', at: 0 },
+        { text: 'B', at: 1 },
+      ],
+    });
+
+    expect(targets.map((target) => target.subTexts)).toEqual([[], []]);
     timeline.kill();
   });
 });

@@ -22,6 +22,8 @@ export interface LyricLine {
   parts?: LyricPart[];
   /** 行に貼り付く図形。M8-3a で足した。刻んだ行では使わない（`LyricPart.decor` を見よ） */
   decor?: string[];
+  /** 行に添える英字。M8-3c で足した。刻んだ行では使わない（`LyricPart.sub` を見よ） */
+  sub?: string;
 }
 
 /**
@@ -57,6 +59,21 @@ export interface LyricPart {
    * `stage/decor.ts` にあり、綴りの間違いは `src/lyric-sheets.test.ts` が落とす。
    */
   decor?: string[];
+  /**
+   * 語句に添える英字（M8-3c）。語句の上に小さく置く。
+   *
+   * **`decor` と違い、中身そのものを持つ。** 図形は「帯か罫か」を名前で選ぶので
+   * レジストリが実体を持てるが、英字は語句ごとに違う文字列なので、`stage/` 側に
+   * 置けるのは見せ方（大きさ・字間・伸び方）だけになる。
+   *
+   * **図形と同じく、行からは継がない**（`partsOf` を見よ）。継ぐと刻んだ行の
+   * 全語句に同じ英字が並び、画が埋まる。
+   *
+   * **ここに書いた字がそのまま描かれる。** 大文字で出したければ大文字で書くこと
+   * （CSS の `text-transform` は使わない）。書体のサブセットはこの文字列から
+   * 作るので、CSS で字を作り替えると**検査が見ている集合と実際に描く字がずれる**。
+   */
+  sub?: string;
 }
 
 /**
@@ -119,6 +136,8 @@ export interface ResolvedPart {
   readonly place: LyricPlacement | undefined;
   /** 貼り付く図形の名前。**無ければ空の配列**（undefined ではない） */
   readonly decor: readonly string[];
+  /** 添える英字。無ければ undefined（空文字は入口で弾いてある） */
+  readonly sub: string | undefined;
 }
 
 /**
@@ -131,7 +150,14 @@ export interface ResolvedPart {
 export function partsOf(line: LyricLine): ResolvedPart[] {
   if (line.parts === undefined) {
     return [
-      { text: line.text, at: 0, effect: line.effect, place: line.place, decor: line.decor ?? [] },
+      {
+        text: line.text,
+        at: 0,
+        effect: line.effect,
+        place: line.place,
+        decor: line.decor ?? [],
+        sub: line.sub,
+      },
     ];
   }
 
@@ -140,10 +166,11 @@ export function partsOf(line: LyricLine): ResolvedPart[] {
     at: part.at,
     effect: part.effect ?? line.effect,
     place: part.place ?? line.place,
-    // **decor だけは行から継がない**（M8-3a）。effect と place は「この語句だけ
-    // 変えたい」時に書く上書きだが、図形は置く語句を選ぶもの。行から配ると
-    // 刻んだ行の全語句に同じ帯が出て、画を締めるどころか埋めることになる
+    // **decor と sub は行から継がない**（M8-3a / M8-3c）。effect と place は
+    // 「この語句だけ変えたい」時に書く上書きだが、図形と英字は置く語句を選ぶもの。
+    // 行から配ると刻んだ行の全語句に同じものが出て、画を締めるどころか埋めることになる
     decor: part.decor ?? [],
+    sub: part.sub,
   }));
 }
 
@@ -189,11 +216,11 @@ function parseLyricLine(value: unknown, index: number): LyricLine {
   // 画面には歌詞が出ているので、書いた本人にも原因が分からない
   rejectUnknownKeys(
     line,
-    ['time', 'text', 'effect', 'duration', 'place', 'parts', 'decor'],
+    ['time', 'text', 'effect', 'duration', 'place', 'parts', 'decor', 'sub'],
     `lines[${index}]`,
   );
 
-  const { time, text, effect, duration, place, parts, decor } = line;
+  const { time, text, effect, duration, place, parts, decor, sub } = line;
 
   if (typeof time !== 'number' || !Number.isFinite(time) || time < 0) {
     throw new LyricSheetError(`lines[${index}].time が 0 以上の数値ではありません`);
@@ -215,6 +242,10 @@ function parseLyricLine(value: unknown, index: number): LyricLine {
       `lines[${index}] は語句に刻まれているので、decor は語句の側に書きます`,
     );
   }
+  // 英字も図形と同じ扱い（M8-3c）。継がないと決めた以上、書けてしまう方を塞ぐ
+  if (parts !== undefined && sub !== undefined) {
+    throw new LyricSheetError(`lines[${index}] は語句に刻まれているので、sub は語句の側に書きます`);
+  }
 
   // ここで組み直すので、**知らない項目は黙って落ちる**。新しい項目を足したら
   // 必ずこの行にも足すこと（place は M8-1、parts は M8-5 で足した）
@@ -226,6 +257,7 @@ function parseLyricLine(value: unknown, index: number): LyricLine {
     ...(place !== undefined ? { place: parsePlacement(place, `lines[${index}]`) } : {}),
     ...(parts !== undefined ? { parts: parseParts(parts, `lines[${index}]`) } : {}),
     ...(decor !== undefined ? { decor: parseDecor(decor, `lines[${index}]`) } : {}),
+    ...(sub !== undefined ? { sub: parseSub(sub, `lines[${index}]`) } : {}),
   };
 }
 
@@ -253,9 +285,9 @@ function parseParts(value: unknown, owner: string): LyricPart[] {
 function parsePart(value: unknown, where: string): LyricPart {
   if (!isPlainObject(value)) throw new LyricSheetError(`${where} がオブジェクトではありません`);
 
-  rejectUnknownKeys(value, ['text', 'at', 'effect', 'place', 'decor'], where);
+  rejectUnknownKeys(value, ['text', 'at', 'effect', 'place', 'decor', 'sub'], where);
 
-  const { text, at, effect, place, decor } = value;
+  const { text, at, effect, place, decor, sub } = value;
 
   if (typeof text !== 'string' || text.trim() === '') {
     throw new LyricSheetError(`${where}.text が空でない文字列ではありません`);
@@ -275,7 +307,28 @@ function parsePart(value: unknown, where: string): LyricPart {
     ...(effect ? { effect } : {}),
     ...(place !== undefined ? { place: parsePlacement(place, where) } : {}),
     ...(decor !== undefined ? { decor: parseDecor(decor, where) } : {}),
+    ...(sub !== undefined ? { sub: parseSub(sub, where) } : {}),
   };
+}
+
+/**
+ * 語句に添える英字（M8-3c）。**形だけを見る**（何を書くかは作者の領分）。
+ *
+ * 空白だけの文字列と前後の空白を弾くのは `parseDecor` と同じ理由 — どちらも
+ * 画面では「なぜか英字が出ない／位置がずれる」にしか見えず、原因に辿り着けない。
+ * 英字は字間を広く空けて置くので、**前後の空白 1 つが数 px のずれになる**。
+ */
+function parseSub(value: unknown, owner: string): string {
+  const where = `${owner}.sub`;
+
+  if (typeof value !== 'string' || value.trim() === '') {
+    throw new LyricSheetError(`${where} が空でない文字列ではありません`);
+  }
+  if (value.trim() !== value) {
+    throw new LyricSheetError(`${where} の前後に空白があります: 「${value}」`);
+  }
+
+  return value;
 }
 
 /**
