@@ -99,6 +99,85 @@ describe.each(Object.entries(SHEET_SOURCES))('%s.json', (_name, source) => {
     expect(hidden).toStrictEqual([]);
   });
 
+  it('図形と英字が同じ語句に重なっていない', () => {
+    // どちらも「この語句をここに留める」ための重み（M8-3c）。重ねると 1 つの語句だけが
+    // 極端に重くなり、語句ごとに軽重を付けるという刻みの狙い（M8-5）が消える。
+    //
+    // 見た目の理由もある — 枠（box）の輪郭は語句の箱より 0.18em 外まで出るので、
+    // 語句の上に載る英字とぶつかる。方針と実害が同じ向きを向いているので検査にした。
+    // 綴り間違いの検査と同じく、区間の外や開発用のシートにも課す（広げた時に出てくる）
+    const overloaded = sheet.lines
+      .flatMap((line) => partsOf(line))
+      .filter((part) => part.sub !== undefined && part.decor.length > 0)
+      .map((part) => `${part.text}: ${part.sub} + ${part.decor.join(', ')}`);
+
+    expect(overloaded).toStrictEqual([]);
+  });
+
+  it('サブテキストが ASCII で書かれている', () => {
+    // 「英字サブテキスト」は語句に添える小見出しで、字間を大きく空けて小さく置く。
+    // 日本語を書くと歌詞との区別が付かないうえ、その大きさでは読めない。
+    //
+    // **見ているのは英字かどうかではなく ASCII かどうか**（数字や記号も通る）。
+    // 書体のサブセットの都合に合わせてある — ASCII の可読部は
+    // tools/subset-font.mjs の EXTRA_CHARS に必ず入っているので、この範囲に
+    // 収まっている限りサブセットの作り直しが要らない。逆に、外れた文字を書いた時は
+    // **作り直しを促すためにここで落とす**（公開ページで別の書体に落ちるのを防ぐ）
+    const nonAscii = sheet.lines
+      .flatMap((line) => partsOf(line))
+      .filter((part) => part.sub !== undefined && /[^ -~]/.test(part.sub))
+      .map((part) => `${part.text}: ${part.sub}`);
+
+    expect(nonAscii).toStrictEqual([]);
+  });
+
+  it('サブテキストが語句より長くない', () => {
+    // 英字の箱は語句（枠）の幅に張ってあり、寄せ方も枠から継ぐ。**語句より短い限り
+    // 語句の縁と揃う**が、長いと右（行末の側）へあふれる。text-align: right でも
+    // 左には回らない（実測）ので、右端に置いた語句では画面の外へ出る。
+    //
+    // 幅は測れない（DOM が要る）ので、**字送りから見積もる**。この書体の大文字の
+    // 字送りは平均 0.636em（I=0.264 / W=0.831）なので、英字 1 文字は語句の
+    // 0.2 × (0.636 + 字間 0.42) ≈ 0.21em、和文 1 文字は 1.02em。
+    // **等しくなるのは 4.8 倍**で、W や M の多い語では 4.1 倍まで落ちる。
+    //
+    // **上限は 4 倍**（再レビュー指摘 🟡）。当初は 5 倍にして「余裕を持って」と
+    // 書いていたが、5 倍は余裕どころか均衡点そのもので、15 文字の英字が
+    // 実測 102% の幅で並んでも通っていた。
+    //
+    // なお**小さな段階や狭い画面では、英字の下限（0.62rem / style.css）が効いて
+    // 「語句の 0.2 倍」という前提が崩れる**（sm はどの幅でも、md は 902px 未満で、
+    // lg も携帯の幅では下限に当たる）。そこでは英字が見積もりより 4 割ほど広くなるので、
+    // この 4 倍にはその分の余裕も含めてある。厳密に見たければ画面を見て決めること
+    const tooLong = sheet.lines
+      .flatMap((line) => partsOf(line))
+      .filter((part) => part.sub !== undefined && part.sub.length > part.text.length * 4)
+      // `?` は型の都合（filter では絞られない）。ASCII 縛りが外れたら、
+      // UTF-16 単位で数えている `length` も見直しが要る
+      .map((part) => `${part.text}(${part.text.length}) に ${part.sub}(${part.sub?.length})`);
+
+    expect(tooLong).toStrictEqual([]);
+  });
+
+  it('縦組みの語句に英字を添えていない', () => {
+    // 英字は組み方ごとの変種を持たない（回さない／`stage/sub-text.ts`）が、**大きさの
+    // 基準までは追従できない**（レビュー指摘 🟡）。縦組みの `--size-base` は
+    // `.stage__text.stage__text--vertical` 自身への宣言なので、兄弟である
+    // `.stage__sub` には届かない。1280×600 では縦組みの基準 36px に対して英字は
+    // 横組みの基準 57.6px で計算され、**狙いの 1.6 倍の大きさ**で出る。
+    //
+    // 図形（.stage__decor）も同じ構図だが、あちらは 0.28em のはみ出し幅に効くだけで
+    // 済んでいる。こちらは font-size そのものなので、当面は組み合わせを禁じる。
+    // 縦組みの語句に英字を添えたくなったら、基準の置き換えを枠の側へ移す話になる
+    const vertical = sheet.lines
+      .flatMap((line) => partsOf(line))
+      .filter((part) => part.sub !== undefined)
+      .filter((part) => resolveEffect(part.effect).layout === 'vertical')
+      .map((part) => `${part.text}: ${part.sub}`);
+
+    expect(vertical).toStrictEqual([]);
+  });
+
   it('語句が行の猶予の中で出る', () => {
     // at は行の time からの相対秒。行が消えた後の時刻を書いても、その語句は
     // 一度も画に出ないまま終わる（画面を見ても「なぜか出ない語句」にしか見えない）
@@ -363,6 +442,12 @@ describe('WORK_WINDOW × 本編シート', () => {
     expect(parts.some((part) => part.decor.length > 0)).toBe(true);
   });
 
+  it('作品のどこかに英字が添えられている', () => {
+    // 図形と同じ穴（M8-3c）。シートから sub を消しても**全テストが緑のまま**、
+    // 画から英字だけが消える。1 つも無い状態を落とす
+    expect(parts.some((part) => part.sub !== undefined)).toBe(true);
+  });
+
   it('作品の行が語句に刻まれている', () => {
     // M8-5 の狙いそのもの。1 行を丸ごと出す行が作品に残っていたら、そこだけ
     // 動きが単調になる。区間を広げた時に、刻み忘れの行をここで名指しして落とす
@@ -437,9 +522,10 @@ function dummyTarget(count: number) {
     frame: {} as HTMLElement,
     root: {} as HTMLElement,
     chars: Array.from({ length: count }, () => ({}) as unknown as Element),
-    // 図形（M8-3a）も本番と同じ経路で組まれるので、当て先だけ返す。
-    // 図形が行の尺に入ることも、これで「行の猶予に収まる」の検査が見てくれる
+    // 図形（M8-3a）も英字（M8-3c）も本番と同じ経路で組まれるので、当て先だけ返す。
+    // これらが行の尺に入ることも、これで「行の猶予に収まる」の検査が見てくれる
     createDecor: () => ({}) as HTMLElement,
+    createSub: () => ({}) as HTMLElement,
   };
 }
 

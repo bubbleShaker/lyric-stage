@@ -298,6 +298,37 @@ describe('parseLyricSheet（図形 = decor）', () => {
   });
 });
 
+describe('parseLyricSheet（英字 = sub）', () => {
+  const parseLine = (line: object) =>
+    parseLyricSheet({ title: 'テスト', lines: [{ time: 0, text: 'AB', ...line }] }).lines[0];
+
+  it('英字をそのまま保持する', () => {
+    // 何を書くかは作者の領分。ここが見るのは形だけで、大文字化もしない
+    // （CSS の text-transform を使わないのと同じ理由 — 描く字と、書体のサブセットが
+    // 見ている字を一致させておく）
+    expect(parseLine({ sub: 'SPELL IT OUT' }).sub).toBe('SPELL IT OUT');
+    expect(parseLine({ parts: [{ text: 'A', at: 0, sub: 'MAGIC' }] }).parts?.[0].sub).toBe('MAGIC');
+  });
+
+  it('中身の無い指定を弾く', () => {
+    expect(() => parseLine({ sub: '' })).toThrow();
+    expect(() => parseLine({ sub: '   ' })).toThrow();
+    expect(() => parseLine({ sub: 42 })).toThrow();
+  });
+
+  it('前後に空白の付いた英字を弾く', () => {
+    // 英字は字間を大きく空けて置くので、前後の空白 1 つが数 px のずれになる。
+    // 画面では「なぜか位置がずれている」にしか見えない
+    expect(() => parseLine({ sub: ' MAGIC' })).toThrow();
+    expect(() => parseLine({ sub: 'MAGIC ' })).toThrow();
+  });
+
+  it('刻んだ行に行の英字を書いた指定を弾く', () => {
+    // 図形と同じ扱い（M8-3c）。英字は行から継がないので、書いても画には何も出ない
+    expect(() => parseLine({ sub: 'MAGIC', parts: [{ text: 'AB', at: 0 }] })).toThrow();
+  });
+});
+
 describe('partsOf', () => {
   it('刻んでいない行は 1 語句として返す', () => {
     // 表示側から「刻んである行」「刻んでいない行」の分岐を消すための正規化
@@ -353,6 +384,22 @@ describe('partsOf', () => {
     const line = { time: 0, text: 'A', decor: ['band'] };
 
     expect(partsOf(line)[0].decor).toEqual(['band']);
+  });
+
+  it('**英字も行から継がない**', () => {
+    // 図形と同じ扱い（M8-3c）。継ぐと刻んだ行の語句すべてに同じ英字が並び、
+    // 添え物どころか画を埋める
+    const line = {
+      time: 0,
+      text: 'AB',
+      parts: [{ text: 'A', at: 0 }, { text: 'B', at: 1, sub: 'MAGIC' }],
+    };
+
+    expect(partsOf(line).map((part) => part.sub)).toEqual([undefined, 'MAGIC']);
+  });
+
+  it('刻んでいない行は行の英字をそのまま持つ', () => {
+    expect(partsOf({ time: 0, text: 'A', sub: 'MAGIC' })[0].sub).toBe('MAGIC');
   });
 
   it('**図形だけは行から継がない**', () => {

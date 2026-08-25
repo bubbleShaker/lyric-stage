@@ -51,12 +51,25 @@ const EXTRA_CHARS = [
   ...'　、。，．・：；？！ー〜…「」『』（）',
 ].join('');
 
-/** 歌詞シート 1 枚に出る文字をすべて集める。行の text と語句（parts）の両方を見る */
+/**
+ * 歌詞シート 1 枚に出る文字をすべて集める。
+ *
+ * 行の text・語句（parts）の text・添える英字（sub / M8-3c）を見る。
+ * **シートに描かれる項目が増えたら、ここにも足すこと** — このファイルは .mjs なので
+ * TS の domain（`partsOf`）を読めず、シートの構造を読み直している。取り残されると、
+ * 新しい項目に書いた文字だけがサブセットから漏れる。
+ *
+ * 普通は `src/font-subset.test.ts` が domain 経由で見ているので、漏れればそちらが落ちる。
+ * **ただし `sub`（英字）はこの網に掛からない**（レビュー指摘 🟡）— `sub` は ASCII に
+ * 限る約束（`src/lyric-sheets.test.ts`）で、ASCII の可読部は下の EXTRA_CHARS が
+ * 無条件に入れているため、ここが `sub` を拾い忘れても突き合わせは永久に緑になる。
+ * 約束を緩める（日本語や記号を許す）なら、その時に網も戻ってくる。
+ */
 function charsOfSheet(sheet) {
   const texts = [sheet.title ?? ''];
   for (const line of sheet.lines ?? []) {
-    texts.push(line.text ?? '');
-    for (const part of line.parts ?? []) texts.push(part.text ?? '');
+    texts.push(line.text ?? '', line.sub ?? '');
+    for (const part of line.parts ?? []) texts.push(part.text ?? '', part.sub ?? '');
   }
   return texts.join('');
 }

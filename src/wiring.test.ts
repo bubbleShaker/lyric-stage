@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 // Vite の ?raw で組み立ての側をそのまま文字列として読む
 // （font-subset.test.ts が index.html を読むのと同じ手）
 import mainTs from './main.ts?raw';
+import lyricStageTs from './stage/lyric-stage.ts?raw';
 import effectPreviewHtml from '../effect-preview.html?raw';
 
 /**
@@ -47,5 +48,37 @@ describe('画面に敷く図形（M8-3b）', () => {
     // （ページ自身のコメントがそう宣言している）。腐ると「密度を判断する道具」が
     // 本番と違う画を出し、構図や図形の濃さを誤って決めることになる
     expect(withoutComments(effectPreviewHtml)).toMatch(calls);
+  });
+});
+
+describe('語句に添えるものの取り付け（M8-3a / M8-3c）', () => {
+  // `LyricStage` の DOM 配線には単体テストが無い（jsdom 未導入。PLAN の M8-1 の宿題）。
+  // 図形と英字は「当て先を作って返す」形なので、**木に繋ぐ 1 行を落としても
+  // 組み立ては最後まで通り、gsap も文句を言わず、画面からその要素だけが消える**。
+  // 返り値だけを見る line-timeline.test.ts では届かないので、ここで組み立てを見る
+  // （レビュー指摘 🟡。M8-3b の mountScreenDecor と同じ穴・同じ手）。
+  const source = withoutComments(lyricStageTs);
+
+  // **数ではなく一覧で書く**（再レビュー指摘 🟡）。`text.before(` を 2 回数える形にすると、
+  // 次の添え物を足すときに数字だけ書き換える作業になり、その瞬間に
+  // 「繋ぎ忘れていないか」を見る目が失われる（font-subset.test.ts で同じ形を捨てたばかり）。
+  //
+  // **行ごとに見るのは、箱と字に分かれた M8-3c の配線が 1 行では表せないため**
+  // （再レビュー指摘 🟡）。`box.append(glyphs)` を落とすと**英字が一切出なくなるのに
+  // 型検査も全テストも通る**、という穴が実際に空いていた
+  const wiring: [string, RegExp][] = [
+    // 当て先の親は文字（`text`）。**文字の直前**に挿すことで、シートに書いた順が
+    // そのまま奥から手前の順になる（`prepend` だと逆になる。stage/lyric-stage.ts）
+    ['図形を文字の直前に挿す', /^[^\S\n]*text\.before\(decor\)/m],
+    ['英字の箱を文字の直前に挿す', /^[^\S\n]*text\.before\(box\)/m],
+    ['英字の字を箱に入れる', /^[^\S\n]*box\.append\(glyphs\)/m],
+    // クラスの取り違え（箱に SUB_TEXT_CLASS、字に SUB_CLASS）も型検査を通る。
+    // 拭き取りが掛からない・位置が決まらないという形で画だけが壊れる
+    ['英字の箱に箱のクラスを当てる', /box\.className = SUB_CLASS/],
+    ['英字の字に字のクラスを当てる', /glyphs\.className = SUB_TEXT_CLASS/],
+  ];
+
+  it.each(wiring)('%s', (_label, pattern) => {
+    expect(source).toMatch(pattern);
   });
 });

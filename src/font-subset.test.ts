@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { parseLyricSheet, partsOf } from './domain/lyrics';
+import { SUB_CLASS } from './stage/sub-text';
 // ?raw は対象ファイルを文字列として読み込む Vite の機能。fs を使わずに済むので
 // Node の型定義をアプリ側の tsconfig に持ち込まなくてよい（lyric-sheets.test.ts と同じ）
 import indexHtml from '../index.html?raw';
@@ -86,7 +87,15 @@ function charsInSheets(): Set<string> {
   const chars = new Set<string>();
   for (const source of Object.values(sheets) as string[]) {
     const sheet = parseLyricSheet(JSON.parse(source));
-    const texts = [sheet.title, ...sheet.lines.flatMap((line) => partsOf(line).map((p) => p.text))];
+    // 画に描かれる文字列はすべて domain（partsOf）経由で拾う。**項目が増えたら
+    // ここにも足す** — 語句の英字（sub / M8-3c）はその 1 つ目で、
+    // tools/subset-font.mjs 側にも同じ追加が要る（あちらは .mjs なので domain を読めない）
+    const texts = [
+      sheet.title,
+      ...sheet.lines.flatMap((line) =>
+        partsOf(line).flatMap((part) => [part.text, ...(part.sub === undefined ? [] : [part.sub])]),
+      ),
+    ];
     for (const char of texts.join('')) {
       // 改行・タブは字形が要らないので、ツール側も入れていない。
       // 半角空白と全角空白はグリフを持つので対象に含める
@@ -144,6 +153,22 @@ describe('書体のサブセット', () => {
   });
 });
 
+/**
+ * 専用の書体（`var(--font-display)`）を実際に使っている規則。
+ *
+ * **コメントを落としてから走査する。** このリポジトリはコメントで変数名を名指しする
+ * 流儀なので、素で当てると説明を 1 行足しただけで当て先が増えたことになる
+ * （`palette.test.ts` / `decor.test.ts` が同じ手当てをしている）。
+ *
+ * **入れ子は扱えない**（レビュー指摘 🟡）。`@media` の中や CSS ネスト（`&`）の中で
+ * この書体を使うと、セレクタとして at-rule が報告される（落ちるので気付ける）か、
+ * 宣言がセレクタ側に吸われて見落とす。今の `style.css` はどちらも使っていないので
+ * 予防的な注記だが、**使い始めたらこの走査を組み直すこと**。
+ */
+const displayFontRules = [...styleCss.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]*)\{([^}]*)\}/g)]
+  .filter(([, , body]) => body.includes('var(--font-display)'))
+  .map(([, selector, body]) => ({ selector: selector.trim(), body }));
+
 describe('書体の配線', () => {
   it('@font-face の家族名が --font-display の先頭と一致している', () => {
     // 片方だけ改名しても、woff2 は実在し preload も charset も一致し、
@@ -156,23 +181,46 @@ describe('書体の配線', () => {
     expect(first).toBe(fontFaces[0]?.family);
   });
 
-  it('@font-face の太さが歌詞に指定した太さと一致している', () => {
+  it('書体を使う要素の太さが face の太さと一致している', () => {
     // 持っていない太さを指定すると、ブラウザが字形を機械的に太らせ／細らせて
     // （synthetic weight）画が濁る。style.css のコメントが警告している事故を
-    // 機械に止めさせる
-    const textWeight = /\.stage__text\s*\{[^}]*font-weight:\s*([^;]+);/.exec(styleCss)?.[1].trim();
+    // 機械に止めさせる。
+    //
+    // **書体を使う規則を全部見る**（M8-3c で英字が 2 つ目になった）。歌詞だけを
+    // 見ていると、後から足した要素は font-weight を書き忘れても緑のまま
+    // 既定の 400 で描かれる（この書体は 900 しか持っていないので必ず濁る）
+    // 対象 0 件だと下の突き合わせは「間違いなし」で静かに緑になる。当て先の一覧を
+    // 見る検査が別に落ちるとはいえ、このリポジトリの流儀に合わせて規模も見ておく
+    expect(displayFontRules.length).toBeGreaterThan(0);
 
-    expect(textWeight).toBeDefined();
-    expect(fontFaces.map((face) => face.weight)).toContain(textWeight);
+    const weights = fontFaces.map((face) => face.weight);
+    const wrong = displayFontRules
+      .map(({ selector, body }) => ({
+        selector,
+        weight: /font-weight:\s*([^;]+);/.exec(body)?.[1].trim(),
+      }))
+      .filter(({ weight }) => weight === undefined || !weights.includes(weight))
+      .map(({ selector, weight }) => `${selector}: ${weight ?? '(未指定)'}`);
+
+    expect(wrong).toStrictEqual([]);
   });
 
-  it('書体は歌詞にだけ当たっている', () => {
-    // --font-display をどこか（:root や body）にもう 1 か所書くと、サブセットに
+  it('書体は作品側の文字にだけ当たっている', () => {
+    // --font-display を UI（:root や body、.transport）に書くと、サブセットに
     // 入れていない UI の文字（「再生」「読み込み中」）だけが下の候補に落ちて、
     // 1 つの UI に 2 つの書体が混ざる。「歌詞にだけ当てる」という設計上の約束を
     // 守るものが、書かないとコメントだけになる。
-    // 宣言（--font-display:）と使用（var(--font-display)）でそれぞれ 1 回
-    expect(styleCss.match(/var\(--font-display\)/g)).toHaveLength(1);
+    //
+    // **数ではなく当て先を見る**（M8-3c）。当初は「var(--font-display) は 1 回だけ」と
+    // 数えていたが、それだと作品側に要素を足すたびに検査ごと書き換えることになり、
+    // その時に「UI に広がっていないか」を見る目が失われる。当て先の一覧で書けば、
+    // 足したことは差分に出るのに、UI へ漏れれば落ちる
+    // 当て先はクラス名の定数から引く。直書きすると、改名したときに何が起きたのかを
+    // 読み解く手間が増える（`sub-text.test.ts` は定数経由にしてある）
+    expect(new Set(displayFontRules.map((rule) => rule.selector))).toStrictEqual(
+      new Set(['.stage__text', `.${SUB_CLASS}`]),
+    );
+    // 宣言は 1 か所（:root）。増やすとどちらが効くかが並び順で決まる
     expect(styleCss.match(/--font-display:/g)).toHaveLength(1);
   });
 
