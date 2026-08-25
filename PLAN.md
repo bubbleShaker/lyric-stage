@@ -59,7 +59,7 @@
     - [x] **M8-3a** 語句に貼り付く図形（帯 `band` / 罫 `rule` / 枠 `box`）（[Issue #43](https://github.com/bubbleShaker/lyric-stage/issues/43)）。`decor` を第 3 の軸としてシートに持たせ、レジストリは `stage/decor.ts`
     - [x] **M8-3b** 画面に敷く図形（三分割の分割線・四隅のマーク）（[Issue #45](https://github.com/bubbleShaker/lyric-stage/issues/45)）。語句に貼り付かない静的な装飾で、データの口は無い。組み立ては `stage/screen-decor.ts`
     - [x] **M8-3c** 語句に添える英字サブテキスト（[Issue #47](https://github.com/bubbleShaker/lyric-stage/issues/47)）。`sub` をシートに持たせ、組み立ては `stage/sub-text.ts`。**フォントのサブセット集合が変わる**ので `tools/subset-font.mjs` と `font-subset.test.ts` も触った（M8-2a の宿題に接続）
-  - [ ] **M8-4** ビート同期の衝撃（フラッシュ・画面揺れ）。M5-2 の音量解析を流用する
+  - [ ] **M8-4** ビート同期の衝撃（フラッシュ・画面揺れ）（[Issue #49](https://github.com/bubbleShaker/lyric-stage/issues/49) に設計の分岐点を書いた）。**拍の格子が「いつ」を、M5-2 の実音が「どれだけ」を決める**。叩く先はフラッシュが `mountScreenDecor` のレイヤー（M8-3b が取っ手として置いた）、揺れが `.stage__lines`（`.stage__frame` は構図が transform を持つので触らない）。**一番重い判断は明滅の安全**（WCAG 2.3.1 の 3Hz。79.85 BPM は 8 分で 2.66Hz と閾値のすぐ下）
 - [ ] **M7** 仕上げ（レスポンシブ、OGP、README）。**M8 の後に回す**
 
 各マイルストーンごとに Issue → ブランチ → reviewer レビュー → PR → マージ。
