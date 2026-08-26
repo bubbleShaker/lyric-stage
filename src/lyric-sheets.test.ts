@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { parseLyricSheet, partsOf, sliceSheet, type LyricLine } from './domain/lyrics';
+import {
+  createPolarityTrack,
+  findRapidPolarityFlip,
+  parseLyricSheet,
+  partsOf,
+  sliceSheet,
+  type LyricLine,
+} from './domain/lyrics';
 import { isAnchorName, isSizeName } from './stage/composition';
 import { decors, isDecorName } from './stage/decor';
 import { effects, isEffectName, resolveEffect } from './stage/effects';
@@ -384,6 +391,14 @@ describe('WORK_WINDOW × 本編シート', () => {
     timeline.kill();
 
     expect(last.time + span).toBeLessThanOrEqual(WORK_WINDOW.end - WORK_WINDOW.start);
+  });
+
+  it('切り出した後も極性の切り替えが速すぎない（明滅の安全）', () => {
+    // **`parseLyricSheet` の検証だけでは届かない**（M9-3a）。区間の頭を跨いで
+    // 始まっている行は時刻 0 に詰められるので、**元は 1 秒離れていた切り替えが
+    // 切り出した後には 0.1 秒差になりうる**。生のシートは通るのに、画面に出る側だけが
+    // 危ない形になる。全画面の反転は明滅なので、ここは目で確かめて済ませられない
+    expect(findRapidPolarityFlip(createPolarityTrack(sliced))).toBeNull();
   });
 
   it('切り出しても全行に effect が残っている', () => {

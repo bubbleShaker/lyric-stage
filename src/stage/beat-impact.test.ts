@@ -11,7 +11,7 @@ import {
   type BeatImpactPulses,
 } from './beat-impact';
 // Vite の ?raw で CSS を文字列として読む（decor.test.ts / palette.test.ts と同じ手）
-import styleCss from '../style.css?raw';
+import { classRule as rulesFor } from '../test-support/css-rules';
 
 const GRID: BeatGrid = { bpm: 79.85, origin: 0 };
 const pulse = createBeatPulse(GRID, { division: 2, decay: 0.6 });
@@ -136,17 +136,6 @@ describe('書き込む値', () => {
 });
 
 describe('CSS との対応', () => {
-  // **コメントを落としてから走査する**（decor.test.ts と同じ手）。このリポジトリは
-  // コメントでクラス名やカスタムプロパティ名を書くので、素で見ると
-  // 「説明を 1 行足しただけで緑になる」
-  const css = styleCss.replace(/\/\*[\s\S]*?\*\//g, '');
-
-  function rulesFor(className: string): string[] {
-    const pattern = new RegExp(`([^{}]*\\.${className}(?![\\w-])[^{}]*)\\{([^}]*)\\}`, 'g');
-
-    return [...css.matchAll(pattern)].map(([, , body]) => body);
-  }
-
   it('光の膜のクラスが style.css にある', () => {
     // 打ち間違えても型検査も他の検査も通り、起きるのは「position: absolute が
     // 落ちて、通常フローの箱が図形のレイヤーに現れる」という気付きにくい壊れ方

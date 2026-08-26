@@ -2,7 +2,7 @@ import gsap from 'gsap';
 import { SplitText } from 'gsap/SplitText';
 import { loadLyricSheet, lyricSheetNameFromLocation } from './app/load-lyric-sheet';
 import { createBeatPulse, createFlashPulse, shiftBeatGrid } from './domain/beat';
-import { sliceSheet } from './domain/lyrics';
+import { createPolarityTrack, sliceSheet } from './domain/lyrics';
 import { mountLyricTimeline } from './app/lyric-timeline';
 import { Ticker } from './app/ticker';
 import { assetUrl } from './lib/asset';
@@ -16,6 +16,7 @@ import { GrainField } from './stage/grain-field';
 import { LyricStage } from './stage/lyric-stage';
 import { createLoudness, systemAudioContext } from './stage/loudness';
 import { ScaledCanvas, systemPixelRatio } from './stage/scaled-canvas';
+import { mountScenePolarity } from './stage/scene-polarity';
 import { mountScreenDecor } from './stage/screen-decor';
 import { mountTransport } from './stage/transport';
 import { mountTransportIdle } from './stage/transport-idle';
@@ -50,11 +51,16 @@ const prefersReducedMotion = systemReducedMotion();
 const lines = requiredElement('stage-lines');
 const stage = new LyricStage(lines, prefersReducedMotion);
 
+// 画を裏返す枠（M9-3a / Issue #57）。中身は index.html が持ち、ここは掴むだけ。
+// **画に属するものはすべてこの中**（背景・画面の図形・歌詞・再生コントロール・
+// クレジット）。外に出したものは裏返らず、暗くなった地の上に取り残される
+const scene = requiredElement('scene');
+
 // 画面に敷く図形（M8-3b / Issue #45）。分割線と四隅のマークは静的なので、
 // 敷いたら以降は触らない（動きが無いので prefersReducedMotion も要らない）。
-// body 直下に置くのは、.stage が「中の要素はすべて absolute である前提」で
-// 組まれているため（style.css）。返り値のレイヤーは M8-4 が光の膜を敷く先
-const screenDecor = mountScreenDecor(document.body);
+// .stage の中ではなく枠の直下に置くのは、あちらが「中の要素はすべて absolute で
+// ある前提」で組まれているため（style.css）。返り値のレイヤーは M8-4 が光の膜を敷く先
+const screenDecor = mountScreenDecor(scene);
 
 // ビート同期の衝撃（M8-4 / Issue #49）。**格子が「いつ」を、実音が「どれだけ」を決める。**
 // 格子は曲の先頭起点で測ってあるので、区間で切り出した時間軸へ起点を付け替える
@@ -149,7 +155,16 @@ Promise.all([loadLyricSheet(sheetName), loadDeclaredFonts(document.fonts)])
   .then(([sheet]) => {
     // 区間で切り出し、時刻を区間の先頭起点に付け替える。以降 domain は
     // 「作品の何秒目か」しか扱わない（WHOLE_SONG なら素通し）
-    mountLyricTimeline(player, ticker, sliceSheet(sheet, workWindow), stage);
+    const sliced = sliceSheet(sheet, workWindow);
+    mountLyricTimeline(player, ticker, sliced, stage);
+
+    // 画の明暗（M9-3a / Issue #57）。**変化点だけを抜いて一度だけ組み立てる** —
+    // 行の列を毎フレーム遡ると、極性を書いていない行が続くほど探索が伸びる。
+    // 歌詞と同じ時計（音の再生位置）で回すので、シークすれば極性も一緒に飛ぶ。
+    // 歌詞が読めなければ極性も切り替わらない（既定の paper のまま）が、
+    // それは「歌詞の無い画」として正しい姿
+    const polarity = mountScenePolarity(scene, createPolarityTrack(sliced));
+    ticker.subscribe(() => polarity.render(player.currentTime));
   })
   .catch((error: unknown) => {
     // 再生コントロール側のメッセージ欄とは別の場所に出す。

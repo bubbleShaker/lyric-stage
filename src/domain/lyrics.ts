@@ -24,6 +24,77 @@ export interface LyricLine {
   decor?: string[];
   /** 行に添える英字。M8-3c で足した。刻んだ行では使わない（`LyricPart.sub` を見よ） */
   sub?: string;
+  /**
+   * 画の明暗（M9-3a）。**この行から先ずっと続く。**
+   *
+   * `effect` / `place` / `decor` / `sub` と決定的に違うのは、これが**行の属性ではなく
+   * 状態**だということ。書いた行で切り替わり、次に書き換えられるまで戻らない。
+   * 行の属性（＝その行だけ反転）にすると次の行で必ず戻るので、**行間隔 2.25 秒の
+   * 明滅**になる。画として落ち着かないうえ、`MIN_POLARITY_INTERVAL` の話にも直結する。
+   *
+   * 読むのは `createPolarityTrack` / `polarityAt`。行が出ていない時刻（`NO_LINE`）でも
+   * 極性は決まるので、`activeLineIndexAt` とは別の経路になる。
+   */
+  polarity?: Polarity;
+}
+
+/**
+ * 画の明暗（M9-3a / Issue #57）。**名前は「地が何でできているか」。**
+ *
+ * `normal` / `invert` にすると、どちらが今の見えなのか名前から読めない
+ * （M8-2 で色を役割名で持たせたのと同じ判断 — 配色を変えた時に名前が嘘にならない形）。
+ *
+ * 語彙をここが持つのは `effect` / `place` / `decor` と違う点。あちらは
+ * 「どんな名前が実在するか」を `stage/` のレジストリが持ち、domain は形だけを見る。
+ * 極性は**実装が 2 状態しか取りえない**（画を裏返すか否か）ので、増える余地が無い。
+ */
+export const POLARITIES = ['paper', 'ink'] as const;
+
+export type Polarity = (typeof POLARITIES)[number];
+
+/** 何も書かなければこちら。M9-1 で決めた「退色した紙に黒い文字」がこの状態 */
+export const DEFAULT_POLARITY: Polarity = 'paper';
+
+/**
+ * 反転が切り替わる最短の間隔（秒）。
+ *
+ * **全画面の反転は相対輝度の変化が桁違い**で、WCAG 2.3.1 の general flash threshold
+ * （変化 0.1 以上）を軽く超える。閾値が適用されるのは「1 秒に 3 回以上」なので、
+ * 1 秒空ければ最大 1Hz に収まり、3 回に届かない。
+ *
+ * **`domain/beat.ts` の `MIN_FLASH_INTERVAL` とは守り方が違う。** あちらは
+ * `createFlashPulse` が下限を下回る値を返さない＝**細かく刻めない形**にしてあるが、
+ * 極性はデータで書くものなので、壁を置ける場所が入口（`parseLyricSheet`）しかない。
+ */
+export const MIN_POLARITY_INTERVAL = 1;
+
+/** 極性が切り替わる点。**切り替わらない行はここに現れない** */
+export interface PolarityChange {
+  readonly time: number;
+  readonly polarity: Polarity;
+}
+
+/**
+ * 極性の道筋。シートから一度だけ作り、毎フレーム読む。
+ *
+ * 行の列をそのまま毎フレーム遡ると、極性を書いていない行が続くほど探索が伸びる
+ * （`activeLineIndexAt` が二分探索にしてある理由と同じ問題を作り直すことになる）。
+ * 変化点だけを抜いておけば、読む側は二分探索で済む。**`BeatPulse` を一度組み立てて
+ * 毎フレーム `pulseAt` で読むのと同じ形。**
+ */
+export interface PolarityTrack {
+  /**
+   * 最初の変化点より前の極性。**「行の無い時刻」に状態を置ける唯一の場所。**
+   *
+   * 変化点は行に載るので、必ずどこかの行の時刻に立つ。**作品の頭には行が無い**
+   * （`WORK_WINDOW` は助走を 1 小節ぶん取ってあり、`lyric-sheets.test.ts` が
+   * 「いきなり歌から始まらない」を保証している）ので、`sliceSheet` が区間の外から
+   * 持ち越した極性を行へ載せると、**助走のあいだだけ既定の極性で始まって
+   * 最初の行で裏返る**。持ち越しはここに置く。
+   */
+  readonly initial: Polarity;
+  /** 切り替わる点（時刻の昇順） */
+  readonly changes: readonly PolarityChange[];
 }
 
 /**
@@ -117,6 +188,15 @@ export interface LyricSheet {
   title: string;
   /** time の昇順に整列済み */
   lines: LyricLine[];
+  /**
+   * シートが始まる時点の極性（M9-3a）。**書くのは `sliceSheet` だけ**で、JSON には
+   * 現れない（作者が書くのは行の `polarity`）。
+   *
+   * 区間で切り出すと、区間の外で立てた極性は行ごと落ちる。かといって生き残った
+   * 最初の行へ載せ替えると、**行が始まるまでの助走のあいだだけ既定の極性になる**。
+   * 状態は行より前から在りうるので、行とは別に持つ場所が要る。
+   */
+  polarity?: Polarity;
 }
 
 /** どの行も表示しない状態を表す番号 */
@@ -201,6 +281,17 @@ export function parseLyricSheet(data: unknown): LyricSheet {
   // 以降の判定は昇順であることを前提にするので、ここで必ず整列させる
   parsed.sort((a, b) => a.time - b.time);
 
+  // **明滅の安全はここが最後の砦**（M9-3a）。行ごとの検証では届かない —
+  // 極性は状態なので、速すぎるかどうかは「隣の行に何が書いてあるか」で決まる。
+  // 整列の後でなければ間隔そのものが意味を持たない
+  const rapid = findRapidPolarityFlip(createPolarityTrack({ title, lines: parsed }));
+  if (rapid !== null) {
+    throw new LyricSheetError(
+      `${rapid.time} 秒の polarity の切り替えが前の切り替えから ${MIN_POLARITY_INTERVAL} 秒以内です` +
+        '（全画面の反転は明滅なので、光過敏性発作を避けるため間隔を空けます）',
+    );
+  }
+
   return { title, lines: parsed };
 }
 
@@ -216,11 +307,11 @@ function parseLyricLine(value: unknown, index: number): LyricLine {
   // 画面には歌詞が出ているので、書いた本人にも原因が分からない
   rejectUnknownKeys(
     line,
-    ['time', 'text', 'effect', 'duration', 'place', 'parts', 'decor', 'sub'],
+    ['time', 'text', 'effect', 'duration', 'place', 'parts', 'decor', 'sub', 'polarity'],
     `lines[${index}]`,
   );
 
-  const { time, text, effect, duration, place, parts, decor, sub } = line;
+  const { time, text, effect, duration, place, parts, decor, sub, polarity } = line;
 
   if (typeof time !== 'number' || !Number.isFinite(time) || time < 0) {
     throw new LyricSheetError(`lines[${index}].time が 0 以上の数値ではありません`);
@@ -246,6 +337,16 @@ function parseLyricLine(value: unknown, index: number): LyricLine {
   if (parts !== undefined && sub !== undefined) {
     throw new LyricSheetError(`lines[${index}] は語句に刻まれているので、sub は語句の側に書きます`);
   }
+  // **語彙をここで見るのは `effect` / `place` / `decor` と違う点。** あちらは名前が
+  // 実在するかを `stage/` のレジストリに任せ（綴り間違いは lyric-sheets.test.ts が落とす）、
+  // domain は形だけを見る。極性は取りうる状態が 2 つしかなく増える余地が無いので、
+  // 語彙ごと domain が持つ。**刻んだ行でもここに書く** — 画を裏返すのは画面ぜんぶに
+  // 掛かる操作で、語句という単位に意味が無い（`parsePart` の許す項目に polarity は無い）
+  if (polarity !== undefined && !isPolarity(polarity)) {
+    throw new LyricSheetError(
+      `lines[${index}].polarity が ${POLARITIES.join(' / ')} のどれでもありません: ${JSON.stringify(polarity)}`,
+    );
+  }
 
   // ここで組み直すので、**知らない項目は黙って落ちる**。新しい項目を足したら
   // 必ずこの行にも足すこと（place は M8-1、parts は M8-5 で足した）
@@ -258,7 +359,13 @@ function parseLyricLine(value: unknown, index: number): LyricLine {
     ...(parts !== undefined ? { parts: parseParts(parts, `lines[${index}]`) } : {}),
     ...(decor !== undefined ? { decor: parseDecor(decor, `lines[${index}]`) } : {}),
     ...(sub !== undefined ? { sub: parseSub(sub, `lines[${index}]`) } : {}),
+    ...(polarity !== undefined ? { polarity } : {}),
   };
+}
+
+/** 極性の名前かどうか。列を唯一の出どころにするので、名前を足せば検証も付いてくる */
+function isPolarity(value: unknown): value is Polarity {
+  return POLARITIES.includes(value as Polarity);
 }
 
 /** 語句の列。空でないこと・時刻が 0 以上で昇順であることまで見る */
@@ -481,6 +588,74 @@ export function activeLineIndexAt(lines: readonly LyricLine[], time: number): nu
 }
 
 /**
+ * シートから極性の道筋を作る。**行は time の昇順に並んでいること。**
+ *
+ * **同じ極性を続けて書いても変化点にはならない。** 「切り替えた回数」を数えるのが
+ * `findRapidPolarityFlip` の役目なので、ここで実効の変化だけに絞っておかないと、
+ * 画は何も変わらないのに安全の検査だけが落ちる。**始まりの極性と同じことを書いた
+ * 最初の行も同じ**（`sliceSheet` が持ち越した極性を、その行がもう一度書いている形）。
+ */
+export function createPolarityTrack(sheet: LyricSheet): PolarityTrack {
+  const initial = sheet.polarity ?? DEFAULT_POLARITY;
+  const changes: PolarityChange[] = [];
+  let current = initial;
+
+  for (const line of sheet.lines) {
+    if (line.polarity === undefined || line.polarity === current) continue;
+    current = line.polarity;
+    changes.push({ time: line.time, polarity: current });
+  }
+
+  return { initial, changes };
+}
+
+/**
+ * その時刻の極性。最初の変化点より前は `track.initial`。
+ *
+ * **0 より前でも正しく回る。** `WindowedPlayback.currentTime` は 0 で下げ止まるので
+ * 本編では起こらないが、`effect-preview.html` は自前の時計で回すし、時刻を
+ * 受け取るだけの純粋関数がそこで破れるのは筋が悪い。
+ */
+export function polarityAt(track: PolarityTrack, time: number): Polarity {
+  const { changes } = track;
+  let low = 0;
+  let high = changes.length - 1;
+  let found = track.initial;
+
+  while (low <= high) {
+    const mid = (low + high) >> 1;
+    if (changes[mid].time <= time) {
+      found = changes[mid].polarity;
+      low = mid + 1;
+    } else {
+      high = mid - 1;
+    }
+  }
+
+  return found;
+}
+
+/**
+ * 間隔が `MIN_POLARITY_INTERVAL` に満たない切り替えを探す。無ければ null。
+ *
+ * **入口（`parseLyricSheet`）と作品の検査（`lyric-sheets.test.ts`）が同じこれを呼ぶ。**
+ * 分けて書くと片方だけが下限を持ったまま古くなる。
+ *
+ * 作品の側でも見るのは、**`sliceSheet` が間隔を縮めうる**ため。区間の頭を跨いで
+ * 始まっている行は時刻 0 に詰められるので、元は 1 秒離れていた切り替えが
+ * 切り出した後には 0.1 秒差になりうる。生のシートを通した検証だけでは届かない。
+ */
+export function findRapidPolarityFlip(track: PolarityTrack): PolarityChange | null {
+  const { changes } = track;
+
+  for (let i = 1; i < changes.length; i += 1) {
+    if (changes[i].time - changes[i - 1].time < MIN_POLARITY_INTERVAL) return changes[i];
+  }
+
+  return null;
+}
+
+/**
  * 浮動小数の埃を落とす（1ms の格子）。
  *
  * 区間の開始を引くと `179.78 - 176.77 = 3.0100000000000193` のような値になる。
@@ -511,6 +686,17 @@ function displayEnd(lines: readonly LyricLine[], index: number): number {
  */
 export function sliceSheet(sheet: LyricSheet, workWindow: WorkWindow): LyricSheet {
   const lines: LyricLine[] = [];
+
+  // **極性は状態なので、切り出すと区間の外で立てた分が失われる**（M9-3a）。
+  // 区間の頭での実効極性を控えて、切り出したシートの始まりの極性として持たせる。
+  // 放置すると「区間を広げただけで途中から画が裏返る」という、原因の分かりにくい
+  // ずれ方をする（時刻の付け替えと違って、失敗しても例外も検査の赤も出ない）。
+  //
+  // **行へ載せ替えるのでは足りない**（レビュー指摘 🔴）。区間の頭には行が無い
+  // （WORK_WINDOW は助走を 1 小節ぶん取ってある）ので、最初の行に載せると
+  // **助走のあいだだけ既定の極性で始まり、歌い出しで画が裏返る**。
+  // 同じ壊れ方が、規模を小さくして残るだけだった
+  const carried = polarityAt(createPolarityTrack(sheet), workWindow.start);
 
   sheet.lines.forEach((line, index) => {
     const end = displayEnd(sheet.lines, index);
@@ -546,5 +732,11 @@ export function sliceSheet(sheet: LyricSheet, workWindow: WorkWindow): LyricShee
     lines.push(copy);
   });
 
-  return { title: sheet.title, lines };
+  // 既定と同じなら項目ごと持たない。**`WHOLE_SONG`（素通し）で元のシートと
+  // 等しいものが返る**という性質を保つため（`sliceSheet` の説明を見よ）
+  return {
+    title: sheet.title,
+    lines,
+    ...(carried !== DEFAULT_POLARITY ? { polarity: carried } : {}),
+  };
 }
