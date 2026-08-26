@@ -67,7 +67,9 @@
       }
 
       .card {
-        border-top: 1px solid rgb(255 255 255 / 0.14);
+        /* 黒の透過（M9-1）。地が明るくなったので、白を薄く重ねても線が消える
+           — src/style.css の .transport と同じ理由 */
+        border-top: 1px solid rgb(0 0 0 / 0.14);
         padding: 2rem 0;
       }
 
@@ -102,7 +104,7 @@
         align-items: center;
         padding: 0.6rem 0.9rem;
         border-radius: 999px;
-        background: rgb(255 255 255 / 0.08);
+        background: rgb(0 0 0 / 0.06);
         backdrop-filter: blur(12px);
         font-family: system-ui, sans-serif;
         font-size: 0.8rem;

@@ -6,10 +6,12 @@ import { PALETTE, withAlpha } from './palette';
 import type { DrawSurface } from './scaled-canvas';
 
 /**
- * 文字PV 風の背景（M8-2 / Issue #41）。粒と光の 2 つだけで組む。
+ * 文字PV 風の背景（M8-2 / Issue #41）。粒と影の 2 つだけで組む。
  *
- * - **中心の光** — 画面の中央に淡い放射のグラデーションを置く。音が大きいほど
- *   広がって明るくなる（＝画が開く）。舞台の照明にあたるもの
+ * - **ビネット（周辺減光）** — 画面の縁を淡く沈ませる。音が大きいほど外へ退いて
+ *   薄くなる（＝画が開く）。**M9-1（Issue #53）まではこれが「中心の光」だった** —
+ *   明暗を反転させた地では、中央に灰の放射を置いても照明ではなく汚れに見えるので、
+ *   同じ「画が開く」を影の側から作り直した
  * - **フィルムグレイン** — 細かい粒を撒き、時刻を粗く刻んで別の粒に切り替える。
  *   映写機のちらつき
  *
@@ -47,7 +49,7 @@ const GRAIN_SETS = 4;
 /**
  * 1 組あたりの粒の数。**多いのは絵のためだけではない。**
  *
- * 中心の光は薄いグラデーションなので、canvas の 8bit 出力では階調が足りず
+ * ビネットは薄いグラデーションなので、canvas の 8bit 出力では階調が足りず
  * 同心円状の縞（バンディング）が出る。粒を密に撒くと境界がばらけて縞が消える
  * ＝ 粒がディザとして働く。420 個では疎すぎて縞が残った（実際に見て決めた）。
  *
@@ -80,8 +82,11 @@ const GRAIN_GAIN = 0.55;
  * 「同じコマなら描かない」の条件が常に false になり、12 コマ/秒のつもりが
  * 60 コマ/秒で 2600 個の粒を塗り直すことになる（レビュー指摘 🔴）。
  *
- * 32 段にしてあるのは、粒の濃さ（0.06〜0.34 の帯）でも光の半径（短辺の 36〜60%）でも
- * 1 段の差が目に見えないため。**控えと描画の両方でこの値を使う**こと —
+ * 32 段にしてあるのは、粒の濃さ（0.05〜0.26 の帯）でもビネット（濃さ 0.22〜0.12 /
+ * 素の地を残す範囲 34〜50%）でも 1 段の差が目に見えないため。**M9-1 で根拠の量が
+ * 変わった** — 反転前は「光の半径（短辺の 36〜60%）」を根拠にしていたが、
+ * 半径は音に反応しなくなり（`vignetteRadius`）、代わりに段が動く。
+ * **控えと描画の両方でこの値を使う**こと —
  * 片方だけ刻むと、控えは「同じ」と言っているのに絵が違う状態になる。
  */
 const INTENSITY_STEPS = 32;
@@ -92,23 +97,27 @@ export function quantizeIntensity(level: number): number {
 }
 
 /**
- * 中心の光の広がり（画面の短辺に対する割合）と、音でどれだけ広がるか。
+ * ビネットが素の地を残す範囲（外周の半径に対する割合）と、音でどれだけ後退するか。
  *
- * 短辺を基準にするのは、横長の画面でも縦長の画面でも光が画面に収まるようにするため。
- * 長辺だと縦長の画面で光が横にはみ出し、ただ全体が明るいだけの絵になる。
+ * **静かなときは狭く（画が締まる）、盛り上がると外へ引く（画が開く）。**
+ * 音との関係は反転前の光と同じ「盛り上がると画が開く」だが、開き方が逆向きに
+ * なっている — 光は広がることで開き、影は退くことで開く。
  */
-const GLOW_SPREAD = 0.36;
-const GLOW_SPREAD_GAIN = 0.24;
+const VIGNETTE_CLEAR = 0.34;
+const VIGNETTE_OPEN = 0.16;
 
 /**
- * 中心の光の濃さ。静かな場面でも消えはしない（地が真っ黒になると画が死ぬ）。
+ * 外周でのビネットの濃さと、音でどれだけ薄まるか。
  *
- * 光の色は `mute`。**`dim` では見えなかった**（`#16171c` は地の `#0a0a0c` との差が
- * 小さすぎて、不透明度をどう上げても「わずかに明るい黒」にしかならない）。
+ * **盛り上がっても消えはしない**（縁まで一様に明るいと画が締まらない）。
+ * 反転前の「静かでも光が消えない」と同じ趣旨で、守る端が逆になっただけ。
+ *
+ * 影の色は `mute`。**`dim` では見えなかった**（`#e6e1d7` は地の `#f3f0ea` との差が
+ * 小さすぎて、不透明度をどう上げても「わずかに沈んだ紙」にしかならない）。
  * `dim` はパレットの中で CSS 側の面・帯が使う段として残してある。
  */
-const GLOW_ALPHA = 0.1;
-const GLOW_ALPHA_GAIN = 0.13;
+const VIGNETTE_ALPHA = 0.22;
+const VIGNETTE_ALPHA_GAIN = 0.1;
 
 /**
  * 粒を組ごと作る。乱数を引数で受け取るので、この関数自体は純粋。
@@ -130,12 +139,17 @@ export function createGrainSets(
         y: random(),
         // 1〜2px。これ以上大きいと粒ではなく点に見える
         size: 1 + weight,
-        // 上限 0.22。粒の色は mute（#6b6d76）なので、地（#0a0a0c）にこの濃さで
-        // 乗せても文字（#f2f2f5）とは明度が一桁違い、競らない。
+        // 上限 0.17。粒の色は mute（#8b877e）なので、地（#f3f0ea）にこの濃さで
+        // 乗せても文字（#14120f）とは明度が一桁違い、競らない。
         // **ここを大きく上げると星空と同じ失敗をやり直す** — 画面全体に散った
-        // 細かい点が、極太 900 の文字と同じ明度帯に上がってくる（M8-2 の出発点）。
+        // 細かい点が、極太 900 の文字と同じ明度帯に降りてくる（M8-2 の出発点）。
+        //
+        // **M9-1（Issue #53）で 0.06 + 0.16 から下げた。** 明暗の反転で、粒は
+        // 「暗い地に載る明るい点」から「明るい地に載る暗い点」になった。同じ
+        // 不透明度でも後者の方が強く出る（明るい面の中の暗い点は、暗い面の中の
+        // 明るい点より目に付く）ので、そのまま反転すると紙ではなく汚れに見える。
         // 目で見て決めた値。これ以下だと粒があること自体が分からなくなる
-        alpha: 0.06 + weight * 0.16,
+        alpha: 0.05 + weight * 0.12,
       };
     }),
   );
@@ -171,27 +185,56 @@ export function grainAlpha(grain: Grain, intensity: number): number {
   return Math.min(1, grain.alpha * (1 + intensity * GRAIN_GAIN));
 }
 
-/** その盛り上がりにおける中心の光の半径（CSS ピクセル） */
-export function glowRadius(shortSide: number, intensity: number): number {
-  return shortSide * (GLOW_SPREAD + intensity * GLOW_SPREAD_GAIN);
+/**
+ * ビネットの外周の半径（CSS ピクセル）。**画面の対角の半分。**
+ *
+ * 短辺ではなく対角を基準にするのは、四隅まで届かせるため。短辺で切ると
+ * 半径の外——つまり四隅——がグラデーションの最後の色で塗り潰され、
+ * **角に色の段差（円の縁）が出る**。反転前の光は「画面に収まる」ことが要件
+ * だったので短辺基準だったが、ビネットは逆に「はみ出して四隅を覆う」ことが要件。
+ *
+ * 濃さの段は割合（`vignetteStops`）で決まるので、**音の強さはここには効かない。**
+ * 半径と段の両方を動かすと、同じ「開き」を 2 か所で作ることになる。
+ */
+export function vignetteRadius(width: number, height: number): number {
+  return Math.hypot(width, height) / 2;
 }
 
 /**
- * 中心の光の色の段。`addColorStop` にそのまま渡せる形で返す。
+ * ビネットの色の段。`addColorStop` にそのまま渡せる形で返す。
  *
- * 3 段に分けているのは、2 段（中心と外周）だと減衰が直線になり、光ではなく
- * 「円い面」に見えるため。中ほどを半分より暗くすると裾が伸びて空気に馴染む。
+ * 3 段に分けているのは、2 段（中心と外周）だと減衰が直線になり、影ではなく
+ * 「円い面」に見えるため。中ほどを半分より薄くすると裾が伸びて地に馴染む。
  *
- * 終点は透明ではなく**同じ色の不透明度 0**。`transparent` は `rgba(0, 0, 0, 0)` で、
- * 渡すと黒へ向かって補間される（`withAlpha` の説明を見よ）。
+ * **始点は透明ではなく「同じ色の不透明度 0」。** `transparent` は `rgba(0, 0, 0, 0)`
+ * で、渡すと黒へ向かって補間される（`withAlpha` の説明を見よ）。反転前は地が
+ * ほぼ黒だったので目では見分けられなかったが、**明るい地では画面の中央が
+ * はっきり濁る** — 反転して初めて画に出る類の間違いで、`grain-field.test.ts` が
+ * 先に検査として書き残していた。
  */
-export function glowStops(intensity: number): readonly (readonly [number, string])[] {
-  const alpha = Math.min(1, GLOW_ALPHA + intensity * GLOW_ALPHA_GAIN);
+export function vignetteStops(intensity: number): readonly (readonly [number, string])[] {
+  // **段の位置を音から決める以上、入口で 0〜1 に丸めるのが要る**（レビュー指摘 🟡）。
+  // `addColorStop` は 0〜1 の外の offset に `IndexSizeError` を投げるので、
+  // 強さが範囲の外に出ると背景が落ちるだけでなく、rAF の購読ごと巻き込む。
+  //
+  // 反転前は段の位置が定数（0 / 0.55 / 1）だったので、この依存は無かった。
+  // 今は `IntensityQuery` の戻り値がそのまま offset の一部になる ＝ **口の側の
+  // 約束（0〜1）に画の生死が乗っている**。`GrainField` は強さの出どころを注入で
+  // 受け取る作りなので、約束を守らせるのではなくここで畳む
+  // （`grainSetIndex` が負の時刻を 0 に畳んでいるのと同じ判断）。
+  //
+  // 丸めは濃さの側も守る — 上限を超えた強さでビネットが完全に消えると、
+  // 「盛り上がっても消えない」（VIGNETTE_ALPHA_GAIN の説明）が破れる。
+  const level = Math.min(1, Math.max(0, intensity));
+  const alpha = VIGNETTE_ALPHA - level * VIGNETTE_ALPHA_GAIN;
+  const clear = VIGNETTE_CLEAR + level * VIGNETTE_OPEN;
 
   return [
-    [0, withAlpha(PALETTE.mute, alpha)],
-    [0.55, withAlpha(PALETTE.mute, alpha * 0.45)],
-    [1, withAlpha(PALETTE.mute, 0)],
+    [clear, withAlpha(PALETTE.mute, 0)],
+    // 素の地が終わる所から外周までの中ほど。割合そのものではなく「残りの何割か」で
+    // 置くので、盛り上がって clear が外へ動いても裾の形（減衰の曲がり方）は保たれる
+    [clear + (1 - clear) * 0.55, withAlpha(PALETTE.mute, alpha * 0.35)],
+    [1, withAlpha(PALETTE.mute, alpha)],
   ];
 }
 
@@ -234,7 +277,7 @@ export class GrainField implements Backdrop {
 
     // 設定は毎フレーム読む。曲の途中で変えてもそのまま効く。
     // 動きを減らす時は組を 0 番に固定し、音での明滅も止める（明滅も「動き」）。
-    // **粒も光も消さない。** 動かない粒は粒のままで、背景ごと消すと作品が別物になる
+    // **粒もビネットも消さない。** 動かない粒は粒のままで、背景ごと消すと作品が別物になる
     const reduced = this.prefersReducedMotion();
     const setIndex = reduced ? 0 : grainSetIndex(time, this.grainSets.length);
     // 段に丸めてから控えに入れる。生の値は毎フレーム変わるので、
@@ -260,17 +303,17 @@ export class GrainField implements Backdrop {
     const { context, width, height } = this.surface;
     context.clearRect(0, 0, width, height);
 
-    this.drawGlow(intensity);
+    this.drawVignette(intensity);
     this.drawGrains(setIndex, intensity);
   }
 
-  private drawGlow(intensity: number): void {
+  private drawVignette(intensity: number): void {
     const { context, width, height } = this.surface;
-    const radius = glowRadius(Math.min(width, height), intensity);
+    const radius = vignetteRadius(width, height);
 
-    // 内側の円の半径を 0 にすると点光源から広がる形になる。
+    // 内側の円の半径を 0 にして、素の地を残す範囲は段の割合（vignetteStops）で決める。
     // 中心は画面の中央 — 構図（M8-1）は 9 つのアンカーに散るので、
-    // どれか 1 つに光を寄せると他の構図の行だけが沈む
+    // どれか 1 つに寄せると他の構図の行だけが沈む
     const gradient = context.createRadialGradient(
       width / 2,
       height / 2,
@@ -279,7 +322,7 @@ export class GrainField implements Backdrop {
       height / 2,
       radius,
     );
-    for (const [offset, color] of glowStops(intensity)) {
+    for (const [offset, color] of vignetteStops(intensity)) {
       gradient.addColorStop(offset, color);
     }
 
