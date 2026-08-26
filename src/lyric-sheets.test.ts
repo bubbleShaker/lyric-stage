@@ -4,7 +4,6 @@ import {
   findRapidPolarityFlip,
   parseLyricSheet,
   partsOf,
-  polarityAt,
   sliceSheet,
   type LyricLine,
 } from './domain/lyrics';
@@ -394,52 +393,17 @@ describe('WORK_WINDOW × 本編シート', () => {
     expect(last.time + span).toBeLessThanOrEqual(WORK_WINDOW.end - WORK_WINDOW.start);
   });
 
-  // 極性まわりはここにまとめる。`sliced` から道筋を 1 度だけ組み立てて共有する
-  const polarityTrack = createPolarityTrack(sliced);
-
   it('切り出した後も極性の切り替えが速すぎない（明滅の安全）', () => {
     // **`parseLyricSheet` の検証だけでは届かない**（M9-3a）。区間の頭を跨いで
     // 始まっている行は時刻 0 に詰められるので、**元は 1 秒離れていた切り替えが
     // 切り出した後には 0.1 秒差になりうる**。生のシートは通るのに、画面に出る側だけが
-    // 危ない形になる。全画面の反転は明滅なので、ここは目で確かめて済ませられない
-    expect(findRapidPolarityFlip(polarityTrack)).toBeNull();
-  });
-
-  it('作品のどこかで画の明暗が切り替わる', () => {
-    // 図形・英字と同じ穴（M9-3b）。シートから polarity を消しても**全テストが緑のまま**、
-    // 画は M9-2 のまま止まる（M9-3 そのものが静かに無効になる）。1 つも無い状態を落とす。
+    // 危ない形になる。全画面の反転は明滅なので、ここは目で確かめて済ませられない。
     //
-    // **`initial` ではなく `changes` を見る。** 持ち越し（`sliceSheet`）で始まりの極性が
-    // 立っているだけの状態は「切り替わっている」ではない — 区間の外に書いた指定が
-    // 区間の中では一度も動かない形になっていても、この検査を素通りしてしまう
-    expect(polarityTrack.changes.length).toBeGreaterThan(0);
-  });
-
-  it('山場は墨の側で出て、紙の側も作品として残っている', () => {
-    // **「どこかで切り替わる」だけでは置き場所が守られない**（レビュー指摘 🟡）。
-    // 極性を L1（3.01 秒）へ移して**ほぼ全編を反転**させても、上の検査は緑のままだった。
-    // **画だけが静かにずれて全テストが緑**という、この repo が一番嫌う形。
-    //
-    // 秒数そのものは固定しない（作品の判断なので動かせる方がよい）。固定するのは
-    // PLAN.md の理由づけに対応する 2 つの不変条件だけ。
-    //
-    // **これは L5 と L7 の区別まではしない**（変異注入で確認した — L7 へ移しても
-    // 下の 2 つは両方とも成り立つ）。M9-3b が L7 を採らなかったのは
-    // 「山場そのものが切り替えの音になり、歌詞が読まれる前に画の変化へ注意が行く」
-    // という**目で見た判断**で、機械には見分けられない。ここが守るのは、
-    // その判断を下せる範囲から外へ出ていないことまで
-    const length = WORK_WINDOW.end - WORK_WINDOW.start;
-    const last = sliced.lines[sliced.lines.length - 1];
-    const [firstChange] = polarityTrack.changes;
-
-    // ①「輝き出す」は光が闇から現れる語なので、最終行は墨の側に置く。
-    //   反転を最終行より後ろへ動かす／消すとここで落ちる
-    expect(polarityAt(polarityTrack, last.time)).toBe('ink');
-
-    // ②「退色した紙」は M9-1 で決めた作品の地。頭から裏返すと、その地が作品から消える。
-    //   四半分は残す（前半・後半という対比が成り立つ最低限）。
-    //   切り替えが 1 つも無い場合は上の検査が落ちるので、ここでは在ることを前提にせず畳む
-    expect(firstChange?.time ?? 0).toBeGreaterThan(length / 4);
+    // **今は本編に `polarity` を書いた行が 1 つも無いので自明に緑**（Issue #61 で
+    // 割り当てを取り消した）。それでも残すのは、これが明滅の安全のための番人で、
+    // 極性が戻ってきた日に効くため。**「どこかで切り替わる」を主張する検査の方は
+    // 落とした** — あれは割り当てが在ることを前提にしていて、今は主張自体が誤り
+    expect(findRapidPolarityFlip(createPolarityTrack(sliced))).toBeNull();
   });
 
   it('切り出しても全行に effect が残っている', () => {

@@ -64,7 +64,7 @@
   - [x] **M9-1** 配色を反転する（暗い地に白文字 → 退色した紙に黒文字）（[Issue #53](https://github.com/bubbleShaker/lyric-stage/issues/53)）。**値の差し替えで済まない 5 か所**を作り直した回
   - [x] **M9-2** 文字と地を刷り重ねる（`mix-blend-mode: multiply`）（[Issue #55](https://github.com/bubbleShaker/lyric-stage/issues/55)）。明るい地でこそ効く手なので、反転の後に置いた。**当て先は `.stage__lines` 一択**（下記）
   - [x] **M9-3a** 明暗の反転の仕組み（[Issue #57](https://github.com/bubbleShaker/lyric-stage/issues/57)）。**インクのにじみではなく反転を採った**（下記）。シートの `polarity` で画そのものが裏返る
-  - [x] **M9-3b** 本編シートへの割り当て（[Issue #59](https://github.com/bubbleShaker/lyric-stage/issues/59)）。**L5「I'll believe of my sensation」で裏返し、戻らない**（下記）
+  - [x] ~~**M9-3b** 本編シートへの割り当て（[Issue #59](https://github.com/bubbleShaker/lyric-stage/issues/59)）~~ → **[Issue #61](https://github.com/bubbleShaker/lyric-stage/issues/61) で取り消した。** 画を見て「反転は作品の狙いとずれていた」と判断した（下記）。**仕組み（M9-3a）は残してある**ので、割り当ては 1 行で戻せる
 - [ ] **M7** 仕上げ（レスポンシブ、OGP、README）。**M8 の後に回す**
 
 各マイルストーンごとに Issue → ブランチ → reviewer レビュー → PR → マージ。
@@ -532,7 +532,14 @@ M9-3a で決めたこと（設計の分岐点は [Issue #57](https://github.com/
 - **HTML の入れ子を数える検査は `lastIndexOf('</div>')` では書けない**（レビュー指摘 🔴）。枠の外へ出した要素が `div` だと、その要素自身の閉じタグが終端になって**外に出したものが中に入って見える**。`.transport` を外へ移す変異が実際に素通りしていた（`canvas` / `main` / `footer` が捕まっていたのは div ではないという偶然）
 - **この WSL でも headless Chrome の `--screenshot` は動く**（Windows 側の chrome.exe を使う場合）。M8-3a が「固まるので `getBoundingClientRect` で代用した」と書いたのは Linux 側の headless の話。`--screenshot=C:\...` と URL の両方を**絶対の Windows パスで**渡すこと（相対だと Windows 側の cwd に書かれて見失う）
 
-M9-3b で決めたこと（[Issue #59](https://github.com/bubbleShaker/lyric-stage/issues/59)）:
+**M9-3b は [Issue #61](https://github.com/bubbleShaker/lyric-stage/issues/61) で取り消した**（2026-08-26。以下は取り消し前の記録として残す）:
+- **画を見ての判断。** 後半 12 秒が墨のままなのが重い・切り替わる瞬間が唐突・反転側の画自体が好みでない、の 3 つに加えて、**そもそも期待していたのは反転ではなかった**。作者が思い描いていたのは「**語句に合わせてパッと装飾が出て、弾けて消える**」ポップな演出（色は差し色の朱）
+- **4 つ目が本質なので、量やタイミングの調整では埋まらなかった。** M9 は「明暗の反転」という主題を 3 段（配色の反転 → 刷り重ね → 動的な反転）で組み立てたが、**主題そのものが作品の狙いとずれていた**。M9-1 / M9-2（静的な反転と乗算）は残す — 退色した紙の地は気に入られている
+- **仕組み（M9-3a）は残す。** 消しても得るものが無く、戻したくなった時に 1 行で試せる状態の方が価値がある。ただし**本編に `polarity` を書いた行は 1 つも無い**ので、`filter: invert(1)` は今どこでも発火しない
+- 検査は「どこかで切り替わる」「山場は墨の側」を落とし、**明滅の安全の番人（`findRapidPolarityFlip`）だけ残した**。前者 2 つは割り当てが在ることを前提にしていて、今は主張そのものが誤りになる
+- **教訓: 主題を 3 段に分けて積む前に、1 段目で画を見てもらうべきだった。** M9-1（配色の反転）の時点で「これは違う」と分かる可能性があった。分けて刻むこと自体は正しいが、**刻みの単位ごとに作者の目を通す**なら、積み上げてから引き返す幅が小さくなる
+
+M9-3b で決めたこと（[Issue #59](https://github.com/bubbleShaker/lyric-stage/issues/59)。**取り消し済み**）:
 
 ```
   0    3     6     9    12    15    18    21       27
