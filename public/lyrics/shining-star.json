@@ -288,6 +288,7 @@
     {
       "time": 191.8,
       "text": "I'll believe of my sensation",
+      "polarity": "ink",
       "effect": "glitch",
       "place": { "at": "top-left", "size": "sm", "nudge": { "y": 0.06 }, "tilt": 2 },
       "parts": [
