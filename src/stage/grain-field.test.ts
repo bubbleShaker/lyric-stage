@@ -37,9 +37,12 @@ describe('createGrainSets', () => {
 
   it('粒は文字と競らない薄さに収まる', () => {
     // M8-2 の出発点そのもの。星空は 320 個の点が極太 900 の文字と同じ明度帯で
-    // 競っていた。ここを上げると同じ失敗をやり直すことになる
+    // 競っていた。ここを上げると同じ失敗をやり直すことになる。
+    // **網は M9-1 で 0.25 → 0.2 に締めた**（実装の上限は 0.17）。実装の側の
+    // コメントが「上限 0.17」と言い切っているのに網だけ遠いと、次に触る人が
+    // どこまで上げてよいかを読み違える
     for (const grain of createGrainSets(4, 200, seededRandom(7)).flat()) {
-      expect(grain.alpha).toBeLessThanOrEqual(0.25);
+      expect(grain.alpha).toBeLessThanOrEqual(0.2);
       expect(grain.alpha).toBeGreaterThan(0);
     }
   });
@@ -164,6 +167,22 @@ describe('vignetteStops', () => {
   it('盛り上がると素の地が外へ広がる', () => {
     // 濃さと範囲は別々に効く。片方だけ見ていると、もう片方の向きを間違えても緑になる
     expect(vignetteStops(1)[0][0]).toBeGreaterThan(vignetteStops(0)[0][0]);
+  });
+
+  it.each([-5, -0.001, 1.001, 5])('強さが %s でも段は 0〜1 に収まる', (intensity) => {
+    // addColorStop は 0〜1 の外の offset に IndexSizeError を投げる。背景が
+    // 落ちるだけでなく rAF の購読ごと巻き込むので、**口の側の約束（0〜1）に
+    // 画の生死を預けない**（grainSetIndex が負の時刻を畳んでいるのと同じ理由）
+    for (const [offset] of vignetteStops(intensity)) {
+      expect(offset).toBeGreaterThan(0);
+      expect(offset).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it('強さが上限を超えてもビネットは消えない', () => {
+    // 濃さの側の丸め。ここが効いていないと、大きな強さで縁が完全に無くなる
+    expect(edgeAlpha(5)).toBe(edgeAlpha(1));
+    expect(edgeAlpha(5)).toBeGreaterThan(0);
   });
 
   it('内から外へ向かって濃くなる（不透明度の順）', () => {

@@ -31,7 +31,9 @@ import type { ReducedMotionQuery } from '../lib/reduced-motion';
  * 拍だけが置いていかれる。毎フレーム `render(time)` に再生位置を渡す形にする。
  */
 
-/** 画面を覆う光の膜。`mountScreenDecor` のレイヤーの中に敷く */
+/** 画面を覆う拍の膜。`mountScreenDecor` のレイヤーの中に敷く。
+ *  **M9-1 で「光る」から「翳る」へ裏返った** — 膜は ink のままで、地の方が明るく
+ *  なったため。名前（flash）は明滅一般を指す語なので据え置く（`style.css` を見よ） */
 export const BEAT_FLASH_CLASS = 'screen-decor__flash';
 
 /**
@@ -99,14 +101,14 @@ export function shakeDirectionAt(pulse: BeatPulse, time: number): readonly [numb
 
 /** 叩く先。どちらも既に画面に居る要素で、ここでは作らない（フラッシュの膜だけ足す） */
 export interface BeatImpactTargets {
-  /** `mountScreenDecor` が返したレイヤー。この中に光の膜を敷く */
+  /** `mountScreenDecor` が返したレイヤー。この中に拍の膜を敷く */
   readonly layer: HTMLElement;
   /** 揺らす箱（`.stage__lines`）。**構図の枠を渡してはいけない** */
   readonly lines: HTMLElement;
 }
 
 export interface BeatImpactPulses {
-  /** 光る刻み。**下限を通した型しか受け取らない**（`domain/beat.ts`） */
+  /** 明滅する刻み。**下限を通した型しか受け取らない**（`domain/beat.ts`） */
   readonly flash: FlashPulse;
   /** 揺れる刻み。明滅ではないので下限は掛からない */
   readonly shake: BeatPulse;
@@ -119,7 +121,7 @@ export interface BeatImpact {
 
 /** その瞬間に書き込む値。段に刻んだ後の値なので、同じなら書かなくてよい */
 export interface ImpactValues {
-  /** 光の膜の強さ（0〜1） */
+  /** 拍の膜の強さ（0〜1） */
   readonly flash: number;
   /** 揺れの向きと大きさ（-1〜1） */
   readonly x: number;
@@ -149,7 +151,7 @@ export function impactValues(
 ): ImpactValues {
   // **畳み込みの門番はここ 1 か所。** 強さが 0 になれば瞬きも揺れも 0 になるので、
   // 打拍ごとの値の側で二度畳まない（二重にすると、どちらが本物の門番か読めなくなる）。
-  // **光の膜も揺れる箱も消さない** — #41 で粒と光を消さず時刻を 0 に畳んだのと同じ判断。
+  // **拍の膜も揺れる箱も消さない** — #41 で粒とビネットを消さず時刻を 0 に畳んだのと同じ判断。
   //
   // 盛り上がりを挟むのは、`IntensityQuery` の型（`() => number`）が 0〜1 を
   // 縛らないため（レビュー指摘 🟡）。`effect-preview.html` が渡すのは無加工の
@@ -178,7 +180,7 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 /**
- * 光の膜を敷き、毎フレームの書き込み口を返す。
+ * 拍の膜を敷き、毎フレームの書き込み口を返す。
  *
  * 設定の読み方も盛り上がりの強さも関数で受け取る（`GrainField` と同じ）。
  * **既定値は置かない** — 渡し忘れても画面は出てしまうので、既定があると

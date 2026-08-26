@@ -82,8 +82,11 @@ const GRAIN_GAIN = 0.55;
  * 「同じコマなら描かない」の条件が常に false になり、12 コマ/秒のつもりが
  * 60 コマ/秒で 2600 個の粒を塗り直すことになる（レビュー指摘 🔴）。
  *
- * 32 段にしてあるのは、粒の濃さ（0.06〜0.34 の帯）でも光の半径（短辺の 36〜60%）でも
- * 1 段の差が目に見えないため。**控えと描画の両方でこの値を使う**こと —
+ * 32 段にしてあるのは、粒の濃さ（0.05〜0.26 の帯）でもビネット（濃さ 0.22〜0.12 /
+ * 素の地を残す範囲 34〜50%）でも 1 段の差が目に見えないため。**M9-1 で根拠の量が
+ * 変わった** — 反転前は「光の半径（短辺の 36〜60%）」を根拠にしていたが、
+ * 半径は音に反応しなくなり（`vignetteRadius`）、代わりに段が動く。
+ * **控えと描画の両方でこの値を使う**こと —
  * 片方だけ刻むと、控えは「同じ」と言っているのに絵が違う状態になる。
  */
 const INTENSITY_STEPS = 32;
@@ -210,8 +213,21 @@ export function vignetteRadius(width: number, height: number): number {
  * 先に検査として書き残していた。
  */
 export function vignetteStops(intensity: number): readonly (readonly [number, string])[] {
-  const alpha = Math.max(0, VIGNETTE_ALPHA - intensity * VIGNETTE_ALPHA_GAIN);
-  const clear = Math.min(0.99, VIGNETTE_CLEAR + intensity * VIGNETTE_OPEN);
+  // **段の位置を音から決める以上、入口で 0〜1 に丸めるのが要る**（レビュー指摘 🟡）。
+  // `addColorStop` は 0〜1 の外の offset に `IndexSizeError` を投げるので、
+  // 強さが範囲の外に出ると背景が落ちるだけでなく、rAF の購読ごと巻き込む。
+  //
+  // 反転前は段の位置が定数（0 / 0.55 / 1）だったので、この依存は無かった。
+  // 今は `IntensityQuery` の戻り値がそのまま offset の一部になる ＝ **口の側の
+  // 約束（0〜1）に画の生死が乗っている**。`GrainField` は強さの出どころを注入で
+  // 受け取る作りなので、約束を守らせるのではなくここで畳む
+  // （`grainSetIndex` が負の時刻を 0 に畳んでいるのと同じ判断）。
+  //
+  // 丸めは濃さの側も守る — 上限を超えた強さでビネットが完全に消えると、
+  // 「盛り上がっても消えない」（VIGNETTE_ALPHA_GAIN の説明）が破れる。
+  const level = Math.min(1, Math.max(0, intensity));
+  const alpha = VIGNETTE_ALPHA - level * VIGNETTE_ALPHA_GAIN;
+  const clear = VIGNETTE_CLEAR + level * VIGNETTE_OPEN;
 
   return [
     [clear, withAlpha(PALETTE.mute, 0)],
@@ -261,7 +277,7 @@ export class GrainField implements Backdrop {
 
     // 設定は毎フレーム読む。曲の途中で変えてもそのまま効く。
     // 動きを減らす時は組を 0 番に固定し、音での明滅も止める（明滅も「動き」）。
-    // **粒も光も消さない。** 動かない粒は粒のままで、背景ごと消すと作品が別物になる
+    // **粒もビネットも消さない。** 動かない粒は粒のままで、背景ごと消すと作品が別物になる
     const reduced = this.prefersReducedMotion();
     const setIndex = reduced ? 0 : grainSetIndex(time, this.grainSets.length);
     // 段に丸めてから控えに入れる。生の値は毎フレーム変わるので、
