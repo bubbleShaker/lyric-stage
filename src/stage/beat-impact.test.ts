@@ -180,8 +180,14 @@ describe('CSS との対応', () => {
   it('明滅の明度差を掛ける係数が小さい', () => {
     // 速さの安全（3Hz）は domain/beat.ts が構造で守る。こちらは**係数の桁**だけを見る
     // （レビュー指摘 🟡。明るくする経路は係数だけではない — 塗りを差し色に変える、
-    // filter や mix-blend-mode を足す、はここを素通りする）。0.06 を 0.6 と
+    // filter や mix-blend-mode を足す、はここを素通りする）。0.035 を 0.35 と
     // 打ち間違えたときに落ちれば十分で、それ以上は画を見て決めること。
+    //
+    // **上限は M9-1（Issue #53）で 0.08 から 0.04 へ下げた。** 明るい地では
+    // 同じ係数でも相対輝度の変化が大きくなり、0.06 で WCAG 2.3.1 の閾値に届く
+    // （計算は style.css の .screen-decor__flash に書いた）。**地の明暗を
+    // また変えるなら、この上限も測り直すこと** — 検査の数字そのものが
+    // 「今の地の明るさ」に依存している。
     //
     // **数の並び順に依存しない。** calc の中は掛ける順を入れ替えても等価なので、
     // 宣言から数値をすべて拾って一番大きいものを見る
@@ -194,6 +200,6 @@ describe('CSS との対応', () => {
     const factors = [...opacities[0][1].matchAll(/[\d.]+/g)].map(([value]) => Number(value));
 
     expect(factors.length).toBeGreaterThan(0);
-    expect(Math.max(...factors)).toBeLessThanOrEqual(0.08);
+    expect(Math.max(...factors)).toBeLessThanOrEqual(0.04);
   });
 });

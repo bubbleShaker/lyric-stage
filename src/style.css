@@ -34,15 +34,18 @@
    書いた色は、パレットを差し替えてもそこだけ古いまま残るため。
    色を足したい時は palette.ts に足してからここへ写すこと（逆をやると検査が落ちる）。
 
-   モノトーン基調 + 差し色 1 色。極太 900 の白文字が画面のあちこちに飛ぶ構図
-   （M8-1 / M8-5）なので、背景は明度の段だけで組んで文字を立てる */
+   モノトーン基調 + 差し色 1 色。極太 900 の文字が画面のあちこちに飛ぶ構図
+   （M8-1 / M8-5）なので、背景は明度の段だけで組んで文字を立てる。
+
+   **M9-1（Issue #53）で明暗を反転した** — 退色した紙のような地に黒い文字。
+   反転で「値の差し替え」では済まなかった所は palette.ts の説明を見よ */
 :root {
-  --stage-bg: #0a0a0c;
-  --stage-dim: #16171c;
-  --stage-mute: #6b6d76;
-  --stage-ink: #f2f2f5;
-  --stage-accent: #ffd60a;
-  --stage-alert: #ff9c9c;
+  --stage-bg: #f3f0ea;
+  --stage-dim: #e6e1d7;
+  --stage-mute: #8b877e;
+  --stage-ink: #14120f;
+  --stage-accent: #c62f1c;
+  --stage-alert: #8c1d12;
 
   /* 歌詞に当てる書体。**UI には当てない**（守っているのは src/font-subset.test.ts）。
      サブセットに入れたのは歌詞の文字だけなので、UI に広げると「再生」「読み込み中」
@@ -65,7 +68,10 @@
      縦組みは行そのものが自分で置き換える（自分の要素への宣言は継承に必ず勝つ） */
   --size-base: clamp(1.5rem, 5.5vw, 3.6rem);
 
-  color-scheme: dark;
+  /* 地が明るくなったので light（M9-1）。**書き替え忘れると入力欄と
+     スクロールバーだけが暗いままになる** — 見た目の話に留まらず、
+     seek（input[type=range]）の溝の色がここで決まる */
+  color-scheme: light;
   font-family: 'Hiragino Kaku Gothic ProN', 'Yu Gothic', 'Noto Sans JP', system-ui, sans-serif;
 }
 
@@ -208,27 +214,36 @@ body {
   border-left-width: 2px;
 }
 
-/* 拍で瞬く光の膜（M8-4 / Issue #49。敷くのは src/stage/beat-impact.ts）。
+/* 拍で瞬く膜（M8-4 / Issue #49。敷くのは src/stage/beat-impact.ts）。
 
-   JS が書くのは --beat-flash（0〜1）だけで、**どれだけ明るくなるかはここが決める**
+   JS が書くのは --beat-flash（0〜1）だけで、**どれだけ変わるかはここが決める**
    （M8-3a の --decor-grow と同じ分担）。読み忘れると、拍は刻まれているのに
    画は静止したままになるので、beat-impact.test.ts がここで読んでいることを見張る。
 
-   **0.06 という係数がこの膜の要**。明滅は光過敏性発作の誘因になりうるので、
-   速さ（下限 0.4 秒 = 2.5Hz）は src/domain/beat.ts が構造で守り、**明度差は
-   ここで抑える**。地（--stage-bg）の上でこの薄さでも「叩かれた」ことは伝わる
-   （実測: #0a0a0c → #171719。相対輝度 0.31% → 0.96% で、WCAG 2.3.1 が
-   「明滅」と数える 10% の変化には届かない）。検査が見ているのは係数の桁だけなので、
-   **塗りや合成の仕方を変えるときは画を見て確かめること**。
+   色は ink のまま。**M9-1 で ink が黒になったので、この膜は「光る」から「翳る」へ
+   裏返った**（拍で画が一瞬沈む）。膜の側は 1 文字も変えずに意味だけが反転している
+   — 色を役割で持つと、こういう所は勝手に辻褄が合う。
+   レイヤーが流している currentColor（mute）ではなく ink を使うのは、拍の衝撃は
+   地との明暗差が大きいほど「叩かれた」と読めるため。
 
-   色はレイヤーが流している currentColor（mute）ではなく文字と同じ ink。
-   光は白い方が「光った」と読める（薄い灰だと画が濁るだけになる）。
+   **係数がこの膜の要。そして反転で安全側の条件が厳しくなった。** 明滅は光過敏性
+   発作の誘因になりうるので、速さ（下限 0.4 秒 = 2.5Hz）は src/domain/beat.ts が
+   構造で守り、**明度差はここで抑える**。WCAG 2.3.1 の general flash threshold は
+   「相対輝度の変化が 0.1 以上」かつ「暗い方の輝度が 0.80 未満」で適用される。
+   暗い地では地の輝度そのものが 0.003 だったので、何を被せても変化は小さく
+   0.06 で収まっていた。明るい地（0.886）では**同じ 0.06 が変化 0.116 になり、
+   暗い方も 0.77 で 0.80 を下回る＝両方の条件に当たる**。
+
+   0.035 なら変化 0.074・暗い方 0.812 で、2 つの条件のどちらからも外れる。
+   検査が見ているのは係数の桁だけなので、**塗りや合成の仕方を変えるときは
+   画を見て確かめること**（filter や mix-blend-mode はここを素通りする）。
+
    16 進で直に書くと src/stage/palette.test.ts が落とす */
 .screen-decor__flash {
   position: absolute;
   inset: 0;
   background: var(--stage-ink);
-  opacity: calc(var(--beat-flash, 0) * 0.06);
+  opacity: calc(var(--beat-flash, 0) * 0.035);
 }
 
 /* 構図の座標系を張る箱（M8-1）。
@@ -669,9 +684,17 @@ body {
   gap: 0.75rem;
   width: min(38rem, calc(100vw - 2rem));
   padding: 0.75rem 1rem;
-  border: 1px solid rgb(255 255 255 / 0.12);
+  /* ガラスの厚み。**パレットの色ではない**（下に敷いたものを透かすのが狙いで、
+     明度の段のどれとも対応しない）ので、palette.test.ts の「16 進は :root の中だけ」
+     からも外してある。
+
+     **M9-1 で白の透過から黒の透過へ裏返した。** 明るい地の上に白を薄く重ねても
+     何も起きず、ガラスが丸ごと消えていた（透過は「下を透かす」ぶん、地との明暗が
+     逆でないと厚みとして読めない）。この 1 か所だけは地が明るいか暗いかを
+     直に前提にしている */
+  border: 1px solid rgb(0 0 0 / 0.12);
   border-radius: 999px;
-  background: rgb(255 255 255 / 0.06);
+  background: rgb(0 0 0 / 0.05);
   backdrop-filter: blur(12px);
   transition: opacity 0.3s;
 }
@@ -711,9 +734,11 @@ body {
   cursor: pointer;
 }
 
+/* 押せない間は差し色を引っ込めて、地に沈んだ面にする。
+   ガラスと同じく黒の透過（M9-1。理由は .transport のコメント） */
 .transport__toggle:disabled {
-  background: rgb(255 255 255 / 0.2);
-  color: rgb(255 255 255 / 0.5);
+  background: rgb(0 0 0 / 0.12);
+  color: rgb(0 0 0 / 0.4);
   cursor: not-allowed;
 }
 

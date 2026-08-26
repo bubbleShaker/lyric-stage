@@ -2,12 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { seededRandom } from '../lib/random';
 import {
   createGrainSets,
-  glowRadius,
-  glowStops,
   grainAlpha,
   grainSetIndex,
   GrainField,
   quantizeIntensity,
+  vignetteRadius,
+  vignetteStops,
   type Grain,
 } from './grain-field';
 import { PALETTE } from './palette';
@@ -119,47 +119,57 @@ describe('grainAlpha', () => {
   });
 });
 
-describe('glowRadius', () => {
-  it('短辺に対する割合で決まる（縦長の画面でもはみ出さない）', () => {
-    expect(glowRadius(600, 0)).toBeLessThan(600);
+describe('vignetteRadius', () => {
+  it('四隅まで届く（角に円の縁が出ない）', () => {
+    // 短辺で切ると半径の外＝四隅が最後の色で塗り潰され、角に段差が出る。
+    // 対角の半分なら、中央から一番遠い点（＝角）にちょうど届く
+    const [width, height] = [1920, 600];
+
+    expect(vignetteRadius(width, height)).toBeCloseTo(Math.hypot(width / 2, height / 2));
   });
 
-  it('盛り上がると広がる', () => {
-    expect(glowRadius(600, 1)).toBeGreaterThan(glowRadius(600, 0));
+  it('画面の向きに依らない', () => {
+    expect(vignetteRadius(1920, 600)).toBeCloseTo(vignetteRadius(600, 1920));
   });
 });
 
-describe('glowStops', () => {
-  it('中心から外へ向かって薄くなる', () => {
-    const stops = glowStops(0.5);
+describe('vignetteStops', () => {
+  it('内から外へ向かって進む', () => {
+    const stops = vignetteStops(0.5);
     const offsets = stops.map(([offset]) => offset);
 
     expect(offsets).toEqual([...offsets].sort((a, b) => a - b));
-    expect(offsets[0]).toBe(0);
+    // 中心の側には素の地を残す（0 から始めると画面全体が沈む）
+    expect(offsets[0]).toBeGreaterThan(0);
     expect(offsets.at(-1)).toBe(1);
   });
 
-  it('外周は「透明」ではなく同じ色の不透明度 0', () => {
+  it('内側は「透明」ではなく同じ色の不透明度 0', () => {
     // transparent は rgba(0, 0, 0, 0) なので、渡すと黒へ向かって補間される。
-    // 地（#0a0a0c）がほぼ黒なので目では見分けにくいが、明るい地にした途端に
-    // 光の裾が黒く濁る
-    expect(glowStops(0.5).at(-1)?.[1]).toBe(`${PALETTE.mute}00`);
+    // **明るい地では画面の中央がはっきり濁る**（反転前は地がほぼ黒だったので
+    // 目では見分けられなかった。M9-1 でこの検査が効いた）
+    expect(vignetteStops(0.5)[0][1]).toBe(`${PALETTE.mute}00`);
   });
 
-  it('静かでも消えない（地が真っ黒になると画が死ぬ）', () => {
-    expect(centerAlpha(0)).toBeGreaterThan(0);
+  it('盛り上がっても消えない（縁まで一様だと画が締まらない）', () => {
+    expect(edgeAlpha(1)).toBeGreaterThan(0);
   });
 
-  it('盛り上がると濃くなる', () => {
-    // 「違う値になる」だけを見ると向きを検査していないので、GLOW_ALPHA_GAIN を
-    // 負にしても通ってしまう（＝音が大きいほど暗くなっても緑）
-    expect(centerAlpha(1)).toBeGreaterThan(centerAlpha(0));
+  it('盛り上がると薄くなる（＝画が開く）', () => {
+    // 「違う値になる」だけを見ると向きを検査していないので、VIGNETTE_ALPHA_GAIN を
+    // 負にしても通ってしまう（＝音が大きいほど画が閉じても緑）
+    expect(edgeAlpha(1)).toBeLessThan(edgeAlpha(0));
   });
 
-  it('中心から外へ向かって薄くなる（不透明度の順）', () => {
-    const alphas = glowStops(0.5).map(([, color]) => alphaOf(color));
+  it('盛り上がると素の地が外へ広がる', () => {
+    // 濃さと範囲は別々に効く。片方だけ見ていると、もう片方の向きを間違えても緑になる
+    expect(vignetteStops(1)[0][0]).toBeGreaterThan(vignetteStops(0)[0][0]);
+  });
 
-    expect(alphas).toEqual([...alphas].sort((a, b) => b - a));
+  it('内から外へ向かって濃くなる（不透明度の順）', () => {
+    const alphas = vignetteStops(0.5).map(([, color]) => alphaOf(color));
+
+    expect(alphas).toEqual([...alphas].sort((a, b) => a - b));
   });
 });
 
@@ -168,8 +178,10 @@ function alphaOf(color: string): number {
   return Number.parseInt(color.slice(-2), 16);
 }
 
-function centerAlpha(intensity: number): number {
-  return alphaOf(glowStops(intensity)[0][1]);
+function edgeAlpha(intensity: number): number {
+  const stops = vignetteStops(intensity);
+
+  return alphaOf(stops[stops.length - 1][1]);
 }
 
 /**
@@ -193,19 +205,19 @@ class FakeContext {
   clears = 0;
   readonly grains: { x: number; y: number; size: number; alpha: number; color: unknown }[] = [];
   gradient: FakeGradient | null = null;
-  /** 光の外側の半径。渡し方（短辺か長辺か）を検査するために控える */
-  glowRadius: number | null = null;
+  /** ビネットの外側の半径。渡し方（対角か短辺か）を検査するために控える */
+  vignetteRadius: number | null = null;
 
   clearRect(): void {
     this.clears += 1;
     this.grains.length = 0;
     this.gradient = null;
-    this.glowRadius = null;
+    this.vignetteRadius = null;
   }
 
-  // 引数を捨てると「短辺を渡している」ことを誰も見なくなる（レビュー指摘 🟡）。
-  // glowRadius 単体の検査は短辺を渡す前提で書かれているので、呼ぶ側が
-  // Math.max に変わっても気付けない
+  // 引数を捨てると「画面の大きさを渡している」ことを誰も見なくなる（レビュー指摘 🟡）。
+  // vignetteRadius 単体の検査は幅と高さを直に受ける前提で書かれているので、
+  // 呼ぶ側が短辺だけを渡す形に変わっても気付けない
   createRadialGradient(
     _x0: number,
     _y0: number,
@@ -216,12 +228,12 @@ class FakeContext {
   ): FakeGradient {
     const gradient = new FakeGradient();
     this.gradient = gradient;
-    this.glowRadius = r1;
+    this.vignetteRadius = r1;
     return gradient;
   }
 
   fillRect(x: number, y: number, width: number): void {
-    // 光は「グラデーションで画面全体を塗る」1 回、粒は「色で小さく塗る」多数。
+    // ビネットは「グラデーションで画面全体を塗る」1 回、粒は「色で小さく塗る」多数。
     // 塗り色がグラデーションかどうかで見分ける
     if (this.fillStyle instanceof FakeGradient) return;
     // 色まで控える。記録しないと、粒を文字と同じ白で塗っても全検査が緑になる
@@ -272,7 +284,7 @@ describe('GrainField', () => {
     expect(surface.fake.clears).toBe(1);
   });
 
-  it('粒と光の両方を描く', () => {
+  it('粒とビネットの両方を描く', () => {
     const surface = new FakeSurface();
     new GrainField(surface, () => false, () => 0).render(0);
 
@@ -291,14 +303,14 @@ describe('GrainField', () => {
     );
   });
 
-  it('光の半径は画面の短辺から決める', () => {
-    // 呼ぶ側が Math.max に変わると、縦長の画面で光が横にはみ出して
-    // 「ただ全体が明るいだけ」の絵になる。glowRadius 単体の検査は
-    // 短辺を渡す前提なので、配線はここでしか見ていない
+  it('ビネットの半径は画面の対角から決める', () => {
+    // 呼ぶ側が短辺を渡す形に変わると、横長の画面で四隅がグラデーションの
+    // 最後の色に塗り潰され、角に円の縁が出る。vignetteRadius 単体の検査は
+    // 幅と高さを直に受ける前提なので、配線はここでしか見ていない
     const surface = new FakeSurface(1920, 600);
     new GrainField(surface, () => false, () => 0.5).render(0);
 
-    expect(surface.fake.glowRadius).toBeCloseTo(glowRadius(600, 0.5));
+    expect(surface.fake.vignetteRadius).toBeCloseTo(vignetteRadius(1920, 600));
   });
 
   it('コマが変われば別の粒に切り替わる', () => {
@@ -404,7 +416,7 @@ describe('GrainField', () => {
     expect(surface.fake.clears).toBe(1);
   });
 
-  it('盛り上がると粒は濃くなり、光は広がる（粒の位置は動かない）', () => {
+  it('盛り上がると粒は濃くなり、ビネットは退く（粒の位置は動かない）', () => {
     const quiet = new FakeSurface();
     new GrainField(quiet, () => false, () => 0).render(5);
 
@@ -417,8 +429,13 @@ describe('GrainField', () => {
       expect(excited.x).toBe(grain.x);
       expect(excited.y).toBe(grain.y);
     });
-    // 題名どおり半径も見る。色の差だけを見ていると「広がる」を誰も検査していない
-    expect(loud.fake.glowRadius).toBeGreaterThan(quiet.fake.glowRadius ?? 0);
+    // 題名どおりビネットも見る。粒の差だけを見ていると「退く」を誰も検査していない。
+    // **半径は音で動かないので、見るのは段の側**（素の地を残す範囲が外へ動くこと）。
+    // 半径を見たままにすると、音との関係が段へ移ったことに気付かず緑のままになる
+    expect(loud.fake.vignetteRadius).toBeCloseTo(quiet.fake.vignetteRadius ?? 0);
+    expect(loud.fake.gradient?.stops[0][0]).toBeGreaterThan(
+      quiet.fake.gradient?.stops[0][0] ?? 1,
+    );
   });
 
   it('強さが変われば、同じコマでも描き直す', () => {
