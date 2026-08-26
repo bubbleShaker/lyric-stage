@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DECOR_BASE_CLASS, DECOR_LAYOUT_CLASS, decors, isDecorName, resolveDecor } from './decor';
 // Vite の ?raw で CSS を文字列として読む（composition.test.ts と同じ手）
 import styleCss from '../style.css?raw';
+import { classRule as rulesFor } from '../test-support/css-rules';
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -162,10 +163,4 @@ describe('CSS との対応', () => {
     expect(written).toBe(true);
   });
 
-  /** そのクラスを含むセレクタの規則の中身を集める */
-  function rulesFor(className: string): string[] {
-    const pattern = new RegExp(`([^{}]*\\.${className}(?![\\w-])[^{}]*)\\{([^}]*)\\}`, 'g');
-
-    return [...css.matchAll(pattern)].map(([, , body]) => body);
-  }
 });

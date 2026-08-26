@@ -22,15 +22,21 @@
     -->
     <!-- 背景（M8-2 / Issue #41）。**歌詞と一緒に見えないと密度を判断できない**ので、
          このページにも出す。本編と違って音が無いので、強さは window.loud で手で動かす -->
-    <canvas class="backdrop" id="backdrop" aria-hidden="true"></canvas>
-    <main class="stage">
-      <!-- 語句の枠はここに LyricStage が立てる。中身は触らない -->
-      <div class="stage__lines" id="stage-lines"></div>
-    </main>
+    <!-- 画を裏返す枠（M9-3a / Issue #57）。本編と同じく中身をすべて包む。
+         このページには歌詞シートが無いので、極性はコンソールから手で切り替える
+         （下の window.polarity を見よ） -->
+    <div class="scene" id="scene">
+      <canvas class="backdrop" id="backdrop" aria-hidden="true"></canvas>
+      <main class="stage">
+        <!-- 語句の枠はここに LyricStage が立てる。中身は触らない -->
+        <div class="stage__lines" id="stage-lines"></div>
+      </main>
+    </div>
     <script type="module">
       import gsap from 'gsap';
       import { SplitText } from 'gsap/SplitText';
       import { createBeatPulse, createFlashPulse } from './src/domain/beat.ts';
+      import { POLARITIES } from './src/domain/lyrics.ts';
       import { neverReduceMotion } from './src/lib/reduced-motion.ts';
       import { mountBeatImpact } from './src/stage/beat-impact.ts';
       import { ANCHOR_CLASS, SIZE_CLASS } from './src/stage/composition.ts';
@@ -48,7 +54,8 @@
 
       // 画面に敷く図形（M8-3b / Issue #45）。背景（#41）と同じ理由でこのページにも出す
       // — 分割線と四隅の中に語句が置かれた画を見ないと、構図も図形の濃さも決められない
-      const screenDecor = mountScreenDecor(document.body);
+      const scene = document.getElementById('scene');
+      const screenDecor = mountScreenDecor(scene);
 
       // ビート同期の衝撃（M8-4 / Issue #49）。背景・図形と同じ理由でこのページにも出す
       // — 画が拍で叩かれている中に語句が置かれないと、演出の動きが足りているか判断できない。
@@ -148,6 +155,22 @@
       window.stage = stage;
       window.gsap = gsap;
 
+      // 極性（M9-3a / Issue #57）。本編はシートの polarity が決めるが、このページには
+      // シートが無いので手で切り替える。**構図も図形も両極で見比べる必要がある** —
+      // 反転はコントラスト比を保つ（実測は src/style.css）が、線の細さや粒の密度が
+      // どう見えるかは画を見ないと分からない。
+      // 明滅の下限（domain の MIN_POLARITY_INTERVAL）はシートの入口で掛かるものなので、
+      // 手で叩くこの口には掛からない。連打しないこと
+      window.polarity = (value = scene.dataset.polarity === 'ink' ? 'paper' : 'ink') => {
+        // 名前を確かめる（レビュー指摘 🟡）。綴りを間違えると未知の属性値が入り、
+        // **画は paper のまま黙って効かない**（本編は parseLyricSheet が落とす）
+        if (!POLARITIES.includes(value)) {
+          throw new RangeError(`極性は ${POLARITIES.join(' / ')} のどれかです: ${value}`);
+        }
+        scene.dataset.polarity = value;
+        return value;
+      };
+
       console.info(
         [
           `play('文字', '演出名', 構図) / playParts([{ text, at, effect, place, decor, sub }, ...]) で試せます。`,
@@ -157,6 +180,7 @@
           `decor（語句に貼り付く図形。playParts でのみ指定）: ${Object.keys(decors).join(' / ')}`,
           `sub（語句に添える英字。playParts でのみ指定。例 sub: 'LIKE MAGIC'）`,
           `背景の盛り上がりと拍の衝撃は window.loud = 0〜1 で動かせます。`,
+          `画の明暗は polarity() で裏返せます（polarity('ink') / polarity('paper')）。`,
         ].join('\n'),
       );
     </script>

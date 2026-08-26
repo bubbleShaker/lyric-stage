@@ -1,9 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
   activeLineIndexAt,
+  createPolarityTrack,
+  DEFAULT_POLARITY,
+  findRapidPolarityFlip,
+  MIN_POLARITY_INTERVAL,
   NO_LINE,
   parseLyricSheet,
   partsOf,
+  polarityAt,
   sliceSheet,
   type LyricLine,
   type LyricSheet,
@@ -558,5 +563,289 @@ describe('sliceSheet（曲を丸ごと扱う WHOLE_SONG）', () => {
 
   it('何も変えずに返す', () => {
     expect(sliceSheet(sheet, WHOLE_SONG)).toEqual(sheet);
+  });
+});
+
+describe('極性（polarity）の変化点', () => {
+  it('何も書かなければ変化点は無く、どの時刻も既定の極性', () => {
+    const track = createPolarityTrack({ title: 't', lines: [
+      { time: 0, text: 'A' },
+      { time: 5, text: 'B' },
+    ] });
+
+    expect(track.changes).toEqual([]);
+    expect(track.initial).toBe(DEFAULT_POLARITY);
+    expect(polarityAt(track, 7)).toBe(DEFAULT_POLARITY);
+  });
+
+  it('書いた行から先が続く（次の行で戻らない）', () => {
+    const track = createPolarityTrack({ title: 't', lines: [
+      { time: 0, text: 'A' },
+      { time: 5, text: 'B', polarity: 'ink' },
+      { time: 10, text: 'C' },
+      { time: 15, text: 'D' },
+    ] });
+
+    expect(polarityAt(track, 4.9)).toBe('paper');
+    expect(polarityAt(track, 5)).toBe('ink');
+    // **ここが行の属性との分かれ目。** 行が変わっても戻らない
+    expect(polarityAt(track, 20)).toBe('ink');
+  });
+
+  it('同じ極性を続けて書いても変化点にならない', () => {
+    // 画は何も変わらないので、数えると安全の検査（findRapidPolarityFlip）だけが
+    // 落ちることになる
+    const track = createPolarityTrack({ title: 't', lines: [
+      { time: 0, text: 'A', polarity: 'ink' },
+      { time: 0.2, text: 'B', polarity: 'ink' },
+      { time: 0.4, text: 'C', polarity: 'ink' },
+    ] });
+
+    expect(track.changes).toEqual([{ time: 0, polarity: 'ink' }]);
+    expect(findRapidPolarityFlip(track)).toBeNull();
+  });
+
+  it('行が出ていない時刻でも極性は決まる', () => {
+    // duration で切れた「間」。activeLineIndexAt は NO_LINE を返すが、
+    // 画そのものは在るので極性は要る
+    const lines: LyricLine[] = [{ time: 0, text: 'A', duration: 1, polarity: 'ink' }];
+
+    expect(activeLineIndexAt(lines, 3)).toBe(NO_LINE);
+    expect(polarityAt(createPolarityTrack({ title: 't', lines }), 3)).toBe('ink');
+  });
+
+  it('0 より前でも落ちない', () => {
+    // **本編では起こらない**（WindowedPlayback.currentTime は 0 で下げ止まる。
+    // レビュー指摘 🟡 で、「区間の手前で負を返す」という既存の思い込みが
+    // 誤りだと分かった）。effect-preview.html は自前の時計で回すし、
+    // 時刻を受け取るだけの純粋関数がそこで破れるのは筋が悪いので防御として残す
+    const track = createPolarityTrack({ title: 't', lines: [{ time: 0, text: 'A', polarity: 'ink' }] });
+
+    expect(polarityAt(track, -3)).toBe(DEFAULT_POLARITY);
+  });
+
+  it('始まりの極性は最初の変化点より前のすべての時刻に効く', () => {
+    // **行の無い時刻に状態を置ける唯一の場所**（レビュー指摘 🔴）。
+    // sliceSheet の持ち越しがここに載る
+    const track = createPolarityTrack({
+      title: 't',
+      polarity: 'ink',
+      lines: [{ time: 5, text: 'A', polarity: 'paper' }],
+    });
+
+    expect(polarityAt(track, 0)).toBe('ink');
+    expect(polarityAt(track, 4.9)).toBe('ink');
+    expect(polarityAt(track, 5)).toBe('paper');
+  });
+
+  it('始まりと同じ極性を書いた行は変化点にならない', () => {
+    const track = createPolarityTrack({
+      title: 't',
+      polarity: 'ink',
+      lines: [{ time: 5, text: 'A', polarity: 'ink' }],
+    });
+
+    expect(track.changes).toEqual([]);
+  });
+
+  it('何度でも往復できる', () => {
+    const track = createPolarityTrack({ title: 't', lines: [
+      { time: 0, text: 'A', polarity: 'ink' },
+      { time: 5, text: 'B', polarity: 'paper' },
+      { time: 10, text: 'C', polarity: 'ink' },
+    ] });
+
+    expect(track.changes.map((change) => change.polarity)).toEqual(['ink', 'paper', 'ink']);
+    expect(polarityAt(track, 12)).toBe('ink');
+  });
+});
+
+describe('極性の切り替えの間隔（明滅の安全）', () => {
+  it('下限を下回る切り替えを見つける', () => {
+    const track = createPolarityTrack({ title: 't', lines: [
+      { time: 0, text: 'A', polarity: 'ink' },
+      { time: 0.5, text: 'B', polarity: 'paper' },
+    ] });
+
+    expect(findRapidPolarityFlip(track)).toEqual({ time: 0.5, polarity: 'paper' });
+  });
+
+  it('ちょうど下限なら通す', () => {
+    const track = createPolarityTrack({ title: 't', lines: [
+      { time: 0, text: 'A', polarity: 'ink' },
+      { time: MIN_POLARITY_INTERVAL, text: 'B', polarity: 'paper' },
+    ] });
+
+    expect(findRapidPolarityFlip(track)).toBeNull();
+  });
+
+  it('最初の切り替えには間隔が掛からない（既定からの立ち上がり）', () => {
+    const track = createPolarityTrack({ title: 't', lines: [{ time: 0.1, text: 'A', polarity: 'ink' }] });
+
+    expect(findRapidPolarityFlip(track)).toBeNull();
+  });
+
+  it('切り出しても間隔は縮まない', () => {
+    // **かつては縮みえた**（レビュー指摘 🟡）。区間の頭を跨いで始まる行は時刻 0 へ
+    // 詰められるので、極性を行に載せていた頃は「元は 1.1 秒差 → 切り出すと 0.6 秒差」に
+    // なった。今は**区間の頭より前で立った極性がシートの `initial` に畳まれる**ので、
+    // 詰められた行は変化点にならない（＝ 詰めで縮む相手が居ない）。
+    //
+    // 区間の中に居る行どうしは一様に同じ秒数だけ前へ動くので間隔が変わらず、
+    // 頭を跨ぐ行はどの並びでも高々 1 つ。**この 2 つで縮む経路が尽きている**
+    const sheet: LyricSheet = {
+      title: 't',
+      lines: [
+        { time: 9.5, text: 'A', polarity: 'ink' },
+        { time: 10.6, text: 'B', polarity: 'paper' },
+      ],
+    };
+    // 生のシートは通る（1.1 秒差）
+    expect(findRapidPolarityFlip(createPolarityTrack(sheet))).toBeNull();
+
+    const sliced = sliceSheet(sheet, { start: 10, end: 20 });
+    expect(sliced.polarity).toBe('ink');
+    expect(createPolarityTrack(sliced).changes).toEqual([{ time: 0.6, polarity: 'paper' }]);
+    expect(findRapidPolarityFlip(createPolarityTrack(sliced))).toBeNull();
+  });
+
+  it('parseLyricSheet が速すぎる切り替えを落とす', () => {
+    expect(() =>
+      parseLyricSheet({
+        title: 't',
+        lines: [
+          { time: 0, text: 'A', polarity: 'ink' },
+          { time: 0.3, text: 'B', polarity: 'paper' },
+        ],
+      }),
+    ).toThrow(/polarity/);
+  });
+
+  it('整列の後で数える（書いた順が時刻の順とは限らない）', () => {
+    // 行の順を入れ替えて書いても、間隔は整列した後の時刻で決まる
+    expect(() =>
+      parseLyricSheet({
+        title: 't',
+        lines: [
+          { time: 0.3, text: 'B', polarity: 'paper' },
+          { time: 0, text: 'A', polarity: 'ink' },
+        ],
+      }),
+    ).toThrow(/polarity/);
+  });
+});
+
+describe('parseLyricSheet（極性 = polarity）', () => {
+  function parseLine(line: Record<string, unknown>): LyricLine {
+    return parseLyricSheet({ title: 't', lines: [line] }).lines[0];
+  }
+
+  it('極性を読み取る', () => {
+    expect(parseLine({ time: 0, text: 'A', polarity: 'ink' }).polarity).toBe('ink');
+  });
+
+  it('書かなければ項目ごと持たない', () => {
+    expect(parseLine({ time: 0, text: 'A' })).toEqual({ time: 0, text: 'A' });
+  });
+
+  it('知らない名前を落とす', () => {
+    expect(() => parseLine({ time: 0, text: 'A', polarity: 'invert' })).toThrow(/polarity/);
+  });
+
+  it('文字列でない値を落とす', () => {
+    expect(() => parseLine({ time: 0, text: 'A', polarity: true })).toThrow(/polarity/);
+  });
+
+  it('語句の側には書けない（画を裏返すのは画面ぜんぶに掛かる操作）', () => {
+    expect(() =>
+      parseLine({
+        time: 0,
+        text: 'A',
+        parts: [{ text: 'あ', at: 0, polarity: 'ink' }],
+      }),
+    ).toThrow(/知らない項目/);
+  });
+});
+
+describe('sliceSheet（極性の持ち越し）', () => {
+  const window = { start: 10, end: 20 };
+
+  it('区間の外で立てた極性を最初の行へ移す', () => {
+    // 放置すると「区間を広げただけで途中から画が裏返る」形になる。
+    // A に duration を持たせて区間の頭より前に消しているのは、そうしないと
+    // A 自身が生き残ってしまい（下の検査を見よ）持ち越しの経路を通らないため
+    const sheet: LyricSheet = {
+      title: 't',
+      lines: [
+        { time: 0, text: 'A', duration: 5, polarity: 'ink' },
+        { time: 12, text: 'B' },
+        { time: 15, text: 'C' },
+      ],
+    };
+
+    const sliced = sliceSheet(sheet, window);
+    // **行ではなくシートに載る**（レビュー指摘 🔴）。行に載せると、区間の頭から
+    // 最初の行までの助走のあいだだけ既定の極性になり、歌い出しで画が裏返る
+    expect(sliced.polarity).toBe('ink');
+    expect(sliced.lines.map((line) => line.polarity)).toEqual([undefined, undefined]);
+    // 区間の頭（0 秒）から既に裏返っている
+    expect(polarityAt(createPolarityTrack(sliced), 0)).toBe('ink');
+  });
+
+  it('区間の頭を跨いで出ている行は、自分の極性ごと生き残る', () => {
+    // duration の無い行は次の行まで出続けるので、区間の頭で表示中＝切り出しに残る。
+    // このとき持ち越しの出番は無い（本人が切り替えの当事者としてそこに居る）
+    const sheet: LyricSheet = {
+      title: 't',
+      lines: [
+        { time: 0, text: 'A', polarity: 'ink' },
+        { time: 12, text: 'B' },
+      ],
+    };
+
+    const sliced = sliceSheet(sheet, window);
+    expect(sliced.lines.map((line) => line.polarity)).toEqual(['ink', undefined]);
+    // その行は区間の頭より前から極性を立てているので、持ち越しにも同じ値が載る。
+    // **二重に載っても変化点は生まれない**（始まりと同じことを書いた行は数えない）
+    expect(sliced.polarity).toBe('ink');
+    expect(createPolarityTrack(sliced).changes).toEqual([]);
+  });
+
+  it('持ち越しの後で最初の行が戻すと、そこが変化点になる', () => {
+    const sheet: LyricSheet = {
+      title: 't',
+      lines: [
+        { time: 0, text: 'A', duration: 5, polarity: 'ink' },
+        { time: 12, text: 'B', polarity: 'paper' },
+      ],
+    };
+
+    const track = createPolarityTrack(sliceSheet(sheet, window));
+    expect(polarityAt(track, 0)).toBe('ink');
+    expect(polarityAt(track, 2)).toBe('paper');
+  });
+
+  it('区間の外が既定の極性なら項目ごと足さない', () => {
+    // **`WHOLE_SONG` で元のシートと等しいものが返る**という性質を保つため
+    const sheet: LyricSheet = { title: 't', lines: [{ time: 12, text: 'B' }] };
+    const sliced = sliceSheet(sheet, window);
+
+    expect(sliced.lines[0]).toEqual({ time: 2, text: 'B' });
+    expect('polarity' in sliced).toBe(false);
+  });
+
+  it('区間の中で立てた極性はそのまま残る', () => {
+    const sheet: LyricSheet = {
+      title: 't',
+      lines: [
+        { time: 12, text: 'B' },
+        { time: 15, text: 'C', polarity: 'ink' },
+      ],
+    };
+
+    expect(sliceSheet(sheet, window).lines.map((line) => line.polarity)).toEqual([
+      undefined,
+      'ink',
+    ]);
   });
 });

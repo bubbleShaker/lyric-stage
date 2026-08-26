@@ -10,6 +10,7 @@ import {
 } from './screen-decor';
 // Vite の ?raw で CSS を文字列として読む（decor.test.ts / palette.test.ts と同じ手）
 import styleCss from '../style.css?raw';
+import { classRule as rulesFor } from '../test-support/css-rules';
 
 /**
  * 上下の辺。隅は必ず「上下のどちらか」と「左右のどちらか」を 1 つずつ取る。
@@ -70,13 +71,6 @@ describe('CSS との対応', () => {
   const declared = (className: string) =>
     // 「.クラス名」の直後がクラス名として続かない位置（-- で始まる別のクラスと区別する）
     new RegExp(`\\.${className}(?![\\w-])`).test(css);
-
-  /** そのクラスを含むセレクタの規則の中身を集める */
-  const rulesFor = (className: string): string[] => {
-    const pattern = new RegExp(`([^{}]*\\.${className}(?![\\w-])[^{}]*)\\{([^}]*)\\}`, 'g');
-
-    return [...css.matchAll(pattern)].map(([, , body]) => body);
-  };
 
   const cases: [string, string][] = [
     ['レイヤー', SCREEN_DECOR_CLASS],

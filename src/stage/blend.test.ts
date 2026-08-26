@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
-// ?raw は対象ファイルを文字列として読み込む Vite の機能（palette.test.ts と同じ）
-import css from '../style.css?raw';
+// **コメントを落としてから走査する助関数**（M9-3a で `test-support/` へ括り出した）。
+// ここが素の CSS を見ていた頃は、`.scene` の説明が `.stage__lines` を名指ししている
+// せいで**`.scene` の規則本体を「`.stage__lines` の規則」として拾っていた**
+// （選択子の手前の `[^{}]*` がコメントを飲み込む。詳しくは css-rules.ts）
+import { classRule as rulesFor } from '../test-support/css-rules';
 
 /**
  * 歌詞の層を地に刷り重ねる合成（M9-2 / Issue #55）を見張る。
@@ -17,20 +20,6 @@ import css from '../style.css?raw';
  * 同じ判断で、当て先そのものを機械に見張らせる。
  */
 describe('歌詞の層の合成', () => {
-  /**
-   * そのクラスを含む規則の中身を返す。
-   *
-   * **この形の助関数は decor / beat-impact / screen-decor の各テストにもある。**
-   * 共通化していないのは、どれも「自分が見張りたい規則」だけを見るための 3 行で、
-   * 括り出すと当て先の宣言（`?raw` の import）まで共有することになるため。
-   * 5 つ目が要るようなら、その時に `test-support/` へ括り出すこと。
-   */
-  function rulesFor(className: string): string[] {
-    const pattern = new RegExp(`([^{}]*\\.${className}(?![\\w-])[^{}]*)\\{([^}]*)\\}`, 'g');
-
-    return [...css.matchAll(pattern)].map(([, , body]) => body);
-  }
-
   /**
    * そのクラスの規則のどれかが合成の指定を持つか。
    *

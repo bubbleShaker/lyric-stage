@@ -30,53 +30,63 @@
     <title>lyric-stage — 文字を刻むステージ</title>
   </head>
   <body>
-    <!-- 背景の星空。描くのは src/stage/starfield.ts。
-         装飾でしかないので支援技術からは隠す -->
-    <canvas class="backdrop" id="backdrop" aria-hidden="true"></canvas>
+    <!-- 画そのものを裏返す枠（M9-3a / Issue #57）。極性が ink の間だけ
+         filter: invert(1) が当たる。**ページの中身はすべてこの中に置く** —
+         外に出したものは裏返らず、暗くなった地の上に暗い文字が残って読めなくなる。
+         body ではなくここに包む理由（背景の伝播の罠）は src/style.css -->
+    <!-- 初期値は書かない。**極性の出どころはシートだけ**（src/stage/scene-polarity.ts が
+         組み立て直後に一度書く）。ここに書くと、歌詞が読めなかった時に
+         mountScenePolarity へ到達しないぶん、その値のまま貼り付く -->
+    <div class="scene" id="scene">
+      <!-- 背景の星空。描くのは src/stage/starfield.ts。
+           装飾でしかないので支援技術からは隠す -->
+      <canvas class="backdrop" id="backdrop" aria-hidden="true"></canvas>
 
-    <main class="stage">
-      <!-- 語句ごとの枠がここに並ぶ（中身は src/stage/lyric-stage.ts の所有物）。
-           枠が「画面のどこに・どのくらいの大きさで・どの傾きで」を持ち、
-           中の文字を GSAP が動かす。分けている理由は src/stage/lyric-stage.ts -->
-      <div class="stage__lines" id="stage-lines"></div>
-      <!-- 歌詞まわりのお知らせ。再生コントロール側のメッセージ欄とは用途を分ける -->
-      <p class="stage__message" id="stage-message" role="status"></p>
-    </main>
+      <main class="stage">
+        <!-- 語句ごとの枠がここに並ぶ（中身は src/stage/lyric-stage.ts の所有物）。
+             枠が「画面のどこに・どのくらいの大きさで・どの傾きで」を持ち、
+             中の文字を GSAP が動かす。分けている理由は src/stage/lyric-stage.ts -->
+        <div class="stage__lines" id="stage-lines"></div>
+        <!-- 歌詞まわりのお知らせ。再生コントロール側のメッセージ欄とは用途を分ける -->
+        <p class="stage__message" id="stage-message" role="status"></p>
+      </main>
 
-    <div class="transport" id="transport" data-state="loading">
-      <button class="transport__toggle" id="transport-toggle" type="button">再生</button>
-      <input
-        class="transport__seek"
-        id="transport-seek"
-        type="range"
-        min="0"
-        max="0"
-        step="0.01"
-        value="0"
-        aria-label="再生位置"
-        disabled
-      />
-      <span class="transport__time" id="transport-time">0:00 / 0:00</span>
-      <p class="transport__message" id="transport-message" role="status"></p>
+      <div class="transport" id="transport" data-state="loading">
+        <button class="transport__toggle" id="transport-toggle" type="button">再生</button>
+        <input
+          class="transport__seek"
+          id="transport-seek"
+          type="range"
+          min="0"
+          max="0"
+          step="0.01"
+          value="0"
+          aria-label="再生位置"
+          disabled
+        />
+        <span class="transport__time" id="transport-time">0:00 / 0:00</span>
+        <p class="transport__message" id="transport-message" role="status"></p>
+      </div>
+
+      <!-- 素材の出どころ。書体（OFL）はライセンス文の同梱が条件なので、
+           公開先で必ず辿れるよう本文からも指しておく（詳しくは README の「使用素材」） -->
+      <footer class="credit">
+        音楽：<a href="https://maou.audio/14_shining_star/" target="_blank" rel="noopener noreferrer"
+          >魔王魂</a
+        >
+        <!-- ここだけ相対パス。Vite が base を足すのは link / script / img などの
+             取得のための属性で、**<a href> は書き換えない**（上の preload は書き換わる）。
+             '/fonts/...' と書くと GitHub Pages で https://user.github.io/fonts/... を
+             指して 404 になる。相対なら dev でも Pages でも同じ場所に解決する -->
+        ／ 書体：<a
+          href="fonts/zen-kaku-gothic-new.LICENSE.txt"
+          target="_blank"
+          rel="noopener noreferrer"
+          >Zen Kaku Gothic New (OFL)</a
+        >
+      </footer>
     </div>
 
-    <!-- 素材の出どころ。書体（OFL）はライセンス文の同梱が条件なので、
-         公開先で必ず辿れるよう本文からも指しておく（詳しくは README の「使用素材」） -->
-    <footer class="credit">
-      音楽：<a href="https://maou.audio/14_shining_star/" target="_blank" rel="noopener noreferrer"
-        >魔王魂</a
-      >
-      <!-- ここだけ相対パス。Vite が base を足すのは link / script / img などの
-           取得のための属性で、**<a href> は書き換えない**（上の preload は書き換わる）。
-           '/fonts/...' と書くと GitHub Pages で https://user.github.io/fonts/... を
-           指して 404 になる。相対なら dev でも Pages でも同じ場所に解決する -->
-      ／ 書体：<a
-        href="fonts/zen-kaku-gothic-new.LICENSE.txt"
-        target="_blank"
-        rel="noopener noreferrer"
-        >Zen Kaku Gothic New (OFL)</a
-      >
-    </footer>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
