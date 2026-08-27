@@ -51,6 +51,16 @@ describe('歌詞の層の合成', () => {
     'stage__decor--box',
     'stage__sub',
     'stage__sub__text',
+    // 一過性の装飾（M10-1）。**朱の複製（ghost）を地に刷り込みたくて書く**のが
+    // 一番自然な次の一手で、しかも書いても何も起きない（レビュー指摘 🟡）
+    'stage__spark',
+    'stage__spark__piece',
+    'stage__spark--burst',
+    'stage__spark--ripple',
+    'stage__spark--focus',
+    'stage__spark--underline',
+    'stage__spark--blocks',
+    'stage__spark--ghost',
   ])('乗算を %s に当てない（分離の内側なので効かない）', (className) => {
     // 「文字に効かせたいのだから文字に書く」は自然な直感で、しかも
     // **書いても何も起こらない**（例外も出ない）。ここで落とす

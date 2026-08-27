@@ -334,6 +334,45 @@ describe('parseLyricSheet（英字 = sub）', () => {
   });
 });
 
+describe('parseLyricSheet（一過性の装飾 = spark）', () => {
+  const parseLine = (line: object) =>
+    parseLyricSheet({ title: 'テスト', lines: [{ time: 0, text: 'AB', ...line }] }).lines[0];
+
+  it('名前をそのまま保持する', () => {
+    // **実在するかは見ない**（語彙は stage/spark.ts の担当。effect / place / decor と同じ分担）。
+    // 綴りの間違いは src/lyric-sheets.test.ts が名指しで落とす
+    expect(parseLine({ spark: 'burst' }).spark).toBe('burst');
+    expect(parseLine({ parts: [{ text: 'A', at: 0, spark: 'ghost' }] }).parts?.[0].spark).toBe(
+      'ghost',
+    );
+  });
+
+  it('列で書いた指定を弾く', () => {
+    // **図形と決定的に違う点**（M10-1）。一瞬の装飾を重ねると、1 秒足らずの間に
+    // 別々の動きが同時に走って何が起きたか読めない。列を書けてしまうと、
+    // 「1 つだけ」という決めごとがデータ側から破れる
+    expect(() => parseLine({ spark: ['burst'] })).toThrow();
+  });
+
+  it('中身の無い指定を弾く', () => {
+    expect(() => parseLine({ spark: '' })).toThrow();
+    expect(() => parseLine({ spark: '   ' })).toThrow();
+    expect(() => parseLine({ spark: 42 })).toThrow();
+  });
+
+  it('前後に空白の付いた名前を弾く', () => {
+    // `' burst '` は実在の名前と見分けが付かないのに、語彙の側では未知の名前として
+    // 静かに落ちる（decor と同じ理由）
+    expect(() => parseLine({ spark: ' burst' })).toThrow();
+    expect(() => parseLine({ spark: 'burst ' })).toThrow();
+  });
+
+  it('刻んだ行に行の装飾を書いた指定を弾く', () => {
+    // 図形・英字と同じ扱い。行から継がないので、書いても画には何も出ない
+    expect(() => parseLine({ spark: 'burst', parts: [{ text: 'AB', at: 0 }] })).toThrow();
+  });
+});
+
 describe('partsOf', () => {
   it('刻んでいない行は 1 語句として返す', () => {
     // 表示側から「刻んである行」「刻んでいない行」の分岐を消すための正規化
@@ -405,6 +444,22 @@ describe('partsOf', () => {
 
   it('刻んでいない行は行の英字をそのまま持つ', () => {
     expect(partsOf({ time: 0, text: 'A', sub: 'MAGIC' })[0].sub).toBe('MAGIC');
+  });
+
+  it('**一過性の装飾も行から継がない**', () => {
+    // 図形・英字と同じ扱い（M10-1）。継ぐと刻んだ行の語句が全部同時に弾けて、
+    // 置く語句を選ぶという狙いと逆になる
+    const line = {
+      time: 0,
+      text: 'AB',
+      parts: [{ text: 'A', at: 0 }, { text: 'B', at: 1, spark: 'burst' }],
+    };
+
+    expect(partsOf(line).map((part) => part.spark)).toEqual([undefined, 'burst']);
+  });
+
+  it('刻んでいない行は行の装飾をそのまま持つ', () => {
+    expect(partsOf({ time: 0, text: 'A', spark: 'burst' })[0].spark).toBe('burst');
   });
 
   it('**図形だけは行から継がない**', () => {

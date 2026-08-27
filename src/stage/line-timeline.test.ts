@@ -15,13 +15,16 @@ function dummyTarget(
 ): PartTarget & {
   readonly decorClasses: string[];
   readonly subTexts: string[];
-  /** 図形・英字に渡した当て先そのもの。gsap が書いた値を後から読むために控える */
+  readonly sparkNames: string[];
+  /** 図形・英字・一過性の装飾に渡した当て先そのもの。gsap が書いた値を後から読むために控える */
   readonly extras: Record<string, unknown>[];
 } {
   // 図形を頼まれた回数と名前を控える。本物では枠の中に要素が立つ（M8-3a）
   const decorClasses: string[] = [];
   // 英字も同じ（M8-3c）。こちらは名前ではなく中身そのものが渡る
   const subTexts: string[] = [];
+  // 一過性の装飾（M10-1）。こちらは登録そのものが渡るので、クラス名で控える
+  const sparkNames: string[] = [];
   const extras: Record<string, unknown>[] = [];
 
   const extra = () => {
@@ -36,6 +39,7 @@ function dummyTarget(
     chars: Array.from({ length: count }, () => ({}) as unknown as Element),
     decorClasses,
     subTexts,
+    sparkNames,
     extras,
     createDecor: (className) => {
       decorClasses.push(className);
@@ -44,6 +48,12 @@ function dummyTarget(
     createSub: (text) => {
       subTexts.push(text);
       return extra();
+    },
+    createSpark: (spark) => {
+      sparkNames.push(spark.className);
+      // 破片は本物と同じ数だけ立てる。数が違うと、破片ごとに違う値を書く演出
+      // （burst の放射）の検査が「たまたま通る」ようになる
+      return { box: extra(), pieces: Array.from({ length: spark.pieces }, () => extra()) };
     },
   };
 }
@@ -369,6 +379,94 @@ describe('語句に添える英字（M8-3c）', () => {
     });
 
     expect(targets.map((target) => target.subTexts)).toEqual([[], []]);
+    timeline.kill();
+  });
+});
+
+describe('語句に一瞬だけ添える装飾（M10-1）', () => {
+  it('書いた語句にだけ当て先を頼む', () => {
+    const { targets, timeline } = build({
+      time: 0,
+      text: 'AB',
+      parts: [
+        { text: 'A', at: 0, spark: 'burst' },
+        { text: 'B', at: 1 },
+      ],
+    });
+
+    expect(targets.map((target) => target.sparkNames)).toEqual([['stage__spark--burst'], []]);
+    timeline.kill();
+  });
+
+  it('知らない装飾名の当て先は作らない', () => {
+    // 図形と同じ（未知の名前は既定に落ちず完全に消える）。当て先まで作ってしまうと、
+    // **中身の無い箱が語句の上に残る**
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const { targets, timeline } = build({ time: 0, text: 'A', spark: 'brust' });
+
+    expect(targets[0].sparkNames).toEqual([]);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('brust'));
+
+    timeline.kill();
+    warn.mockRestore();
+  });
+
+  it('装飾は語句と同じ時刻から始まる', () => {
+    // 図形・英字と同じ（M8-3a の理由をそのまま踏襲）。**一過性の装飾では特に効く** —
+    // 1 秒未満で終わるので、前倒しにすると語句が出る頃には消えている
+    const { timeline } = build({
+      time: 0,
+      text: 'AB',
+      parts: [
+        { text: 'A', at: 0 },
+        { text: 'B', at: 1.5, spark: 'underline' },
+      ],
+    });
+
+    const starts = timeline
+      .getChildren(false)
+      .filter((child): child is gsap.core.Timeline => child instanceof gsap.core.Timeline)
+      .filter((child) => child.getChildren(true).some((t) => Object.hasOwn(t.vars, '--spark-head')))
+      .map((child) => child.startTime());
+
+    expect(starts).toHaveLength(1);
+    expect(starts[0]).toBeCloseTo(1.5);
+    timeline.kill();
+  });
+
+  it('行に書いた装飾は、刻んだ語句には出ない', () => {
+    // 図形・英字と同じ扱い。この形の入力はパーサが入口で弾くので、ここが見ているのは
+    // 「手で組んだ行でも継がない」という domain の不変条件の方
+    const { targets, timeline } = build({
+      time: 0,
+      text: 'AB',
+      spark: 'burst',
+      parts: [
+        { text: 'A', at: 0 },
+        { text: 'B', at: 1 },
+      ],
+    });
+
+    expect(targets.map((target) => target.sparkNames)).toEqual([[], []]);
+    timeline.kill();
+  });
+
+  it('動きを減らす設定では当て先ごと作らない', () => {
+    // **図形・英字とは逆**（あちらは形を残して動きだけ畳む）。出さないと決めた以上、
+    // 箱も破片も生えないのが正しい — 生えると、透明な要素が語句の上に積まれる
+    const targets: DummyTarget[] = [];
+    const timeline = buildLineTimeline(
+      { time: 0, text: 'A', spark: 'burst' },
+      (part) => {
+        const target = dummyTarget(part.text.length);
+        targets.push(target);
+        return target;
+      },
+      { reducedMotion: true },
+    );
+
+    expect(targets[0].sparkNames).toEqual([]);
     timeline.kill();
   });
 });

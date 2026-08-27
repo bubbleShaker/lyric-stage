@@ -51,6 +51,7 @@
       import { LyricStage } from './src/stage/lyric-stage.ts';
       import { ScaledCanvas, systemPixelRatio } from './src/stage/scaled-canvas.ts';
       import { mountScreenDecor } from './src/stage/screen-decor.ts';
+      import { sparks } from './src/stage/spark.ts';
       import { BEAT_GRID } from './src/work.ts';
       import './src/style.css';
 
@@ -184,12 +185,13 @@
 
       console.info(
         [
-          `play('文字', '演出名', 構図) / playParts([{ text, at, effect, place, decor, sub }, ...]) で試せます。`,
+          `play('文字', '演出名', 構図) / playParts([{ text, at, effect, place, decor, sub, spark }, ...]) で試せます。`,
           `演出名: ${Object.keys(effects).join(' / ')}`,
           `at: ${Object.keys(ANCHOR_CLASS).join(' / ')}`,
           `size: ${Object.keys(SIZE_CLASS).join(' / ')}`,
           `decor（語句に貼り付く図形。playParts でのみ指定）: ${Object.keys(decors).join(' / ')}`,
           `sub（語句に添える英字。playParts でのみ指定。例 sub: 'LIKE MAGIC'）`,
+          `spark（語句に一瞬だけ添える装飾。playParts でのみ指定。1 語句に 1 つ）: ${Object.keys(sparks).join(' / ')}`,
           `背景の盛り上がりと拍の衝撃は window.loud = 0〜1 で動かせます。`,
           `画の明暗は polarity() で裏返せます（polarity('ink') / polarity('paper')）。`,
         ].join('\n'),
