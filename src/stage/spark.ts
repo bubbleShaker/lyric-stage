@@ -1,4 +1,5 @@
 import gsap from 'gsap';
+import { seededRandom } from '../lib/random';
 import type { EffectTimeline } from './effects';
 
 /**
@@ -85,6 +86,15 @@ export interface SparkEntry {
 }
 
 /**
+ * 当て先を立てる側（`LyricStage`）に渡す分だけを抜いた形。
+ *
+ * **`build` は渡さない**（レビュー指摘 🟡）。DOM を立てるのに要るのは
+ * 「どんなクラスで・いくつ・文字を写すか」の 3 つだけで、演出の中身を見せる理由が無い。
+ * `createDecor(className)` / `createSub(text)` が必要な分だけを受け取っているのと揃える。
+ */
+export type SparkShape = Pick<SparkEntry, 'className' | 'pieces' | 'echoesText'>;
+
+/**
  * 箱と破片に必ず当たるクラス（位置の基準）。
  *
  * 打ち間違えても型検査も全テストも通る。落ちるのは `position: absolute` で、
@@ -97,9 +107,16 @@ export const SPARK_PIECE_CLASS = 'stage__spark__piece';
 /**
  * 語句の文字を写した破片にも当てるクラス（`echoesText` の案が使う）。
  *
- * `.stage__text` そのもの。**書体の宣言を 2 か所に持たないため**（`SparkEntry.echoesText`）。
+ * **歌詞そのものと同じクラス**（`effects.ts` の `TEXT_CLASS`）を借りる。書体の宣言を
+ * 2 か所に持たないため（`SparkEntry.echoesText`）。**綴りを写さず定数を再輸出する**のは、
+ * 片方だけ改名しても何も落ちない状態を作らないため（レビュー指摘 🟡）。
+ *
+ * 代償として `.stage__text` は「歌詞の字」と「装飾の複製」の 2 つを意味することになる。
+ * 今は `querySelectorAll('.stage__text')` で数える所が無いので実害は無いが、
+ * **数え始めるなら書体の束を別クラスに切る**こと（借りたいのは見えだけで、
+ * 「これは歌詞である」という意味ではない）。
  */
-export const SPARK_ECHO_CLASS = 'stage__text';
+export { TEXT_CLASS as SPARK_ECHO_CLASS } from './effects';
 
 /** A 弾ける — 粒が放射状に飛ぶ距離（粒自身の大きさに対する割合） */
 const BURST_REACH = 1250;
@@ -115,6 +132,10 @@ const BURST_INNER = 0.62;
  */
 const FOCUS_FROM = 2.8;
 const FOCUS_TO = 1.5;
+
+/** ばらばらの順で始めるための種。**案ごとに変える**（同じだと同じ順で出る） */
+const FOCUS_SEED = 0x5f0c;
+const BLOCKS_SEED = 0xb10c;
 
 export const sparks = {
   /**
@@ -187,7 +208,11 @@ export const sparks = {
   },
 
   /**
-   * C 集中線 — 短い線が 14 本、外から語句へ縮み込む（0.55 秒）。
+   * C 集中線 — 短い線が 14 本、外から語句へ縮み込む（見えているのは 0.55 秒）。
+   *
+   * タイムラインの長さは 0.71 秒になる — 出だしをずらす（`scattered`）ぶん、最後の
+   * 1 本が縮み終わるのはそれだけ後になる。**ただしその頃には全部消えている**
+   * （薄れる側にはずれを掛けていないので、0.55 秒で揃って引き終わる）。
    *
    * 破片は**大きさ 0 の点**で、線そのものは CSS の擬似要素が点から離れた所に描く
    * （`style.css`）。こうすると `scale` がそのまま「点からの距離」になり、
@@ -215,7 +240,7 @@ export const sparks = {
             duration: 0.55,
             // 縮み込む側なので加速。近づくほど速いと「吸い込まれる」に見える
             ease: 'power2.in',
-            stagger: { each: 0.012, from: 'random' },
+            stagger: scattered(count, 0.012, FOCUS_SEED),
           },
           0,
         )
@@ -273,7 +298,7 @@ export const sparks = {
             duration: 0.22,
             // 目標を一度追い越してから戻る。この行き過ぎが「ポン」に見える（bounce と同じ）
             ease: 'back.out(2.4)',
-            stagger: { each: 0.07, from: 'random' },
+            stagger: scattered(pieces.length, 0.07, BLOCKS_SEED),
           },
           0,
         )
@@ -309,6 +334,30 @@ function burstAngle(index: number, count: number): number {
 
 function burstReach(index: number): number {
   return index % 2 === 0 ? BURST_REACH : BURST_REACH * BURST_INNER;
+}
+
+/**
+ * ばらばらの順で始めるための遅れを返す（`stagger` に渡す関数）。
+ *
+ * **gsap の `stagger: { from: 'random' }` は使わない**（レビュー指摘 🟡）。あれは
+ * 内部で `Math.random()` を呼ぶので、**同じ行を出し直すたびに並びが変わる**。
+ * この作品は星の配置（`lib/random.ts`）もグラフの骨格（`graph-field.ts`）も
+ * 種を固定して「決めたもの」として持っており、装飾だけ毎回変わるのは筋が通らない。
+ * M10-2 で画を見ながら詰める作業にも、毎回違う並びは効いてくる。
+ *
+ * 種は案ごとに変える（同じ種だと `focus` と `blocks` が同じ順で出る）。
+ */
+function scattered(count: number, each: number, seed: number): (index: number) => number {
+  const random = seededRandom(seed);
+  const order = Array.from({ length: count }, (_unused, index) => index);
+
+  // Fisher–Yates。後ろから順に、それより前（自分を含む）の 1 つと入れ替える
+  for (let i = count - 1; i > 0; i -= 1) {
+    const j = Math.floor(random() * (i + 1));
+    [order[i], order[j]] = [order[j], order[i]];
+  }
+
+  return (index) => order[index] * each;
 }
 
 export function isSparkName(name: string): name is SparkName {

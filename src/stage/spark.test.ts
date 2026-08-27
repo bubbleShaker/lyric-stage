@@ -166,6 +166,17 @@ describe('レジストリ', () => {
     expect(duration).toBeLessThanOrEqual(1);
   });
 
+  it.each(entries)('%s は途中では見えている', (name, entry) => {
+    // **「消えている」だけを見ると、最初から最後まで透明な装飾が素通りする**
+    // （レビュー指摘 🟡）。色は CSS 側の検査が見るが、不透明度は JS 側にしか無い。
+    // 尺の真ん中は 6 案とも「一番よく見えるはず」の頃合い
+    const { target, stop } = playTo(entry, durationOf(entry) / 2);
+    const remainder = remainderOf[name as SparkName](target);
+    stop();
+
+    expect(remainder).toBeGreaterThan(0);
+  });
+
   it.each(entries)('%s は終わりに消えている', (name, entry) => {
     // **「出て、消える」がこの軸の定義そのもの**（decor との唯一の違い）。
     // 消え方は案によって違う（不透明度／描かれる幅）ので、remainderOf が持つ
@@ -266,15 +277,24 @@ describe('CSS との対応', () => {
     expect(body).toContain('--spark-tail');
   });
 
-  it('位置で場所を決める案は、破片の数だけ場所を持っている', () => {
+  it('位置で場所を決める案は、破片の数だけ違う場所を持っている', () => {
     // blocks は「どこに出るか」を :nth-child で CSS が持つ（JS は数を宣言するだけ）。
-    // **数を増やした時に CSS だけ付いてこない**と、7 個目以降が全部左上に重なって出る
-    const placed = Array.from({ length: sparks.blocks.pieces }, (_unused, order) =>
-      new RegExp(
+    // **数を増やした時に CSS だけ付いてこない**と、7 個目以降が全部左上に重なって出る。
+    //
+    // **中身まで見る**（レビュー指摘 🟢）。存在だけを見ると、書き写しの間違いで
+    // 4 番と 5 番に同じ座標を書いても緑になる（JS 側は burst の飛び先・focus の角度を
+    // Set で重複検査しているので、そちらと揃える）
+    const placed = Array.from({ length: sparks.blocks.pieces }, (_unused, order) => {
+      const [body] = rulesMatching(
         `\\.${sparks.blocks.className}[^{}]*:nth-child\\(${order + 1}\\)`,
-      ).test(css),
-    );
+      );
 
-    expect(placed.every(Boolean)).toBe(true);
+      return body?.replace(/\s+/g, '');
+    });
+
+    // 「有ること」と「重なっていないこと」を別々に見る。片方に畳むと、
+    // 1 つだけ抜けた場合に（undefined が 1 つなので）数が合ってしまう
+    expect(placed.filter((body) => body === undefined)).toStrictEqual([]);
+    expect(new Set(placed).size).toBe(sparks.blocks.pieces);
   });
 });

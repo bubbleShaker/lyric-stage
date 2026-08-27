@@ -2,7 +2,7 @@ import gsap from 'gsap';
 import { partsOf, type LyricLine, type ResolvedPart } from '../domain/lyrics';
 import { resolveDecor } from './decor';
 import { resolveEffect, type EffectLayout, type EffectTimeline } from './effects';
-import { resolveSpark, type SparkEntry, type SparkTarget } from './spark';
+import { resolveSpark, type SparkShape, type SparkTarget } from './spark';
 import { buildSubText } from './sub-text';
 
 /**
@@ -57,11 +57,11 @@ export interface PartTarget {
    * 一過性の装飾の当て先を立てて返す（M10-1）。**文字より手前に置かれる。**
    *
    * 図形（`createDecor`）はクラス名を、英字（`createSub`）は文字列を渡すが、
-   * こちらは**登録そのもの**を渡す。破片をいくつ立てるか（`pieces`）と、そこに
-   * 語句の文字を写すか（`echoesText`）の 2 つが要るので、位置引数を並べるより
-   * 登録を渡す方が取り違えようが無い。
+   * こちらは**3 つまとめて**渡す。クラス名・破片の数・文字を写すかが要るので、
+   * 位置引数を並べるより取り違えようが無い。**渡すのは `SparkShape`（DOM を立てるのに
+   * 要る分だけ）で、演出の中身（`build`）は見せない。**
    */
-  readonly createSpark: (spark: SparkEntry) => SparkTarget;
+  readonly createSpark: (spark: SparkShape) => SparkTarget;
 }
 
 /**

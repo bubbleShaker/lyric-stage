@@ -4,13 +4,13 @@ import type { LyricPresenter } from '../domain/ports';
 import type { ReducedMotionQuery } from '../lib/reduced-motion';
 import { resolveComposition } from './composition';
 import { DECOR_BASE_CLASS, DECOR_LAYOUT_CLASS } from './decor';
-import { LAYOUT_CLASS, type EffectLayout, type EffectTimeline } from './effects';
+import { LAYOUT_CLASS, TEXT_CLASS, type EffectLayout, type EffectTimeline } from './effects';
 import { buildLineTimeline, type PartTarget } from './line-timeline';
 import {
   SPARK_BASE_CLASS,
   SPARK_ECHO_CLASS,
   SPARK_PIECE_CLASS,
-  type SparkEntry,
+  type SparkShape,
   type SparkTarget,
 } from './spark';
 import { SUB_CLASS, SUB_TEXT_CLASS } from './sub-text';
@@ -111,7 +111,7 @@ export class LyricStage implements LyricPresenter {
     }
 
     const text = document.createElement('div');
-    text.className = 'stage__text';
+    text.className = TEXT_CLASS;
     // 歌詞は外部 JSON から来るので、必ず textContent で入れる（innerHTML は使わない）
     text.textContent = part.text;
 
@@ -144,19 +144,33 @@ export class LyricStage implements LyricPresenter {
    * こちらは後ろに足して**手前**に置く。添え物ではなく、語句の上で一瞬だけ起きる
    * 出来事なので、文字に隠れては意味が無い。
    *
-   * 奥から迫る演出（`rushIn` / `swing`）の最中は文字の方が奥へ行くので、手前に
-   * 置いたこちらはそのまま手前に居続ける。図形が `DecorEntry.solid` として抱えている
-   * 噛み合わせ（面が文字を隠す）は、**向きが逆なので起きない**。
+   * **ただし「必ず手前」ではない**（レビュー指摘 🟡 を実測で確かめた）。`rushIn` は
+   * 文字を `z: -1400` から動かすので手前・奥の関係は保たれるが、`swing` は語句を
+   * 左端まわりに `rotationY: -78` で回すので、**右側ほど z が正になり文字が手前へ出る**。
+   * 実測では `swing × ghost` で朱の複製が字の後ろに回り込む。
+   *
+   * 図形の `DecorEntry.solid` ほどの実害は無い（あちらは面が語句を丸ごと隠す）が、
+   * **語句の複製を添える `ghost` だけは話が別**。複製は語句にぴったり重なって初めて
+   * 影として読めるのに、演出が語句だけを変形すると**複製は取り残されて別の語に見える**
+   * （`swing` の 0.08 秒では、回って縮んだ語句の横に等倍の複製が並ぶ）。
+   * `src/lyric-sheets.test.ts` が組み合わせを落とす。
    *
    * 破片は数だけ立てて中身は入れない — 形は `style.css` が持つ。ただし
    * `echoesText` の案（`ghost`）だけは語句の文字を写す。**同じクラス
-   * （`.stage__text`）を当てて写す**ので、書体・太さ・字間・行間は自動で揃う
+   * （`TEXT_CLASS`）を当てて写す**ので、書体・太さ・字間・行間は自動で揃う
    * （書き並べると、書体を変えた日に 2 か所を直すことになる）。
+   *
+   * **箱ごと支援技術から隠す**（レビュー指摘 🔴）。装飾は「読むものでも押すものでもない」
+   * ので `pointer-events: none` と対になる指定だが、`ghost` では実害がある —
+   * 写した複製は SplitText を通らない生のテキストなので、**同じ語句が 2 度読み上げられる**
+   * （本文側は分割の過程で `aria-label` にまとまり 1 度しか読まれない）。
+   * 図形（文字を持たない）と英字（作者が意図して置いた別の語）では出ていなかった問題。
    */
-  private appendSpark(frame: HTMLElement, spark: SparkEntry, text: string): SparkTarget {
+  private appendSpark(frame: HTMLElement, spark: SparkShape, text: string): SparkTarget {
     const box = document.createElement('div');
     box.className = SPARK_BASE_CLASS;
     box.classList.add(spark.className);
+    box.setAttribute('aria-hidden', 'true');
 
     const pieces = Array.from({ length: spark.pieces }, () => {
       const piece = document.createElement('div');

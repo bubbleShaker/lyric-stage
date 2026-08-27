@@ -30,6 +30,19 @@ export type Effect = (target: EffectTarget) => gsap.core.Timeline;
  */
 export type EffectLayout = 'vertical';
 
+/**
+ * 語句の文字そのものに当たるクラス。**書体・太さ・字間・行間はここに預けてある。**
+ *
+ * 当てるのは `LyricStage`。定数にしてあるのは、**借りる人が居る**ため —
+ * M10-1 の `ghost`（語句の朱の複製）は書体を書き並べずにこのクラスを当てて借りる。
+ * 直書きのままだと、片方だけ改名しても型検査も検査も通り、**複製だけが素の書体
+ * （900 を持たないので機械的に太らせた字形）で出る**。
+ *
+ * `src/font-subset.test.ts` の「書体は作品側の文字にだけ当たっている」も
+ * ここを引く（当て先の一覧を綴りで書かないため）。
+ */
+export const TEXT_CLASS = 'stage__text';
+
 /** レイアウトごとの CSS クラス。中身は src/style.css が持つ */
 export const LAYOUT_CLASS: Record<EffectLayout, string> = {
   vertical: 'stage__text--vertical',
