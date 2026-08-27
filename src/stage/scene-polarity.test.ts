@@ -43,8 +43,8 @@ describe('画の明暗の切り替え', () => {
   it('枠は極性に関わらずスタッキング文脈を作る', () => {
     // **isolation が消えると、反転していない間だけ壊れる。** filter が付いている
     // 側は filter 自身が文脈を作るので、ink の画を見ている限り気付けない。
-    // paper に戻した時に、負の z-index の子（背景 -2・画面の図形 -1）が枠の外へ
-    // 抜けて枠の背景の下に沈む ＝ 背景と分割線が両方消える
+    // paper に戻した時に、負の z-index の子（グラフ -3・粒 -2・画面の図形 -1）が
+    // 枠の外へ抜けて枠の背景の下に沈む ＝ 背景と分割線が両方消える
     const rules = bareScene();
 
     expect(rules.some((body) => /isolation:\s*isolate/.test(body))).toBe(true);
@@ -93,7 +93,17 @@ describe('画の明暗の切り替え', () => {
     throw new Error('.scene の閉じタグが見つかりません');
   }
 
-  it.each(['class="backdrop"', 'class="stage"', 'class="transport"', 'class="credit"'])(
+  // **層が増えたらここにも足すこと**（M11 のレビュー指摘 🟡）。`class="backdrop"` は
+  // `class="backdrop backdrop--graph"` に一致しないので、グラフだけ枠の外へ出しても
+  // この検査は緑のままだった。しかも M9-3b の取り消しで極性は常に paper なので、
+  // **今は画にも一切出ない** — 反転を戻した日に初めて壊れる類の穴
+  it.each([
+    'class="backdrop backdrop--graph"',
+    'class="backdrop"',
+    'class="stage"',
+    'class="transport"',
+    'class="credit"',
+  ])(
     '%s は枠の中に居る',
     (marker) => {
       // 枠の外に出したものは裏返らず、暗くなった地の上に取り残される。

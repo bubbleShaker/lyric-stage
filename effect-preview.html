@@ -26,6 +26,9 @@
          このページには歌詞シートが無いので、極性はコンソールから手で切り替える
          （下の window.polarity を見よ） -->
     <div class="scene" id="scene">
+      <!-- **本編と同じく 2 枚**（M11 のレビュー指摘 🟡）。ここは「演出の見えを判断する
+           道具」なので、地が本編と違うと違う画を見て決めることになる -->
+      <canvas class="backdrop backdrop--graph" id="backdrop-graph" aria-hidden="true"></canvas>
       <canvas class="backdrop" id="backdrop" aria-hidden="true"></canvas>
       <main class="stage">
         <!-- 語句の枠はここに LyricStage が立てる。中身は触らない -->
@@ -44,6 +47,7 @@
       import { decors } from './src/stage/decor.ts';
       import { effects } from './src/stage/effects.ts';
       import { GrainField } from './src/stage/grain-field.ts';
+      import { GraphField } from './src/stage/graph-field.ts';
       import { LyricStage } from './src/stage/lyric-stage.ts';
       import { ScaledCanvas, systemPixelRatio } from './src/stage/scaled-canvas.ts';
       import { mountScreenDecor } from './src/stage/screen-decor.ts';
@@ -135,15 +139,22 @@
       // 「文字が乗っていない状態でどれだけ引けているか」を見るのに都合がよい。
       //
       // 音の代わりに window.loud（0〜1）で盛り上がりを手で動かす。
-      // 1 にすると中心の光が広がり、粒が濃くなる
+      // 1 にするとビネットが退き、粒が濃くなり、グラフの塊がふくらむ
       window.loud = 0;
-      const backdrop = new GrainField(
-        new ScaledCanvas(document.getElementById('backdrop'), systemPixelRatio),
-        neverReduceMotion,
-        () => window.loud,
-      );
+      const backdrops = [
+        new GraphField(
+          new ScaledCanvas(document.getElementById('backdrop-graph'), systemPixelRatio),
+          neverReduceMotion,
+          () => window.loud,
+        ),
+        new GrainField(
+          new ScaledCanvas(document.getElementById('backdrop'), systemPixelRatio),
+          neverReduceMotion,
+          () => window.loud,
+        ),
+      ];
       const spin = (now) => {
-        backdrop.render(now / 1000);
+        for (const backdrop of backdrops) backdrop.render(now / 1000);
         // 拍の衝撃も背景と同じ時計で回す（歌詞の時計とは別。行を出す前から画が拍で動く）
         beatImpact.render(now / 1000);
         requestAnimationFrame(spin);
