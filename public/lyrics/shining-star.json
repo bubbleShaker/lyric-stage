@@ -196,7 +196,8 @@
           "at": 1.128,
           "effect": "zoom",
           "place": { "at": "top-right", "size": "xl", "nudge": { "x": -0.02 }, "tilt": 4 },
-          "decor": ["band"]
+          "decor": ["band"],
+          "spark": "burst"
         },
         {
           "text": "綴れば",
@@ -247,7 +248,8 @@
           "at": 0,
           "effect": "rushIn",
           "place": { "at": "middle-center", "size": "xl", "nudge": { "y": -0.1 }, "tilt": -3 },
-          "sub": "LIKE MAGIC"
+          "sub": "LIKE MAGIC",
+          "spark": "focus"
         },
         {
           "text": "使える",
@@ -274,14 +276,16 @@
           "text": "世界が",
           "at": 0,
           "effect": "typewriter",
-          "place": { "at": "top-center", "size": "md", "nudge": { "y": 0.04 }, "tilt": -2 }
+          "place": { "at": "top-center", "size": "md", "nudge": { "y": 0.04 }, "tilt": -2 },
+          "spark": "ghost"
         },
         {
           "text": "広がる",
           "at": 1.128,
           "effect": "zoomLine",
           "place": { "at": "bottom-right", "size": "xl", "nudge": { "x": -0.03 }, "tilt": 4 },
-          "sub": "OPENS UP"
+          "sub": "OPENS UP",
+          "spark": "ripple"
         }
       ]
     },
@@ -302,7 +306,8 @@
           "text": "of my sensation",
           "at": 1.128,
           "effect": "typewriter",
-          "place": { "at": "top-right", "size": "sm", "nudge": { "y": 0.06 }, "tilt": 3 }
+          "place": { "at": "top-right", "size": "sm", "nudge": { "y": 0.06 }, "tilt": 3 },
+          "spark": "underline"
         }
       ]
     },
@@ -323,7 +328,8 @@
           "at": 0.751,
           "effect": "rushIn",
           "place": { "at": "bottom-left", "size": "lg", "nudge": { "x": 0.05 }, "tilt": -3 },
-          "decor": ["box"]
+          "decor": ["box"],
+          "spark": "burst"
         },
         {
           "text": "想いよ",
@@ -352,14 +358,16 @@
           "at": 1.879,
           "effect": "bounce",
           "place": { "at": "bottom-center", "size": "lg", "nudge": { "y": -0.04 }, "tilt": 3 },
-          "decor": ["band"]
+          "decor": ["band"],
+          "spark": "blocks"
         },
         {
           "text": "輝き出す",
           "at": 3.757,
           "effect": "shatter",
           "place": { "at": "middle-center", "size": "xl", "nudge": { "x": 0.04 }, "tilt": -2 },
-          "sub": "STARTS TO SHINE"
+          "sub": "STARTS TO SHINE",
+          "spark": "burst"
         }
       ]
     },
