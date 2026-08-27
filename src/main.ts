@@ -13,6 +13,7 @@ import type { Backdrop } from './stage/backdrop';
 import { mountBeatImpact } from './stage/beat-impact';
 import { loadDeclaredFonts } from './stage/display-font';
 import { GrainField } from './stage/grain-field';
+import { GraphField } from './stage/graph-field';
 import { LyricStage } from './stage/lyric-stage';
 import { createLoudness, systemAudioContext } from './stage/loudness';
 import { ScaledCanvas, systemPixelRatio } from './stage/scaled-canvas';
@@ -125,18 +126,35 @@ ticker.subscribe(() => beatImpact.render(player.currentTime));
 
 // 背景は装飾。canvas を塞ぐブラウザや context を作れない状況でも、
 // 歌詞と音（作品の本体）は動かなければならないので、失敗をここで受け止める。
-// 背景が出ないことより、真っ黒な画面に死んだ再生コントロールだけが残る方が悪い
-try {
-  const canvas = new ScaledCanvas(requiredElement<HTMLCanvasElement>('backdrop'), systemPixelRatio);
-  // **どの描き手を使うかを決めているのはこの 1 行だけ**（M8-2 / Issue #41）。
-  // Backdrop という口の実装なので、Starfield（M5 の星空）に戻すのも、
-  // 層を重ねるものに差し替えるのもここで済む
-  const backdrop: Backdrop = new GrainField(canvas, prefersReducedMotion, loudness.level);
-  // 背景の時計も曲の再生位置。シークすれば粒のちらつきも一緒に飛ぶ
-  ticker.subscribe(() => backdrop.render(player.currentTime));
-} catch (error) {
-  console.warn('背景を出せませんでした。歌詞と音はそのまま動きます', error);
+// 背景が出ないことより、真っ黒な画面に死んだ再生コントロールだけが残る方が悪い。
+//
+// **層ごとに独立して受け止める**（M11 のレビュー指摘 🟡）。1 つの try で囲むと、
+// 新しい層の失敗が既存の層を道連れにする（構築順が先なので、グラフが落ちれば
+// 粒も出ない）。購読も層ごとに分ける — Ticker は購読者単位でしか例外を握らないので、
+// 1 本にまとめると片方が毎フレーム投げたときにもう片方も止まる。
+//
+// **どの描き手を使うかを決めているのはこの塊だけ**（M8-2 / Issue #41）。
+// Backdrop という口の実装なので、Starfield（M5 の星空）に戻すのもここで済む。
+// 1 枚に合成せず canvas ごと分けているのは、層ごとに描き直しの判定を持たせるため
+// （粒は 12 コマ/秒、グラフは毎フレーム）。重なりの順は CSS が決める（src/style.css）
+function mountBackdrop(canvasId: string, create: (surface: ScaledCanvas) => Backdrop): void {
+  try {
+    const backdrop = create(
+      new ScaledCanvas(requiredElement<HTMLCanvasElement>(canvasId), systemPixelRatio),
+    );
+    // 背景の時計も曲の再生位置。シークすれば粒のちらつきもグラフの漂いも一緒に飛ぶ
+    ticker.subscribe(() => backdrop.render(player.currentTime));
+  } catch (error) {
+    console.warn(`背景（${canvasId}）を出せませんでした。歌詞と音はそのまま動きます`, error);
+  }
 }
+
+// 奥から手前へ。ここでの順は購読の順でしかなく、見えの重なりは CSS の z-index が決める
+mountBackdrop(
+  'backdrop-graph',
+  (surface) => new GraphField(surface, prefersReducedMotion, loudness.level),
+);
+mountBackdrop('backdrop', (surface) => new GrainField(surface, prefersReducedMotion, loudness.level));
 
 ticker.start();
 

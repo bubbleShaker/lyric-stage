@@ -38,8 +38,15 @@
          組み立て直後に一度書く）。ここに書くと、歌詞が読めなかった時に
          mountScenePolarity へ到達しないぶん、その値のまま貼り付く -->
     <div class="scene" id="scene">
-      <!-- 背景の星空。描くのは src/stage/starfield.ts。
+      <!-- 背景は 2 枚に分けて重ねる（M11 / Issue #63）。**1 枚に合成しないのは、
+           層ごとに描き直しの判定を持たせるため** — 粒は 12 コマ/秒でしか変わらず、
+           グラフは毎フレーム動く。1 枚に描くと、共有の消去のたびに粒 2600 個を
+           60 コマ/秒で塗り直すことになる（詳しくは src/stage/backdrop.ts）。
+           重なりの順は CSS の z-index が決める（DOM の順ではない。src/style.css）。
            装飾でしかないので支援技術からは隠す -->
+      <!-- 中央のグラフ。描くのは src/stage/graph-field.ts -->
+      <canvas class="backdrop backdrop--graph" id="backdrop-graph" aria-hidden="true"></canvas>
+      <!-- 粒とビネット。描くのは src/stage/grain-field.ts -->
       <canvas class="backdrop" id="backdrop" aria-hidden="true"></canvas>
 
       <main class="stage">
