@@ -444,11 +444,12 @@ describe('WORK_WINDOW × 本編シート', () => {
     expect(WORK_WINDOW.end).toBeLessThan(AUDIO_DURATION_SECONDS);
   });
 
-  it('切り出すとラスサビの 7 行が残る', () => {
-    // M8-0 で決めた作品の姿。M8-5 の間だけ 3 行に縮めていたのを Issue #37 で戻した。
+  it('切り出すとラスサビの 10 行が残る', () => {
+    // M8-0 で決めた作品の姿。M8-5 の間だけ 3 行に縮めていたのを Issue #37 で戻し、
+    // **M12-1（Issue #69）で作者の「あと 10 秒」に応えて 3 行足した**（7 → 10）。
     // **短く縮めた状態に戻ることを止めているのはここ**（work.test.ts の尺の下限は
     // 5 行でも 6 行でも通るので、行数まではこちらでしか守れない）
-    expect(sliced.lines).toHaveLength(7);
+    expect(sliced.lines).toHaveLength(10);
   });
 
   it('区間の頭に助走がある（いきなり歌から始まらない）', () => {

@@ -374,17 +374,83 @@
     {
       "time": 203.82,
       "text": "シャイニングスター綴れば",
-      "effect": "zoomLine"
+      "effect": "zoomLine",
+      "place": { "at": "middle-center", "size": "xl", "nudge": { "y": -0.06 }, "tilt": -3 },
+      "parts": [
+        {
+          "text": "シャイニング",
+          "at": 0,
+          "effect": "rushIn",
+          "place": { "at": "middle-left", "size": "lg", "nudge": { "y": -0.08 }, "tilt": -3 },
+          "decor": ["rule"]
+        },
+        {
+          "text": "スター",
+          "at": 1.128,
+          "effect": "zoom",
+          "place": { "at": "top-right", "size": "xl", "nudge": { "x": -0.02 }, "tilt": 4 },
+          "decor": ["band"],
+          "spark": "burst"
+        },
+        {
+          "text": "綴れば",
+          "at": 2.254,
+          "effect": "swing",
+          "place": { "at": "bottom-center", "size": "lg", "nudge": { "x": 0.08 } },
+          "sub": "SPELL IT OUT"
+        }
+      ]
     },
     {
       "time": 206.83,
       "text": "夢に眠る幻が掌に降り注ぐ",
-      "effect": "shatter"
+      "effect": "shatter",
+      "place": { "at": "bottom-center", "size": "lg", "nudge": { "x": 0.04 } },
+      "parts": [
+        {
+          "text": "夢に眠る",
+          "at": 0,
+          "effect": "fade",
+          "place": { "at": "middle-right", "size": "lg", "nudge": { "y": -0.06 }, "tilt": -3 },
+          "decor": ["rule"]
+        },
+        {
+          "text": "幻が",
+          "at": 1.503,
+          "effect": "glitch",
+          "place": { "at": "top-left", "size": "md", "nudge": { "y": 0.02 }, "tilt": -4 },
+          "sub": "PHANTOM"
+        },
+        {
+          "text": "掌に降り注ぐ",
+          "at": 3.006,
+          "effect": "shatter",
+          "place": { "at": "bottom-center", "size": "xl", "nudge": { "x": 0.04 }, "tilt": 2 },
+          "spark": "ripple"
+        }
+      ]
     },
     {
       "time": 212.09,
       "text": "新たな世界へ",
-      "effect": "zoom"
+      "effect": "zoom",
+      "place": { "at": "middle-center", "size": "xl", "tilt": -2 },
+      "parts": [
+        {
+          "text": "新たな",
+          "at": 0,
+          "effect": "typewriter",
+          "place": { "at": "top-right", "size": "md", "nudge": { "y": 0.04 }, "tilt": 3 },
+          "spark": "ghost"
+        },
+        {
+          "text": "世界へ",
+          "at": 1.128,
+          "effect": "zoomLine",
+          "place": { "at": "middle-center", "size": "xl", "tilt": -2 },
+          "sub": "NEW WORLD"
+        }
+      ]
     },
     {
       "time": 217.35,
