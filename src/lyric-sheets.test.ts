@@ -11,6 +11,7 @@ import { isAnchorName, isSizeName } from './stage/composition';
 import { decors, isDecorName } from './stage/decor';
 import { effects, isEffectName, resolveEffect } from './stage/effects';
 import { buildLineTimeline } from './stage/line-timeline';
+import { isSparkName, type SparkEntry } from './stage/spark';
 import { secondsPerBeat } from './domain/beat';
 import { BEAT_GRID, DEFAULT_SHEET_NAME, WORK_WINDOW } from './work';
 // Vite の ?raw は対象ファイルを文字列として読み込む。fs を使わずに済むので
@@ -86,6 +87,35 @@ describe.each(Object.entries(SHEET_SOURCES))('%s.json', (_name, source) => {
       );
 
     expect(unknown).toStrictEqual([]);
+  });
+
+  it('知らない装飾名が書かれていない', () => {
+    // 一過性の装飾（M10-1）も図形と同じ — 未知の名前は既定に落ちず**完全に消える**。
+    // しかもこちらは 1 秒足らずで消えるものなので、出ていないことに**目で気付く機会が
+    // そもそも無い**（帯なら行が終わるまで残るぶん、まだ気付ける）
+    const unknown = sheet.lines
+      .flatMap((line) => partsOf(line))
+      .filter((part) => part.spark !== undefined && !isSparkName(part.spark))
+      .map((part) => `${part.text}: ${part.spark}`);
+
+    expect(unknown).toStrictEqual([]);
+  });
+
+  it('縦組みの語句に一過性の装飾を当てていない', () => {
+    // 英字（M8-3c）と同じ理由。装飾の大きさの基準は「基準 × 段階」だが、縦組みの
+    // --size-base は `.stage__text.stage__text--vertical` **自身への宣言**なので、
+    // 兄弟である `.stage__spark` には届かない（1280×600 では狙いの 1.6 倍で出る）。
+    //
+    // 加えて、6 案のうち下線（underline）と四角（blocks）は**横組みの向きを前提に
+    // 位置を決めている**。図形（DECOR_LAYOUT_CLASS）のように組み方ごとの変種を持つ道も
+    // あるが、6 案 × 2 組み方の形を先に書くことになる。**当面は組み合わせを禁じる**
+    const vertical = sheet.lines
+      .flatMap((line) => partsOf(line))
+      .filter((part) => part.spark !== undefined)
+      .filter((part) => resolveEffect(part.effect).layout === 'vertical')
+      .map((part) => `${part.text}: ${part.spark}`);
+
+    expect(vertical).toStrictEqual([]);
   });
 
   it('面の図形が、奥行きを動かす演出の語句に当たっていない', () => {
@@ -569,10 +599,16 @@ function dummyTarget(count: number) {
     frame: {} as HTMLElement,
     root: {} as HTMLElement,
     chars: Array.from({ length: count }, () => ({}) as unknown as Element),
-    // 図形（M8-3a）も英字（M8-3c）も本番と同じ経路で組まれるので、当て先だけ返す。
-    // これらが行の尺に入ることも、これで「行の猶予に収まる」の検査が見てくれる
+    // 図形（M8-3a）も英字（M8-3c）も一過性の装飾（M10-1）も本番と同じ経路で組まれるので、
+    // 当て先だけ返す。これらが行の尺に入ることも、これで「行の猶予に収まる」の検査が見てくれる
     createDecor: () => ({}) as HTMLElement,
     createSub: () => ({}) as HTMLElement,
+    createSpark: (spark: SparkEntry) => ({
+      box: {} as HTMLElement,
+      // 破片の数は本番どおりに揃える。減らすと、破片ごとに時間差を付ける案
+      // （blocks の stagger）の尺が実際より短く測れる
+      pieces: Array.from({ length: spark.pieces }, () => ({}) as HTMLElement),
+    }),
   };
 }
 

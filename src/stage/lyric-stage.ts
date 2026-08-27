@@ -6,6 +6,13 @@ import { resolveComposition } from './composition';
 import { DECOR_BASE_CLASS, DECOR_LAYOUT_CLASS } from './decor';
 import { LAYOUT_CLASS, type EffectLayout, type EffectTimeline } from './effects';
 import { buildLineTimeline, type PartTarget } from './line-timeline';
+import {
+  SPARK_BASE_CLASS,
+  SPARK_ECHO_CLASS,
+  SPARK_PIECE_CLASS,
+  type SparkEntry,
+  type SparkTarget,
+} from './spark';
 import { SUB_CLASS, SUB_TEXT_CLASS } from './sub-text';
 
 /**
@@ -126,7 +133,49 @@ export class LyricStage implements LyricPresenter {
       chars: split.chars,
       createDecor: (className) => this.insertDecor(text, className, layout),
       createSub: (sub) => this.insertSub(text, sub),
+      createSpark: (spark) => this.appendSpark(frame, spark, part.text),
     };
+  }
+
+  /**
+   * 一過性の装飾の当て先を、語句の枠の**末尾**に足す（M10-1）。
+   *
+   * 図形（`insertDecor`）と英字（`insertSub`）は文字の**前**に挿して奥へ回すが、
+   * こちらは後ろに足して**手前**に置く。添え物ではなく、語句の上で一瞬だけ起きる
+   * 出来事なので、文字に隠れては意味が無い。
+   *
+   * 奥から迫る演出（`rushIn` / `swing`）の最中は文字の方が奥へ行くので、手前に
+   * 置いたこちらはそのまま手前に居続ける。図形が `DecorEntry.solid` として抱えている
+   * 噛み合わせ（面が文字を隠す）は、**向きが逆なので起きない**。
+   *
+   * 破片は数だけ立てて中身は入れない — 形は `style.css` が持つ。ただし
+   * `echoesText` の案（`ghost`）だけは語句の文字を写す。**同じクラス
+   * （`.stage__text`）を当てて写す**ので、書体・太さ・字間・行間は自動で揃う
+   * （書き並べると、書体を変えた日に 2 か所を直すことになる）。
+   */
+  private appendSpark(frame: HTMLElement, spark: SparkEntry, text: string): SparkTarget {
+    const box = document.createElement('div');
+    box.className = SPARK_BASE_CLASS;
+    box.classList.add(spark.className);
+
+    const pieces = Array.from({ length: spark.pieces }, () => {
+      const piece = document.createElement('div');
+      piece.className = SPARK_PIECE_CLASS;
+
+      if (spark.echoesText) {
+        piece.classList.add(SPARK_ECHO_CLASS);
+        // 歌詞と同じく外から来た文字列なので、必ず textContent で入れる
+        piece.textContent = text;
+      }
+
+      box.append(piece);
+
+      return piece;
+    });
+
+    frame.append(box);
+
+    return { box, pieces };
   }
 
   /**

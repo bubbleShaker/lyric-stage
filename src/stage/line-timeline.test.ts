@@ -15,13 +15,16 @@ function dummyTarget(
 ): PartTarget & {
   readonly decorClasses: string[];
   readonly subTexts: string[];
-  /** 図形・英字に渡した当て先そのもの。gsap が書いた値を後から読むために控える */
+  readonly sparkNames: string[];
+  /** 図形・英字・一過性の装飾に渡した当て先そのもの。gsap が書いた値を後から読むために控える */
   readonly extras: Record<string, unknown>[];
 } {
   // 図形を頼まれた回数と名前を控える。本物では枠の中に要素が立つ（M8-3a）
   const decorClasses: string[] = [];
   // 英字も同じ（M8-3c）。こちらは名前ではなく中身そのものが渡る
   const subTexts: string[] = [];
+  // 一過性の装飾（M10-1）。こちらは登録そのものが渡るので、クラス名で控える
+  const sparkNames: string[] = [];
   const extras: Record<string, unknown>[] = [];
 
   const extra = () => {
@@ -36,6 +39,7 @@ function dummyTarget(
     chars: Array.from({ length: count }, () => ({}) as unknown as Element),
     decorClasses,
     subTexts,
+    sparkNames,
     extras,
     createDecor: (className) => {
       decorClasses.push(className);
@@ -44,6 +48,12 @@ function dummyTarget(
     createSub: (text) => {
       subTexts.push(text);
       return extra();
+    },
+    createSpark: (spark) => {
+      sparkNames.push(spark.className);
+      // 破片は本物と同じ数だけ立てる。数が違うと、破片ごとに違う値を書く演出
+      // （burst の放射）の検査が「たまたま通る」ようになる
+      return { box: extra(), pieces: Array.from({ length: spark.pieces }, () => extra()) };
     },
   };
 }

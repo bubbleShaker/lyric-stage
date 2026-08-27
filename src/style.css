@@ -656,6 +656,145 @@ body {
   clip-path: inset(-0.2em calc((1 - var(--sub-reveal, 0)) * (100% + 0.1em)) -0.2em -0.1em);
 }
 
+/* --- 語句に一瞬だけ添える装飾（M10-1 / Issue #65。名前は src/stage/spark.ts） ---
+
+   出て、消える。**帯・罫・枠（.stage__decor）とは逆に、文字より手前に置く** —
+   添え物ではなく語句の上で一瞬だけ起きる出来事なので、隠れては意味が無い
+   （木の順で決まる。src/stage/lyric-stage.ts の appendSpark）。
+
+   **差し色の朱を作品側で使う唯一の場所。** 「差し色は触れる所に限る」という M8-2 の線を、
+   ここだけ意図して破っている（PLAN.md に決定として書いた）。**色は必ず var(--stage-accent) で
+   書く** — palette.ts が唯一の出どころで、:root の外に 16 進を書くと palette.test.ts が落とす。
+
+   破片をいくつ立てるかは JS（レジストリ）が数で宣言し、**どんな形でどこに出るかはここ**。
+   図形の --decor-grow と同じ分担で、形を持っている側が向きも位置も持つ。
+
+   大きさの基準は文字・図形と同じ「基準 × 段階」。**縦組みの語句には当てない**
+   （src/lyric-sheets.test.ts が落とす）。理由は英字（M8-3c）と同じで、縦組みの
+   --size-base の置き換えが .stage__text 自身への宣言なので兄弟には届かない */
+.stage__spark {
+  position: absolute;
+  inset: 0;
+  font-size: calc(var(--size-step, 1) * var(--size-base));
+
+  /* 画面いっぱいの .stage__lines と同じ理由。装飾は読むものでも押すものでもない */
+  pointer-events: none;
+}
+
+.stage__spark__piece {
+  position: absolute;
+}
+
+/* A 弾ける — 朱の粒が中心から放射状に飛ぶ。
+   飛距離は JS が xPercent / yPercent（＝粒自身の大きさに対する割合）で書くので、
+   **粒は必ず正円にする** — 幅と高さが違うと縦横で尺度が変わり、放射が歪む */
+.stage__spark--burst .stage__spark__piece {
+  left: 50%;
+  top: 50%;
+  width: 0.2em;
+  height: 0.2em;
+  margin: -0.1em 0 0 -0.1em;
+  border-radius: 50%;
+  background: var(--stage-accent);
+}
+
+/* B 輪が広がる — 角丸の輪郭が 2 枚。枠（.stage__decor--box）と同じ寸法から広がるので、
+   同じ語句に枠を重ねると輪郭が二重に見える。重ねないこと */
+.stage__spark--ripple .stage__spark__piece {
+  inset: -0.16em -0.28em;
+  border: 0.045em solid var(--stage-accent);
+  border-radius: 0.34em;
+}
+
+/* 2 枚目は内側から。同じ寸法だと 2 枚が重なって 1 枚にしか見えない */
+.stage__spark--ripple .stage__spark__piece:nth-child(2) {
+  inset: -0.04em -0.14em;
+}
+
+/* C 集中線 — **破片そのものは大きさ 0 の点**で、線はここが点から離れた所に描く。
+   こうすると JS 側の scale がそのまま「点からの距離」になり、向き（rotation）と
+   距離を別々に書ける。破片を線そのものにすると、gsap の transform は
+   「平行移動 → 回転」の順なので**回した後の向きへ動かせず**、放射状に並べられない。
+
+   拡大は擬似要素の位置と長さの両方に効くので、遠い線ほど長く見える（＝速そうに見える） */
+.stage__spark--focus .stage__spark__piece {
+  left: 50%;
+  top: 50%;
+  width: 0;
+  height: 0;
+}
+
+.stage__spark--focus .stage__spark__piece::before {
+  content: '';
+  position: absolute;
+  left: 0.5em;
+  top: -0.009em;
+  width: 0.18em;
+  height: 0.018em;
+  background: var(--stage-accent);
+}
+
+/* D 下線が走る — **頭と尻尾を別々に受け取る。** JS は進み具合を 2 つ
+   （--spark-head / --spark-tail）0 → 1 に動かすだけで、それを「どこからどこまで
+   描くか」に読み替えるのはこちら（--decor-grow / --sub-reveal と同じ分担）。
+   尻尾が遅れて追うので、進行方向へ伸びてから縮んで走り抜ける。
+
+   罫（.stage__decor--rule）より下・太めに引く。同じ語句に罫を重ねると二重線になる */
+.stage__spark--underline .stage__spark__piece {
+  inset: auto -0.3em -0.16em -0.3em;
+  height: 0.11em;
+  background: var(--stage-accent);
+  clip-path: inset(0 calc((1 - var(--spark-head, 0)) * 100%) 0 calc(var(--spark-tail, 0) * 100%));
+}
+
+/* E 四角がポンと出る — **どこに出るかはここが持つ**（JS は数を宣言するだけ）。
+   語句の箱の縁に半分掛かる位置に散らして、貼り付いた飾りに見せる。
+   位置に規則性を持たせない（等間隔に置くと目盛りに見える） */
+.stage__spark--blocks .stage__spark__piece {
+  width: 0.15em;
+  height: 0.15em;
+  background: var(--stage-accent);
+}
+
+.stage__spark--blocks .stage__spark__piece:nth-child(1) {
+  left: -0.3em;
+  top: 0.02em;
+}
+
+.stage__spark--blocks .stage__spark__piece:nth-child(2) {
+  left: 12%;
+  top: -0.24em;
+}
+
+.stage__spark--blocks .stage__spark__piece:nth-child(3) {
+  right: 22%;
+  top: -0.2em;
+}
+
+.stage__spark--blocks .stage__spark__piece:nth-child(4) {
+  right: -0.32em;
+  bottom: 0.12em;
+}
+
+.stage__spark--blocks .stage__spark__piece:nth-child(5) {
+  left: 34%;
+  bottom: -0.18em;
+}
+
+.stage__spark--blocks .stage__spark__piece:nth-child(6) {
+  right: 8%;
+  bottom: -0.22em;
+}
+
+/* F 影がずれる — 語句の朱の複製。**破片には .stage__text も当たっている**
+   （src/stage/lyric-stage.ts が写す）ので、書体・太さ・字間・行間はここに書かない
+   — 書き並べると、書体を変えた日に 2 か所を直すことになる。
+   inset: 0 で語句の箱にぴったり重ね、寄せ方（text-align）は枠から継ぐ */
+.stage__spark--ghost .stage__spark__piece {
+  inset: 0;
+  color: var(--stage-accent);
+}
+
 /* --- 構図のアンカー（src/stage/composition.ts が当てる） ---
 
    端の余白は横 7% / 縦 10%。縦を厚めに取るのは、行の高さが幅よりずっと小さく、

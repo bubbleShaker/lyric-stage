@@ -24,6 +24,8 @@ export interface LyricLine {
   decor?: string[];
   /** 行に添える英字。M8-3c で足した。刻んだ行では使わない（`LyricPart.sub` を見よ） */
   sub?: string;
+  /** 行に一瞬だけ添える装飾。M10-1 で足した。刻んだ行では使わない（`LyricPart.spark` を見よ） */
+  spark?: string;
   /**
    * 画の明暗（M9-3a）。**この行から先ずっと続く。**
    *
@@ -145,6 +147,20 @@ export interface LyricPart {
    * 作るので、CSS で字を作り替えると**検査が見ている集合と実際に描く字がずれる**。
    */
   sub?: string;
+  /**
+   * 語句に一瞬だけ添える装飾の名前（M10-1）。出て、消える。
+   *
+   * **`decor` と違い、列ではなく 1 つ。** 帯と罫は重ねられるが、一瞬の装飾を 2 つ
+   * 重ねると 1 秒足らずの間に別々の動きが同時に走って、何が起きたのか読めない
+   * （理由は `stage/spark.ts`）。
+   *
+   * **`decor` / `sub` と同じく、行からは継がない**（`partsOf` を見よ）。継ぐと
+   * 刻んだ行の全語句が同時に弾けて、置く語句を選ぶという狙いと逆になる。
+   *
+   * 名前の語彙（どれが実在するか）はここでは持たない。レジストリは
+   * `stage/spark.ts` にあり、綴りの間違いは `src/lyric-sheets.test.ts` が落とす。
+   */
+  spark?: string;
 }
 
 /**
@@ -218,6 +234,8 @@ export interface ResolvedPart {
   readonly decor: readonly string[];
   /** 添える英字。無ければ undefined（空文字は入口で弾いてある） */
   readonly sub: string | undefined;
+  /** 一瞬だけ添える装飾。無ければ undefined。**列ではなく 1 つ**（M10-1） */
+  readonly spark: string | undefined;
 }
 
 /**
@@ -237,6 +255,7 @@ export function partsOf(line: LyricLine): ResolvedPart[] {
         place: line.place,
         decor: line.decor ?? [],
         sub: line.sub,
+        spark: line.spark,
       },
     ];
   }
@@ -251,6 +270,7 @@ export function partsOf(line: LyricLine): ResolvedPart[] {
     // 行から配ると刻んだ行の全語句に同じものが出て、画を締めるどころか埋めることになる
     decor: part.decor ?? [],
     sub: part.sub,
+    spark: part.spark,
   }));
 }
 
@@ -307,11 +327,11 @@ function parseLyricLine(value: unknown, index: number): LyricLine {
   // 画面には歌詞が出ているので、書いた本人にも原因が分からない
   rejectUnknownKeys(
     line,
-    ['time', 'text', 'effect', 'duration', 'place', 'parts', 'decor', 'sub', 'polarity'],
+    ['time', 'text', 'effect', 'duration', 'place', 'parts', 'decor', 'sub', 'spark', 'polarity'],
     `lines[${index}]`,
   );
 
-  const { time, text, effect, duration, place, parts, decor, sub, polarity } = line;
+  const { time, text, effect, duration, place, parts, decor, sub, spark, polarity } = line;
 
   if (typeof time !== 'number' || !Number.isFinite(time) || time < 0) {
     throw new LyricSheetError(`lines[${index}].time が 0 以上の数値ではありません`);
@@ -337,6 +357,12 @@ function parseLyricLine(value: unknown, index: number): LyricLine {
   if (parts !== undefined && sub !== undefined) {
     throw new LyricSheetError(`lines[${index}] は語句に刻まれているので、sub は語句の側に書きます`);
   }
+  // 一瞬の装飾も同じ（M10-1）
+  if (parts !== undefined && spark !== undefined) {
+    throw new LyricSheetError(
+      `lines[${index}] は語句に刻まれているので、spark は語句の側に書きます`,
+    );
+  }
   // **語彙をここで見るのは `effect` / `place` / `decor` と違う点。** あちらは名前が
   // 実在するかを `stage/` のレジストリに任せ（綴り間違いは lyric-sheets.test.ts が落とす）、
   // domain は形だけを見る。極性は取りうる状態が 2 つしかなく増える余地が無いので、
@@ -359,6 +385,7 @@ function parseLyricLine(value: unknown, index: number): LyricLine {
     ...(parts !== undefined ? { parts: parseParts(parts, `lines[${index}]`) } : {}),
     ...(decor !== undefined ? { decor: parseDecor(decor, `lines[${index}]`) } : {}),
     ...(sub !== undefined ? { sub: parseSub(sub, `lines[${index}]`) } : {}),
+    ...(spark !== undefined ? { spark: parseSpark(spark, `lines[${index}]`) } : {}),
     ...(polarity !== undefined ? { polarity } : {}),
   };
 }
@@ -392,9 +419,9 @@ function parseParts(value: unknown, owner: string): LyricPart[] {
 function parsePart(value: unknown, where: string): LyricPart {
   if (!isPlainObject(value)) throw new LyricSheetError(`${where} がオブジェクトではありません`);
 
-  rejectUnknownKeys(value, ['text', 'at', 'effect', 'place', 'decor', 'sub'], where);
+  rejectUnknownKeys(value, ['text', 'at', 'effect', 'place', 'decor', 'sub', 'spark'], where);
 
-  const { text, at, effect, place, decor, sub } = value;
+  const { text, at, effect, place, decor, sub, spark } = value;
 
   if (typeof text !== 'string' || text.trim() === '') {
     throw new LyricSheetError(`${where}.text が空でない文字列ではありません`);
@@ -415,19 +442,41 @@ function parsePart(value: unknown, where: string): LyricPart {
     ...(place !== undefined ? { place: parsePlacement(place, where) } : {}),
     ...(decor !== undefined ? { decor: parseDecor(decor, where) } : {}),
     ...(sub !== undefined ? { sub: parseSub(sub, where) } : {}),
+    ...(spark !== undefined ? { spark: parseSpark(spark, where) } : {}),
   };
 }
 
 /**
  * 語句に添える英字（M8-3c）。**形だけを見る**（何を書くかは作者の領分）。
  *
- * 空白だけの文字列と前後の空白を弾くのは `parseDecor` と同じ理由 — どちらも
- * 画面では「なぜか英字が出ない／位置がずれる」にしか見えず、原因に辿り着けない。
+ * 形の決まりそのものは `parseTrimmed` が持つ（`decor` / `spark` と同じ）。
  * 英字は字間を広く空けて置くので、**前後の空白 1 つが数 px のずれになる**。
  */
 function parseSub(value: unknown, owner: string): string {
-  const where = `${owner}.sub`;
+  return parseTrimmed(value, `${owner}.sub`);
+}
 
+/**
+ * 一瞬だけ添える装飾の名前（M10-1）。**形だけを見る**（実在するかは `stage/spark.ts`）。
+ *
+ * **`decor` と違い列ではない**ので、重複を落とす手当ても要らない。
+ */
+function parseSpark(value: unknown, owner: string): string {
+  return parseTrimmed(value, `${owner}.spark`);
+}
+
+/**
+ * 空でなく、前後に空白の無い文字列。
+ *
+ * 装飾の名前（`decor` / `spark`）と英字（`sub`）が同じ形を求める。**空白を弾く理由も
+ * 同じ** — `' band '` は実在の名前と見分けが付かないのに、語彙の側では未知の名前として
+ * 静かに落ちる。英字なら字間 0.42em の分だけ位置がずれる。どちらも画面では
+ * 「なぜか出ない／ずれる」にしか見えず、原因に辿り着けない。
+ *
+ * **理由を分けて出す** — 「空でない文字列ではありません」だけだと、目に見えない
+ * 空白を探す手掛かりが無い。
+ */
+function parseTrimmed(value: unknown, where: string): string {
   if (typeof value !== 'string' || value.trim() === '') {
     throw new LyricSheetError(`${where} が空でない文字列ではありません`);
   }
@@ -451,18 +500,7 @@ function parseDecor(value: unknown, owner: string): string[] {
   // 書き掛けとして弾く（place.nudge が空のときと同じ扱い）
   if (value.length === 0) throw new LyricSheetError(`${where} が空です`);
 
-  const names = value.map((name, order) => {
-    if (typeof name !== 'string' || name.trim() === '') {
-      throw new LyricSheetError(`${where}[${order}] が空でない文字列ではありません`);
-    }
-    // 前後の空白も弾く。`' band '` は実在の名前と見分けが付かないのに、
-    // 語彙の側では未知の名前として静かに落ちる。**理由を分けて出す** —
-    // 「空でない文字列ではありません」だと、目に見えない空白を探す手掛かりが無い
-    if (name.trim() !== name) {
-      throw new LyricSheetError(`${where}[${order}] の前後に空白があります: 「${name}」`);
-    }
-    return name;
-  });
+  const names = value.map((name, order) => parseTrimmed(name, `${where}[${order}]`));
 
   // 同じ図形を 2 度書くと、**同じ場所にぴったり重なって 1 つにしか見えない**。
   // 画面では気付けないので入口で落とす
