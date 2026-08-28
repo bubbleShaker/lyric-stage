@@ -2,6 +2,7 @@ import gsap from 'gsap';
 import { SplitText } from 'gsap/SplitText';
 import { loadLyricSheet, lyricSheetNameFromLocation } from './app/load-lyric-sheet';
 import { createBeatPulse, createFlashPulse, shiftBeatGrid } from './domain/beat';
+import { createFadeCurve } from './domain/fade';
 import { createPolarityTrack, sliceSheet } from './domain/lyrics';
 import { mountLyricTimeline } from './app/lyric-timeline';
 import { Ticker } from './app/ticker';
@@ -22,7 +23,15 @@ import { mountScreenDecor } from './stage/screen-decor';
 import { mountTransport } from './stage/transport';
 import { mountTransportIdle } from './stage/transport-idle';
 import { WindowedPlayback } from './stage/windowed-playback';
-import { AUDIO_PATH, BEAT_GRID, DEFAULT_SHEET_NAME, LOUDNESS_RANGE, workWindowFor } from './work';
+import { mountWorkFade } from './stage/work-fade';
+import {
+  AUDIO_PATH,
+  BEAT_GRID,
+  DEFAULT_SHEET_NAME,
+  LOUDNESS_RANGE,
+  WORK_FADE,
+  workWindowFor,
+} from './work';
 import './style.css';
 
 // GSAP のプラグインは使う前に gsap 本体へ登録する。登録することで gsap 側が
@@ -82,6 +91,16 @@ const beatImpact = mountBeatImpact(
   loudness.level,
 );
 
+// 頭と終わりのフェード（M12-2 / Issue #70）。**画と音を同じ曲線で開け閉めする。**
+// 長さは区間から取る（WHOLE_SONG なら無限＝尻のフェードは効かない）。音量の口を
+// loudness から取っているのは、解析のグラフを立てた時点で**音の出口があちら側へ
+// 移る**ため（要素の volume が効くかはブラウザ任せになる。stage/loudness.ts）
+const workFade = mountWorkFade(
+  requiredElement('work-fade'),
+  createFadeCurve(workWindow.end - workWindow.start, WORK_FADE),
+  loudness.setVolume,
+);
+
 const toggle = requiredElement<HTMLButtonElement>('transport-toggle');
 const transportRoot = requiredElement('transport');
 
@@ -118,6 +137,9 @@ ticker.subscribe(() => {
   player.keepInWindow();
 });
 ticker.subscribe(transport.render);
+// フェードは区間に収めた後の位置で決める（keepInWindow より後に置くこと）。
+// 画と音の両方をここが動かす
+ticker.subscribe(() => workFade.render(player.currentTime));
 // 解析値の取り込みは背景より先。同じフレームの値を背景が読む
 ticker.subscribe(loudness.sample);
 // 拍の衝撃も同じフレームの解析値を読む。時計は曲の再生位置なので、

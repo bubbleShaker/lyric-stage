@@ -346,6 +346,36 @@ body {
   opacity: calc(var(--beat-flash, 0) * 0.035);
 }
 
+/* --- 頭と終わりのフェード（M12-2 / Issue #70。書き込むのは src/stage/work-fade.ts） ---
+
+   地の色の膜。JS が書くのは `--work-fade`（0〜1 の現れ具合）だけで、
+   **それを「どれだけ覆うか」に読み替えるのはここ**（--decor-grow / --beat-flash と
+   同じ分担）。読み忘れると、値は毎フレーム正しく書かれているのに画だけ開かない。
+
+   **既定値は「見えている」側（1）。** JS が落ちても画が地の色で塗り潰されたまま
+   にならないようにする（フェードは作品の閉じ方であって、画の前提ではない）。
+
+   **色は var(--stage-bg)。** 地の色に溶けるので、極性が裏返っても
+   （.scene の filter: invert(1) はこの膜にも掛かる）「地に沈む」ままになる。
+
+   z-index の 0 は**再生コントロール（1）とクレジット（1）より奥**という宣言。
+   手前に置くと、フェードインの最中＝まだ止まっている間に再生ボタンが霞んで
+   押し所が分からなくなるうえ、素材の利用条件であるクレジットまで覆う。
+   **DOM 順に頼らない** — 同じ z-index の positioned な要素は木の順で描かれるので、
+   index.html の並べ替えだけで裏返る（.backdrop--graph / .screen-decor と同じ判断） */
+.work-fade {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  background: var(--stage-bg);
+  opacity: calc(1 - var(--work-fade, 1));
+
+  /* 画面いっぱいを覆う膜なので、当たり判定は持たない。**opacity: 0 でも要素は
+     そこに居る**ので、書かないとフェードが明けた後も画面全体が押せない
+     （再生コントロールは手前に居るので無事だが、下に何かを足した日に効いてくる） */
+  pointer-events: none;
+}
+
 /* 構図の座標系を張る箱（M8-1）。
    中の行は position: absolute で置くので、ここが「画面のどこ」の基準になる。
    絶対配置の基準は padding box なので、padding を足しても割合の指定は縮まない。
@@ -931,6 +961,13 @@ body {
 .stage__message {
   position: absolute;
 
+  /* フェードの膜（.work-fade / z-index: 0）より手前（M12-2）。**歌詞を読めなかった
+     という知らせは、頭のフェードが明ける前＝まだ止まっている間にこそ出る。**
+     覆うと、真っさらな紙だけが出て何も起きていないように見える。
+     .stage は position: relative だが z-index を持たないので重ね合わせ文脈を作らず、
+     ここの 1 は膜と同じ土俵（.scene の中）で効く */
+  z-index: 1;
+
   /* .stage の grid をやめた（M8-1）ので、中央寄せは自分で持つ */
   left: 50%;
   bottom: 6rem;
@@ -951,6 +988,9 @@ body {
   position: fixed;
   right: 1rem;
   bottom: 1rem;
+  /* フェードの膜（.work-fade / z-index: 0）より手前。**素材の利用条件なので、
+     頭と終わりも含めて常に読める側に置く**（M12-2） */
+  z-index: 1;
   font-size: 0.75rem;
   letter-spacing: 0.05em;
   opacity: 0.65;
@@ -967,6 +1007,9 @@ body {
   left: 50%;
   bottom: 1.5rem;
   translate: -50% 0;
+  /* フェードの膜（.work-fade / z-index: 0）より手前。**霞ませてはいけない** —
+     頭のフェードは止まっている間に見えている画なので、押し所が分からなくなる（M12-2） */
+  z-index: 1;
   display: grid;
   grid-template-columns: auto 1fr auto;
   align-items: center;

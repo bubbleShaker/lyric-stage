@@ -7,6 +7,7 @@
  */
 
 import type { BeatGrid } from './domain/beat';
+import type { FadeSpans } from './domain/fade';
 import { WHOLE_SONG, type WorkWindow } from './domain/work-window';
 
 /** 作品本編の歌詞シート名。?lyrics= の指定が無いときはこれを読む */
@@ -70,6 +71,23 @@ export const WORK_WINDOW: WorkWindow = { start: 176.77, end: 215.84 };
 export function workWindowFor(sheetName: string): WorkWindow {
   return sheetName === DEFAULT_SHEET_NAME ? WORK_WINDOW : WHOLE_SONG;
 }
+
+/**
+ * 頭と終わりのフェードの長さ（M12-2 / [Issue #70](https://github.com/bubbleShaker/lyric-stage/issues/70)）。
+ *
+ * **どちらも拍の上に置く。** 1 拍 0.7514 秒なので、入りは 3 拍・出は 2 拍。
+ *
+ * - 入り（`2.254`）は**歌い出し（区間の 3.01 秒目）より前に明け終わる**。
+ *   助走の 1 小節を使い切る形で、無音から画と音が立ち上がる
+ * - 出（`1.503`）は**最後の語句が出揃ってから始まる**。`世界へ` が迫り終わるのは
+ *   区間の 37.05 秒目（`213.82`）で、そこから 0.52 秒おいて暮れ始め、終端で 0 になる。
+ *   **これ以上長くすると、最後の語句が出た直後から薄れ始める**（Issue #69 で
+ *   区間の終わりを 52 拍に決めた時の、まさにその余白）
+ *
+ * 曲や区間を変えたらここも測り直す。長さの検査は `work.test.ts`、曲線そのものは
+ * `domain/fade.ts` が持つ。
+ */
+export const WORK_FADE: FadeSpans = { in: 2.254, out: 1.503 };
 
 /**
  * 拍の格子（M8-4 / Issue #49）。**この曲の実測値。**

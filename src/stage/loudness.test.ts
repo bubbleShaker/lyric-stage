@@ -124,9 +124,15 @@ class FakeAnalyser extends FakeNode {
   }
 }
 
+/** 音量つまみ（M12-2）。value を控えるだけ */
+class FakeGain extends FakeNode {
+  readonly gain = { value: 1 };
+}
+
 function fakeAudio() {
   const source = new FakeNode();
   const analyser = new FakeAnalyser();
+  const gain = new FakeGain();
   const destination = { name: 'destination' };
   const resume = vi.fn();
   let created = 0;
@@ -144,11 +150,13 @@ function fakeAudio() {
       return source;
     },
     createAnalyser: () => analyser,
+    createGain: () => gain,
   };
 
   return {
     source,
     analyser,
+    gain,
     destination,
     resume,
     close,
@@ -167,6 +175,9 @@ function fakeAudio() {
 
 const media = {} as HTMLMediaElement;
 
+/** 検査ごとに新しい要素を使う（volume を書き換えるので使い回せない） */
+const freshMedia = () => ({ volume: 1 }) as HTMLMediaElement;
+
 /** 偽の解析器は低音を 0 か 255 で返すので、幅は 0〜1 をそのまま使う */
 const RANGE = { quiet: 0, loud: 1 };
 
@@ -175,8 +186,10 @@ describe('createLoudness', () => {
     const audio = fakeAudio();
     createLoudness(media, audio.factory, RANGE).start();
 
+    // 解析 → 音量つまみ → destination（M12-2 でつまみが 1 段入った）
     expect(audio.source.connectedTo).toEqual([audio.analyser]);
-    expect(audio.analyser.connectedTo).toEqual([audio.destination]);
+    expect(audio.analyser.connectedTo).toEqual([audio.gain]);
+    expect(audio.gain.connectedTo).toEqual([audio.destination]);
   });
 
   it('渡された要素そのものを解析する', () => {
@@ -275,5 +288,76 @@ describe('createLoudness', () => {
     createLoudness(media, broken.factory, RANGE).start();
 
     expect(audio.close).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * 音量（M12-2 / Issue #70）。**出口がどちらに在るかを吸収するのがこの口の仕事。**
+ *
+ * `createMediaElementSource` を呼んだ時点で音の出口はグラフ側へ移り、要素の
+ * `volume` が効くかどうかはブラウザ任せになる。**耳でしか分からない壊れ方**
+ * （フェードが掛からない／二重に掛かる）なので、配線と同じく検査で守る。
+ */
+describe('createLoudness の音量', () => {
+  it('グラフが立つ前は要素の volume が出口', () => {
+    const el = freshMedia();
+    const audio = fakeAudio();
+
+    createLoudness(el, audio.factory, RANGE).setVolume(0.25);
+
+    expect(el.volume).toBe(0.25);
+  });
+
+  it('グラフが立ったら、つまみで掛けて要素は素に戻す（二重に掛けない）', () => {
+    const el = freshMedia();
+    const audio = fakeAudio();
+    const loudness = createLoudness(el, audio.factory, RANGE);
+
+    loudness.start();
+    loudness.setVolume(0.4);
+
+    expect(audio.gain.gain.value).toBe(0.4);
+    // 要素の volume が効くブラウザで二重に掛かると、フェードの形が変わる
+    expect(el.volume).toBe(1);
+  });
+
+  it('フェードの途中で再生ボタンが押されても音が飛び出さない', () => {
+    // 頭のフェードは止まっている間から始まっている（膜は組み立て直後に 0 を書く）。
+    // start() でつまみを作る時に今の音量を引き継がないと、**押した瞬間だけ全開**になる
+    const el = freshMedia();
+    const audio = fakeAudio();
+    const loudness = createLoudness(el, audio.factory, RANGE);
+
+    loudness.setVolume(0);
+    loudness.start();
+
+    expect(audio.gain.gain.value).toBe(0);
+  });
+
+  it('範囲の外や数でない値は締める', () => {
+    // 要素の volume は範囲外の代入が例外になる。NaN は比較をすり抜けるので別に落とす
+    const el = freshMedia();
+    const audio = fakeAudio();
+    const loudness = createLoudness(el, audio.factory, RANGE);
+
+    loudness.setVolume(-1);
+    expect(el.volume).toBe(0);
+    loudness.setVolume(3);
+    expect(el.volume).toBe(1);
+    loudness.setVolume(NaN);
+    expect(el.volume).toBe(0);
+  });
+
+  it('解析を始められない環境でも音量は効く', () => {
+    // フェードは作品の閉じ方なので、解析（装飾）の失敗に巻き込まれてはいけない
+    const el = freshMedia();
+    const loudness = createLoudness(el, () => {
+      throw new Error('AudioContext は使えません');
+    }, RANGE);
+
+    loudness.start();
+    loudness.setVolume(0.5);
+
+    expect(el.volume).toBe(0.5);
   });
 });

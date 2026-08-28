@@ -58,6 +58,12 @@
         <p class="stage__message" id="stage-message" role="status"></p>
       </main>
 
+      <!-- 頭と終わりのフェード（M12-2 / Issue #70。書き込むのは src/stage/work-fade.ts）。
+           **背景も歌詞も覆い、再生コントロールとクレジットは覆わない。**
+           順は DOM ではなく z-index が決める（src/style.css）が、置き場所も
+           覆う相手の後ろに揃えておく。装飾でしかないので支援技術からは隠す -->
+      <div class="work-fade" id="work-fade" aria-hidden="true"></div>
+
       <div class="transport" id="transport" data-state="loading">
         <button class="transport__toggle" id="transport-toggle" type="button">再生</button>
         <input

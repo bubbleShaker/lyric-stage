@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { secondsPerBeat } from './domain/beat';
+import { createFadeCurve } from './domain/fade';
 import { WHOLE_SONG } from './domain/work-window';
-import { BEAT_GRID, DEFAULT_SHEET_NAME, WORK_WINDOW, workWindowFor } from './work';
+import { BEAT_GRID, DEFAULT_SHEET_NAME, WORK_FADE, WORK_WINDOW, workWindowFor } from './work';
 
 /**
  * 作品固有の値そのものを検証する。
@@ -68,5 +69,31 @@ describe('WORK_WINDOW', () => {
     const length = WORK_WINDOW.end - WORK_WINDOW.start;
     expect(length).toBeGreaterThan(20);
     expect(length).toBeLessThan(40);
+  });
+});
+
+describe('WORK_FADE', () => {
+  const length = WORK_WINDOW.end - WORK_WINDOW.start;
+
+  it('区間に収まっている（組み立てた瞬間に落ちない）', () => {
+    // 本番と同じ経路で組み立てる。重なる長さを書くと明ける前に暮れ始める作品になり、
+    // domain 側が投げる — それが**画面ではなく起動時に**分かることを、ここで確かめる
+    expect(() => createFadeCurve(length, WORK_FADE)).not.toThrow();
+  });
+
+  it('長さが拍の上に載っている', () => {
+    // 拍から外れたフェードは、明けきる瞬間・暮れ始める瞬間が音の刻みから浮く。
+    // 許容は区間の頭と終わりと同じ 0.05 拍（≒ 38ms）
+    const perBeat = secondsPerBeat(BEAT_GRID);
+    const offGrid = [WORK_FADE.in, WORK_FADE.out]
+      .map((span) => span / perBeat)
+      .filter((beats) => Math.abs(beats - Math.round(beats)) >= 0.05);
+
+    expect(offGrid).toStrictEqual([]);
+  });
+
+  it('作品の半分を覆っていない', () => {
+    // フェードは閉じ方であって作品ではない。長すぎると「薄い画をずっと見ている」ことになる
+    expect(WORK_FADE.in + WORK_FADE.out).toBeLessThan(length / 2);
   });
 });

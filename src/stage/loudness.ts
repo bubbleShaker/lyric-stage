@@ -7,6 +7,10 @@
  * 解析の対象は `<audio>` 要素。要素そのものは composition root（main.ts）が持ち、
  * 再生の制御（AudioPlayer）と解析（ここ）が別々の側面から使う。
  * AudioPlayer に解析まで持たせると「音を鳴らす」以上のことを知り始める。
+ *
+ * **音量もここが持つ**（M12-2 / Issue #70）。解析のためにグラフを立てた時点で
+ * 音の出口がこちら側へ移るので、**「出口を持っている層が音量を持つ」**のが
+ * 唯一ずれない置き方になる（`setVolume` の説明を見よ）。
  */
 
 import type { IntensityQuery } from '../lib/intensity';
@@ -31,6 +35,17 @@ export const systemAudioContext: AudioContextFactory = () => new AudioContext();
 export interface Loudness {
   /** 今の強さ。読むだけで状態は進まない */
   readonly level: IntensityQuery;
+  /**
+   * 音量を 0〜1 で決める（M12-2 / Issue #70 のフェードが使う）。
+   *
+   * **解析と同じ層が持つのは、音の出口をこの層が持っているから。**
+   * `createMediaElementSource` を呼んだ時点で出口は AudioContext 側へ移り、
+   * **`<audio>` の volume が効くかどうかはブラウザ任せになる**（MDN も、
+   * グラフに繋いだら音量は GainNode で作れと書いている）。ここが
+   * 「まだ要素が鳴らしている / もうグラフが鳴らしている」を吸収すれば、
+   * 呼ぶ側（`stage/work-fade.ts`）は 0〜1 を渡すだけで済む。
+   */
+  readonly setVolume: (level: number) => void;
   /**
    * 解析を始める。**ユーザー操作（再生ボタンのクリック）から呼ぶこと。**
    * ブラウザは操作なしに音を出すことを禁じており、AudioContext も
@@ -116,6 +131,23 @@ export function createLoudness(
   let current = 0;
   /** 一度でも失敗したら諦める。押すたびに AudioContext を作ると数個で上限に当たる */
   let failed = false;
+  /** 音量つまみ。グラフが立つまでは null で、その間は要素の volume が出口 */
+  let gain: GainNode | null = null;
+  /** 今の音量。**グラフを立てる時に引き継ぐ**（フェードの途中で押されても飛び出さない） */
+  let volume = 1;
+
+  const setVolume = (level: number): void => {
+    // 要素の volume は範囲外の代入が例外になるので、ここで締める。
+    // NaN は Math.min/max をすり抜けるため別に落とす（`beat-impact.ts` と同じ手）
+    const value = Number.isFinite(level) ? Math.min(1, Math.max(0, level)) : 0;
+    volume = value;
+
+    if (gain) {
+      gain.gain.value = value;
+      return;
+    }
+    media.volume = value;
+  };
 
   const start = (): void => {
     if (context) {
@@ -135,16 +167,28 @@ export function createLoudness(
       const node = created.createAnalyser();
       node.fftSize = FFT_SIZE;
 
+      // 音量つまみ（M12-2）。**解析より後・destination の直前に挿す** —
+      // 前に挿すと、フェードで絞った音を解析することになり、
+      // **頭と尻で背景の反応まで一緒に落ちる**（フェードは画の演出であって、
+      // 曲の盛り上がりが変わったわけではない）
+      const output = created.createGain();
+      output.gain.value = volume;
+
       const source = created.createMediaElementSource(media);
 
       // **destination まで繋ぐこと。** 繋がないと音が消える
       // （解析は動くので背景は正しく反応し、原因が分かりにくい）
       source.connect(node);
-      node.connect(created.destination);
+      node.connect(output);
+      output.connect(created.destination);
 
       bins = new Uint8Array(node.frequencyBinCount);
       context = created;
       analyser = node;
+      gain = output;
+      // 出口がグラフへ移ったので、要素の側は素に戻す。**両方に掛けない** —
+      // 要素の volume が効くブラウザでは二重に掛かって曲線が変わってしまう
+      media.volume = 1;
       void created.resume();
     } catch (error) {
       // 解析は演出の足し。使えない環境でも音と歌詞と星空は動かす
@@ -162,5 +206,5 @@ export function createLoudness(
     current = smoothLevel(current, toIntensity(raw, range));
   };
 
-  return { level: () => current, start, sample };
+  return { level: () => current, setVolume, start, sample };
 }
