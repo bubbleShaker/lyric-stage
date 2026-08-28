@@ -423,7 +423,7 @@
         },
         {
           "text": "掌に降り注ぐ",
-          "at": 3.006,
+          "at": 2.63,
           "effect": "shatter",
           "place": { "at": "bottom-center", "size": "xl", "nudge": { "x": 0.04 }, "tilt": 2 },
           "spark": "ripple"
