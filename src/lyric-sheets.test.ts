@@ -340,6 +340,36 @@ describe(`${DEFAULT_SHEET_NAME}.json`, () => {
     expect(inconsistent).toStrictEqual([]);
   });
 
+  it('同じ歌詞の行が 2 度刻まれていたら、語句の刻み方まで揃っている', () => {
+    // 上の「同じ演出」を**語句の層へ延長したもの**（M12-1 / Issue #69 のレビュー指摘 🔴）。
+    //
+    // 上の検査が partsOf を通していないのは、作品の区間だけを刻んである以上
+    // 「刻んだ版」と「刻んでいない版」が並ぶのが普通の状態だから。だからといって
+    // 語句の層に見張りが無いままだと、**同じ歌詞を 2 度刻んだ時に片方だけ触っても
+    // 全テストが緑**になる（M8-5 のレビューが「そこは目で揃えること」と申し送った所で、
+    // M12-1 で区間を広げて `シャイニングスター綴れば` が実際に 2 度刻まれた）。
+    // このリポジトリは palette.ts / charset.txt でも「写しである以上いつか片方だけ直る」
+    // を機械に降ろしてきたので、ここも同じ扱いにする。
+    //
+    // **両方が刻まれている組だけを見る。** 片方が丸ごとの行なら、それは
+    // 「区間の外なのでまだ刻んでいない」という普通の状態
+    const byText = new Map<string, LyricLine[]>();
+    for (const line of sheet.lines) {
+      if (line.parts === undefined) continue;
+      byText.set(line.text, [...(byText.get(line.text) ?? []), line]);
+    }
+
+    // 比べるのは **partsOf を通した後の姿**（行から継いだ effect / place も含めて、
+    // 実際に画へ出るもの同士を突き合わせる）
+    const inconsistent = [...byText]
+      .filter(([, lines]) => lines.length > 1)
+      .map(([text, lines]) => ({ text, shapes: lines.map((line) => JSON.stringify(partsOf(line))) }))
+      .filter(({ shapes }) => new Set(shapes).size > 1)
+      .map(({ text }) => text);
+
+    expect(inconsistent).toStrictEqual([]);
+  });
+
   it('最後の行が消える時刻を持っている', () => {
     // 最後の行だけは「次の行の time」が無いので、duration を書かないと曲の終わりまで
     // 出しっぱなしになる（アウトロの約 41 秒）。下の「次の行が来る前に出揃う」も
@@ -444,11 +474,13 @@ describe('WORK_WINDOW × 本編シート', () => {
     expect(WORK_WINDOW.end).toBeLessThan(AUDIO_DURATION_SECONDS);
   });
 
-  it('切り出すとラスサビの 7 行が残る', () => {
-    // M8-0 で決めた作品の姿。M8-5 の間だけ 3 行に縮めていたのを Issue #37 で戻した。
+  it('切り出すとラスサビの 10 行が残る', () => {
+    // 作品の姿。M8-0 ではラスサビ 1 ブロック（7 行）だった。
+    // M8-5 の間だけ 3 行に縮めていたのを Issue #37 で戻し、
+    // **M12-1（Issue #69）で作者の「あと 10 秒」に応えて 3 行足した**（7 → 10）。
     // **短く縮めた状態に戻ることを止めているのはここ**（work.test.ts の尺の下限は
     // 5 行でも 6 行でも通るので、行数まではこちらでしか守れない）
-    expect(sliced.lines).toHaveLength(7);
+    expect(sliced.lines).toHaveLength(10);
   });
 
   it('区間の頭に助走がある（いきなり歌から始まらない）', () => {

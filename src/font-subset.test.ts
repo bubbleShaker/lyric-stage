@@ -17,8 +17,11 @@ import styleCss from './style.css?raw';
  * 1 文字ずつ落ちるので、その字だけ別の書体で「それらしく」出る（豆腐の四角にすらならない）。
  * 公開ページだけが崩れて、テストは全部緑 — 機械に見張らせるしかない類の壊れ方。
  *
- * とくに [Issue #37](https://github.com/bubbleShaker/lyric-stage/issues/37) で
- * WORK_WINDOW を 7 行へ広げるときに踏みやすい。
+ * とくに WORK_WINDOW を広げるときに踏みやすい（[Issue #37](https://github.com/bubbleShaker/lyric-stage/issues/37)
+ * で 7 行へ、[Issue #69](https://github.com/bubbleShaker/lyric-stage/issues/69) で 10 行へ広げた）。
+ * **区間を広げるだけなら作り直しは要らない** — 下の突き合わせは区間ではなく
+ * 公開する全シートを見ているので、歌詞の字は最初から入っている。要るのは
+ * **歌詞や英字を書き換えたとき**。
  *
  * charset.txt はサブセット化の副産物で、**出来上がった woff2 の cmap から読み戻したもの**。
  * woff2 をここで解くのではなく人が読める一覧と突き合わせるのは、「フォントが何を持って
