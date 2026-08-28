@@ -704,6 +704,22 @@ function trim(seconds: number): number {
   return Math.round(seconds * 1000) / 1000;
 }
 
+/**
+ * 行が画面に出ている長さ（秒）。**行の頭を 0 とする尺度**（M13-1 / Issue #74）。
+ *
+ * 終わりの時刻ではなく長さを返すのは、これを受け取る側（`buildLineTimeline`）が
+ * 行の頭からの相対時間で組み立てているため。時刻で渡すと、受け取った所で必ず
+ * `- line.time` を書くことになり、引き算の置き忘れが「行の中の時間だけ数十秒ずれる」
+ * という形で出る。
+ *
+ * **`Infinity` を返しうる。** duration を持たない最終行がそれで、
+ * `sliceSheet` を通した作品のシートでは起きない（区間の終わりで閉じるため）が、
+ * 素のシートを直接読む所（開発用ページ）では起こる。
+ */
+export function lineSpanAt(lines: readonly LyricLine[], index: number): number {
+  return displayEnd(lines, index) - lines[index].time;
+}
+
 /** 行が画面に出ている区間の終わり。duration が無ければ次の行が始まるまで */
 function displayEnd(lines: readonly LyricLine[], index: number): number {
   const line = lines[index];
@@ -769,6 +785,21 @@ export function sliceSheet(sheet: LyricSheet, workWindow: WorkWindow): LyricShee
 
     lines.push(copy);
   });
+
+  // **切り出した後の最終行には次の行が無い**（M13-1 / Issue #74）。duration を持たない
+  // ままだと表示長さが `Infinity` になり、行の中で時間を測る側 — 漂い（M13-2）・退場・
+  // カメラ — が尺を決められない。区間の終わりで閉じておけば、切り出したシートは
+  // 「区間の外まで出ている行は無い」という形で閉じる。
+  //
+  // **書くのは最後の 1 行だけ。** 全行に配ると `lineSpanAt` が「次の行まで」ではなく
+  // 「区間の終わりまで」を返し、どの行も同じ長さになる（duration は次の行より優先される）。
+  //
+  // `WHOLE_SONG`（素通し）では end が `Infinity` なのでここには入らない。
+  // **元のシートと等しいものが返る**という性質はそのまま保たれる。
+  const last = lines[lines.length - 1];
+  if (last !== undefined && last.duration === undefined && Number.isFinite(workWindow.end)) {
+    last.duration = trim(workWindow.end - workWindow.start - last.time);
+  }
 
   // 既定と同じなら項目ごと持たない。**`WHOLE_SONG`（素通し）で元のシートと
   // 等しいものが返る**という性質を保つため（`sliceSheet` の説明を見よ）

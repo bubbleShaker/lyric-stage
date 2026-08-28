@@ -31,7 +31,18 @@ export interface Playback {
 
 /** 1 行を出したり消したりできる何か */
 export interface LyricPresenter {
-  show(line: LyricLine): void;
+  /**
+   * 行を出す。`span` は**その行が画面に出ている長さ（秒）**（M13-1 / Issue #74）。
+   *
+   * 行そのものは「いつ・何を」しか持たないので、**次の行がいつ来るかは行から読めない**。
+   * 着地した後も動き続ける演出（M13-2 の漂い）や、行の終わりから逆算して積む退場は、
+   * これが無いと尺を決められない。求めるのは `lineSpanAt`（domain）の仕事で、
+   * ここは受け取るだけ。
+   *
+   * **`Infinity` がありうる**（duration を持たない最終行）。作品のシートは
+   * `sliceSheet` が区間の終わりで閉じるので有限だが、受け取る側は有限を前提にしない。
+   */
+  show(line: LyricLine, span: number): void;
   clear(): void;
   /**
    * 今出している行の、**行の頭からの経過秒**を伝える。

@@ -10,7 +10,7 @@ import {
 import { isAnchorName, isSizeName } from './stage/composition';
 import { decors, isDecorName } from './stage/decor';
 import { effects, isEffectName, resolveEffect } from './stage/effects';
-import { buildLineTimeline } from './stage/line-timeline';
+import { buildLineTimeline, LINE_SETTLED } from './stage/line-timeline';
 import { isSparkName, sparks, type SparkShape } from './stage/spark';
 import { secondsPerBeat } from './domain/beat';
 import { BEAT_GRID, DEFAULT_SHEET_NAME, WORK_FADE, WORK_WINDOW } from './work';
@@ -423,16 +423,24 @@ describe(`${DEFAULT_SHEET_NAME}.json`, () => {
     //
     // **本番と同じ組み立て（buildLineTimeline）で測る。** 語句を刻むと行の長さは
     // 「最後の語句が出る時刻 + その演出の長さ」になるので、演出単体を測っても
-    // 刻みすぎに気付けない。DOM の代わりにダミーを渡せば、組み立てだけを借りられる
+    // 刻みすぎに気付けない。DOM の代わりにダミーを渡せば、組み立てだけを借りられる。
+    //
+    // **見るのは尺ではなくラベル**（M13-2）。漂いが入って以降、タイムラインの尺は
+    // 「行が出ている長さ」そのものになった（着地した語句が行の終わりまで漂うため）ので、
+    // 尺を猶予と比べても必ず等しくなるだけで何も分からない。知りたいのは
+    // 「最後の語句が出揃うのは行が変わる前か」で、それが `LINE_SETTLED` の立つ時刻
     const overrun = sheet.lines
       .map((line, index) => {
-        const timeline = buildLineTimeline(line, (part) => dummyTarget(part.text.length));
-        const duration = timeline.duration();
+        const gap = gapAfter(sheet.lines, index);
+        const timeline = buildLineTimeline(line, (part) => dummyTarget(part.text.length), {
+          span: gap,
+        });
+        const settled = timeline.labels[LINE_SETTLED];
         timeline.kill();
-        return { line, duration, gap: gapAfter(sheet.lines, index) };
+        return { line, settled, gap };
       })
-      .filter(({ duration, gap }) => duration >= gap)
-      .map(({ line, duration, gap }) => `${line.text}: ${duration} 秒 / 猶予 ${gap} 秒`);
+      .filter(({ settled, gap }) => settled >= gap)
+      .map(({ line, settled, gap }) => `${line.text}: ${settled} 秒 / 猶予 ${gap} 秒`);
 
     expect(overrun).toStrictEqual([]);
   });
@@ -490,7 +498,11 @@ describe('WORK_WINDOW × 本編シート', () => {
 
   it('最後の行が区間の終わりまでに収まる', () => {
     const last = sliced.lines[sliced.lines.length - 1];
-    const length = WORK_WINDOW.end - WORK_WINDOW.start;
+    // **区間の長さも 1ms の格子で見る。** 切り出した時刻は domain の中で丸められて
+    // いるので、生の引き算（215.84 - 176.77 = 39.06999999999999）と比べると
+    // 1e-14 の埃で落ちる。丸めずに比べると、**最終行を区間の終わりぴったりで
+    // 閉じた**（M13-1）ことが「はみ出している」と読まれる
+    const length = onMillisecondGrid(WORK_WINDOW.end - WORK_WINDOW.start);
     expect(last.time + (last.duration ?? 0)).toBeLessThanOrEqual(length);
   });
 
@@ -499,11 +511,9 @@ describe('WORK_WINDOW × 本編シート', () => {
     // 「行の猶予に収まる」の検査に掛からず、**語句が出揃う前に区間が終わる**。
     // 区間の終わりを猶予として、本番と同じ組み立てで測る
     const last = sliced.lines[sliced.lines.length - 1];
-    const timeline = buildLineTimeline(last, (part) => dummyTarget(part.text.length));
-    const span = timeline.duration();
-    timeline.kill();
+    const settled = settledTimeOf(last, WORK_WINDOW.end - WORK_WINDOW.start - last.time);
 
-    expect(last.time + span).toBeLessThanOrEqual(WORK_WINDOW.end - WORK_WINDOW.start);
+    expect(last.time + settled).toBeLessThanOrEqual(WORK_WINDOW.end - WORK_WINDOW.start);
   });
 
   it('頭のフェードは歌い出しより前に明ける', () => {
@@ -516,12 +526,10 @@ describe('WORK_WINDOW × 本編シート', () => {
     // M12-2。ここが破れると、最後の語句が**出た直後から薄れ始める**（Issue #69 で
     // 区間の終わりを 52 拍に決めた時の、まさにその余白）。本番と同じ組み立てで測る
     const last = sliced.lines[sliced.lines.length - 1];
-    const timeline = buildLineTimeline(last, (part) => dummyTarget(part.text.length));
-    const span = timeline.duration();
-    timeline.kill();
-
     const length = WORK_WINDOW.end - WORK_WINDOW.start;
-    expect(last.time + span).toBeLessThanOrEqual(length - WORK_FADE.out);
+    const settled = settledTimeOf(last, length - last.time);
+
+    expect(last.time + settled).toBeLessThanOrEqual(length - WORK_FADE.out);
   });
 
   it('切り出した後も極性の切り替えが速すぎない（明滅の安全）', () => {
@@ -790,6 +798,7 @@ function worstCase(lines: readonly LyricLine[]) {
 function dummyTarget(count: number) {
   return {
     frame: {} as HTMLElement,
+    drift: {} as HTMLElement,
     root: {} as HTMLElement,
     chars: Array.from({ length: count }, () => ({}) as unknown as Element),
     // 図形（M8-3a）も英字（M8-3c）も一過性の装飾（M10-1）も本番と同じ経路で組まれるので、
@@ -803,6 +812,26 @@ function dummyTarget(count: number) {
       pieces: Array.from({ length: spark.pieces }, () => ({}) as HTMLElement),
     }),
   };
+}
+
+/** domain と同じ 1ms の格子に載せる（`domain/lyrics.ts` の `trim`） */
+function onMillisecondGrid(seconds: number): number {
+  return Math.round(seconds * 1000) / 1000;
+}
+
+/**
+ * 行の語句がすべて出揃う時刻（行の頭から何秒か）。
+ *
+ * **尺（`duration()`）ではない**（M13-2）。漂いが入って以降、行のタイムラインは
+ * 行が出ている長さいっぱいまで伸びるので、尺を測ると「刻みすぎていないか」ではなく
+ * 「行の長さ」を測ることになる。
+ */
+function settledTimeOf(line: LyricLine, span: number): number {
+  const timeline = buildLineTimeline(line, (part) => dummyTarget(part.text.length), { span });
+  const settled = timeline.labels[LINE_SETTLED];
+  timeline.kill();
+
+  return settled;
 }
 
 /** 空白を落とす。画の都合で入れた空白で歌詞の一致を落としたくない */

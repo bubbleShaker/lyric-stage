@@ -1,6 +1,7 @@
 import gsap from 'gsap';
 import { partsOf, type LyricLine, type ResolvedPart } from '../domain/lyrics';
 import { resolveDecor } from './decor';
+import { buildDrift, DRIFT_SETTLE } from './drift';
 import { resolveEffect, type EffectLayout, type EffectTimeline } from './effects';
 import { resolveSpark, type SparkShape, type SparkTarget } from './spark';
 import { buildSubText } from './sub-text';
@@ -32,6 +33,15 @@ export interface PartTarget {
    * transform には触らない（触ると構図と取り合いになる。src/stage/lyric-stage.ts）。
    */
   readonly frame: HTMLElement;
+  /**
+   * 着地した後の漂いが動かす層（M13-2）。**枠と文字の間に挟まっている。**
+   *
+   * 演出（`root`）と分けているのは、どちらも transform を書くため。同じ要素に
+   * 重ねると GSAP のトゥイーンどうしが毎フレーム値を奪い合う（理由は `stage/drift.ts`）。
+   *
+   * 図形・英字・一過性の装飾もこの中に居るので、**語句は添え物ごと一緒に漂う**。
+   */
+  readonly drift: HTMLElement;
   /** 語句の文字が入る要素。演出が動かすのはこちら */
   readonly root: HTMLElement;
   /** SplitText が分解した 1 文字ずつの要素 */
@@ -74,22 +84,43 @@ export interface PartTarget {
 export type PartTargetFactory = (part: ResolvedPart, layout: EffectLayout | null) => PartTarget;
 
 export interface BuildLineOptions {
+  /**
+   * この行が画面に出ている長さ（秒）。求めるのは domain の `lineSpanAt`（M13-1）。
+   *
+   * **省略できない。** 既定値（次の行まで、など）を置くと、渡し忘れた所で
+   * 漂いだけが静かに止まる — 画面には歌詞が出ているので気付けない。
+   */
+  readonly span: number;
   /** OS の「視差効果を減らす」設定が有効か */
   readonly reducedMotion?: boolean;
 }
 
+/**
+ * 語句がすべて出揃った時刻に立つラベル。
+ *
+ * 漂い（M13-2）が入って以降、**タイムラインの尺は「行が出ている長さ」**になった。
+ * 尺を測っても「刻みすぎて最後の語句が出る前に行が変わる」は分からないので、
+ * 出揃う時刻を別に持つ。検査（`src/lyric-sheets.test.ts`）が見るのはこちら。
+ *
+ * GSAP のラベルにしているのは、戻り値を `{ timeline, settled }` に変えずに済むため。
+ * 読む側は `timeline.labels[LINE_SETTLED]` で引ける。
+ */
+export const LINE_SETTLED = 'settled';
+
 export function buildLineTimeline(
   line: LyricLine,
   createTarget: PartTargetFactory,
-  { reducedMotion = false }: BuildLineOptions = {},
+  { span, reducedMotion = false }: BuildLineOptions,
 ): EffectTimeline {
   // **止まった状態で作る。** 進めるのは外から与える時計（音の再生位置）だけで、
   // GSAP 自身の時計には乗せない。乗せると、音を止めても残りの語句が出続けて
   // 行が勝手に組み上がる。組み立てる側で pause() を呼ぶ約束にすると、
   // その 1 行が消えた時に**全テストが緑のまま**その壊れ方が戻ってくる
   const timeline = gsap.timeline({ paused: true });
+  // 語句がすべて出揃う時刻。行の中でいちばん遅く終わる登場が決める
+  let settled = 0;
 
-  partsOf(line).forEach((part) => {
+  partsOf(line).forEach((part, order) => {
     const { layout, build } = resolveEffect(part.effect, { reducedMotion });
     const target = createTarget(part, layout);
 
@@ -127,8 +158,24 @@ export function buildLineTimeline(
       timeline.add(spark.build(target.createSpark(spark)), part.at);
     }
 
-    timeline.add(build({ root: target.root, chars: target.chars }), part.at);
+    const entrance = build({ root: target.root, chars: target.chars });
+    timeline.add(entrance, part.at);
+    settled = Math.max(settled, part.at + entrance.duration());
+
+    // **着地したら漂い始める**（M13-2）。当て先が演出と別の層なので、
+    // 登場の終わり際に重ねても取り合いにならない。
+    // 行が終わるまで動き続けるので、長さは「この語句が居られる残り」で決まる
+    timeline.add(
+      buildDrift(target.drift, {
+        span: span - part.at - DRIFT_SETTLE,
+        seed: order,
+        reducedMotion,
+      }),
+      part.at + DRIFT_SETTLE,
+    );
   });
+
+  timeline.addLabel(LINE_SETTLED, settled);
 
   // **一度だけ動かして、時刻 0 の姿を確定させる。** gsap は playhead が動いていない
   // タイムラインを描き直さないので、組み立てただけでは「時刻 0 で出る語句」に

@@ -4,6 +4,7 @@ import type { LyricPresenter } from '../domain/ports';
 import type { ReducedMotionQuery } from '../lib/reduced-motion';
 import { resolveComposition } from './composition';
 import { DECOR_BASE_CLASS, DECOR_LAYOUT_CLASS } from './decor';
+import { DRIFT_CLASS } from './drift';
 import { LAYOUT_CLASS, TEXT_CLASS, type EffectLayout, type EffectTimeline } from './effects';
 import { buildLineTimeline, type PartTarget } from './line-timeline';
 import {
@@ -62,7 +63,7 @@ export class LyricStage implements LyricPresenter {
     this.prefersReducedMotion = prefersReducedMotion;
   }
 
-  show(line: LyricLine): void {
+  show(line: LyricLine, span: number): void {
     this.clear();
 
     // 設定は行を出すたびに読む。曲の途中で OS の設定を変えても次の行から効く
@@ -70,6 +71,7 @@ export class LyricStage implements LyricPresenter {
     // 返ってくるタイムラインは止まっている（GSAP 自身の時計には乗らない）。
     // 進めるのは render() だけ ＝ 音の再生位置
     this.timeline = buildLineTimeline(line, (part, layout) => this.appendPart(part, layout), {
+      span,
       reducedMotion: this.prefersReducedMotion(),
     });
   }
@@ -99,7 +101,13 @@ export class LyricStage implements LyricPresenter {
     this.root.replaceChildren();
   }
 
-  /** 語句 1 つぶんの枠を立てて、演出の当て先を返す */
+  /**
+   * 語句 1 つぶんの枠を立てて、演出の当て先を返す。
+   *
+   * 木は `枠 > 漂う層 > (図形・英字・文字・一過性の装飾)` の 3 段（M13-2 で 1 段増えた）。
+   * **段ごとに触る人が違う** — 枠は CSS（構図）、漂う層は漂い、文字は演出。
+   * 同じ段を 2 人が触ると transform を奪い合う。
+   */
   private appendPart(part: ResolvedPart, layout: EffectLayout | null): PartTarget {
     const frame = document.createElement('div');
     frame.className = 'stage__frame';
@@ -110,6 +118,11 @@ export class LyricStage implements LyricPresenter {
       frame.style.setProperty(name, value);
     }
 
+    // 漂う層（M13-2）。**語句の中身をまるごと包む**ので、図形も英字も装飾も一緒に漂う。
+    // 添え物だけ取り残されると、語句に貼り付いているという前提（M8-3a）が崩れる
+    const drift = document.createElement('div');
+    drift.className = DRIFT_CLASS;
+
     const text = document.createElement('div');
     text.className = TEXT_CLASS;
     // 歌詞は外部 JSON から来るので、必ず textContent で入れる（innerHTML は使わない）
@@ -119,7 +132,8 @@ export class LyricStage implements LyricPresenter {
     // 要素を作るので、後から縦書きにすると型を lines に広げたときに破綻する
     if (layout !== null) text.classList.add(LAYOUT_CLASS[layout]);
 
-    frame.append(text);
+    drift.append(text);
+    frame.append(drift);
     // 分割は木に繋いでから。SplitText は文字の位置を測るので、
     // 繋ぐ前だとレイアウトが決まっておらず測れない
     this.root.append(frame);
@@ -129,16 +143,18 @@ export class LyricStage implements LyricPresenter {
 
     return {
       frame,
+      drift,
       root: text,
       chars: split.chars,
       createDecor: (className) => this.insertDecor(text, className, layout),
       createSub: (sub) => this.insertSub(text, sub),
-      createSpark: (spark) => this.appendSpark(frame, spark, part.text),
+      createSpark: (spark) => this.appendSpark(drift, spark, part.text),
     };
   }
 
   /**
-   * 一過性の装飾の当て先を、語句の枠の**末尾**に足す（M10-1）。
+   * 一過性の装飾の当て先を、語句の**漂う層の末尾**に足す（M10-1 / 当て先は M13-2 で
+   * 枠から漂う層へ移した — 語句が漂うのに装飾だけ枠に残ると、置いていかれる）。
    *
    * 図形（`insertDecor`）と英字（`insertSub`）は文字の**前**に挿して奥へ回すが、
    * こちらは後ろに足して**手前**に置く。添え物ではなく、語句の上で一瞬だけ起きる
@@ -166,7 +182,7 @@ export class LyricStage implements LyricPresenter {
    * （本文側は分割の過程で `aria-label` にまとまり 1 度しか読まれない）。
    * 図形（文字を持たない）と英字（作者が意図して置いた別の語）では出ていなかった問題。
    */
-  private appendSpark(frame: HTMLElement, spark: SparkShape, text: string): SparkTarget {
+  private appendSpark(host: HTMLElement, spark: SparkShape, text: string): SparkTarget {
     const box = document.createElement('div');
     box.className = SPARK_BASE_CLASS;
     box.classList.add(spark.className);
@@ -187,7 +203,7 @@ export class LyricStage implements LyricPresenter {
       return piece;
     });
 
-    frame.append(box);
+    host.append(box);
 
     return { box, pieces };
   }

@@ -31,8 +31,11 @@ class SpyPresenter implements LyricPresenter {
   readonly calls: string[] = [];
   /** render に渡された「行の頭からの経過秒」 */
   readonly offsets: number[] = [];
-  show(line: LyricLine): void {
+  /** show に渡された「その行が画面に出ている長さ」（M13-1） */
+  readonly spans: number[] = [];
+  show(line: LyricLine, span: number): void {
     this.calls.push(`show:${line.text}`);
+    this.spans.push(span);
   }
   clear(): void {
     this.calls.push('clear');
@@ -83,6 +86,32 @@ describe('mountLyricTimeline', () => {
     ticker.tick();
 
     expect(presenter.calls).toEqual(['show:A']);
+  });
+
+  it('行の表示長さを渡す', () => {
+    // M13-1。行そのものは次の行を知らないので、**行の中で時間を測る演出
+    // （M13-2 の漂い・退場・カメラ）はこれが無いと尺を決められない**。
+    // 渡し忘れても画面には歌詞が出るので、目では気付けない
+    const { player, ticker, presenter } = setup();
+
+    player.currentTime = 1;
+    ticker.tick();
+    player.currentTime = 10;
+    ticker.tick();
+
+    // A は次の行まで（10 秒）、B は自分の duration（2 秒）
+    expect(presenter.spans).toEqual([10, 2]);
+  });
+
+  it('duration を持たない最終行では無限を渡す', () => {
+    // **受け取る側が有限を前提にしないこと**を、この形で明示しておく。
+    // 作品のシートは sliceSheet が区間の終わりで閉じるのでここには落ちない
+    const { player, ticker, presenter } = setup();
+
+    player.currentTime = 25;
+    ticker.tick();
+
+    expect(presenter.spans).toEqual([Infinity]);
   });
 
   it('次の行に入ると差し替わる', () => {

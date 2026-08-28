@@ -1,7 +1,7 @@
 import gsap from 'gsap';
 import { describe, expect, it, vi } from 'vitest';
 import type { LyricLine } from '../domain/lyrics';
-import { buildLineTimeline, type PartTarget } from './line-timeline';
+import { buildLineTimeline, LINE_SETTLED, type PartTarget } from './line-timeline';
 
 /**
  * 当て先のダミー。gsap は要素でなくただのオブジェクトもトゥイーンできるので、
@@ -35,6 +35,10 @@ function dummyTarget(
 
   return {
     frame: {} as HTMLElement,
+    // 漂い（M13-2）は演出とは別の層に書く。控えを読む必要は無いが、
+    // **本物と同じく別のオブジェクト**にしておく（root と同じ物を渡すと、
+    // 層を分けた意味＝取り合いが起きないことを検査が見張れなくなる）
+    drift: {} as HTMLElement,
     root: {} as HTMLElement,
     chars: Array.from({ length: count }, () => ({}) as unknown as Element),
     decorClasses,
@@ -71,13 +75,20 @@ function alphaOf(targets: PartTarget[]): number[] {
 /** ダミーの当て先。図形の控えを読めるよう、PartTarget より広い型で持つ */
 type DummyTarget = ReturnType<typeof dummyTarget>;
 
-function build(line: LyricLine) {
+/** 行が画面に出ている長さ（M13-1）。本編の行間隔（最短 2.25 秒）に近い値を既定にする */
+const SPAN = 3;
+
+function build(line: LyricLine, span = SPAN) {
   const targets: DummyTarget[] = [];
-  const timeline = buildLineTimeline(line, (part) => {
-    const target = dummyTarget(part.text.length);
-    targets.push(target);
-    return target;
-  });
+  const timeline = buildLineTimeline(
+    line,
+    (part) => {
+      const target = dummyTarget(part.text.length);
+      targets.push(target);
+      return target;
+    },
+    { span },
+  );
   return { timeline, targets };
 }
 
@@ -154,28 +165,54 @@ describe('buildLineTimeline', () => {
     timeline.kill();
   });
 
-  it('行の長さは「最後の語句が出る時刻 + その演出の長さ」になる', () => {
+  it('語句が出揃う時刻は「最後の語句が出る時刻 + その演出の長さ」', () => {
     // 刻みすぎ（行の猶予をはみ出す）を、シートの検査が本番と同じ組み立てで
-    // 測れるようにするための性質。src/lyric-sheets.test.ts が使う
-    const single = build({ time: 0, text: 'A' });
-    const spread = build({
-      time: 0,
-      text: 'AA',
-      parts: [
-        { text: 'A', at: 0 },
-        { text: 'A', at: 2 },
-      ],
-    });
+    // 測れるようにするための性質。src/lyric-sheets.test.ts が使う。
+    //
+    // **尺ではなくラベルで持つ**（M13-2）。着地した語句は行が終わるまで漂うので、
+    // タイムラインの尺は行が出ている長さそのものになり、刻みの深さを表さなくなった
+    const single = build({ time: 0, text: 'A' }, 6);
+    const spread = build(
+      {
+        time: 0,
+        text: 'AA',
+        parts: [
+          { text: 'A', at: 0 },
+          { text: 'A', at: 2 },
+        ],
+      },
+      6,
+    );
 
-    expect(spread.timeline.duration()).toBeCloseTo(single.timeline.duration() + 2);
+    expect(spread.timeline.labels[LINE_SETTLED]).toBeCloseTo(
+      single.timeline.labels[LINE_SETTLED] + 2,
+    );
 
     single.timeline.kill();
     spread.timeline.kill();
   });
 
+  it('行の尺は行が出ている長さになる（語句は最後まで漂う）', () => {
+    // M13-2。漂いが行の終わりまで続くので、尺は刻みではなく span で決まる。
+    // **これが破れると、行の終わり際に画が止まる時間ができる**
+    const { timeline } = build({ time: 0, text: 'A' }, 5);
+
+    expect(timeline.duration()).toBeCloseTo(5);
+    timeline.kill();
+  });
+
+  it('滞在が短すぎる語句は漂わせない', () => {
+    // 往復が 1 回も回らない長さで動かすと、漂いではなく「もう一度ゆっくり動いた」に
+    // 見える。行の尻に寄った語句がここに落ちる（stage/drift.ts の MIN_DRIFT_SPAN）
+    const { timeline } = build({ time: 0, text: 'A' }, 1);
+
+    expect(timeline.duration()).toBeLessThan(1);
+    timeline.kill();
+  });
+
   it('語句ごとに違う演出を当てられる', () => {
     // 行の effect に畳まれていないこと。同じ位置・同じ文字数で演出だけを変え、
-    // 行の長さが**後の語句に当てた演出の長さで決まる**ことを見る
+    // **出揃う時刻が後の語句に当てた演出の長さで決まる**ことを見る
     const withGlitch = build({
       time: 0,
       text: 'AB',
@@ -193,7 +230,9 @@ describe('buildLineTimeline', () => {
       ],
     });
 
-    expect(withGlitch.timeline.duration()).not.toBeCloseTo(allCalm.timeline.duration());
+    expect(withGlitch.timeline.labels[LINE_SETTLED]).not.toBeCloseTo(
+      allCalm.timeline.labels[LINE_SETTLED],
+    );
 
     withGlitch.timeline.kill();
     allCalm.timeline.kill();
@@ -208,7 +247,7 @@ describe('buildLineTimeline', () => {
         targets.push(target);
         return target;
       },
-      { reducedMotion: true },
+      { span: SPAN, reducedMotion: true },
     );
 
     const used = timeline
@@ -232,7 +271,7 @@ describe('buildLineTimeline', () => {
         targets.push(target);
         return target;
       },
-      { reducedMotion: true },
+      { span: SPAN, reducedMotion: true },
     );
 
     // 「時刻 0 の姿」を見ていることを明示する（再レビュー指摘 🟡）。組み立て直後の値は
@@ -463,7 +502,7 @@ describe('語句に一瞬だけ添える装飾（M10-1）', () => {
         targets.push(target);
         return target;
       },
-      { reducedMotion: true },
+      { span: SPAN, reducedMotion: true },
     );
 
     expect(targets[0].sparkNames).toEqual([]);
