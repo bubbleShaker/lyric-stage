@@ -62,7 +62,10 @@ describe('createFadeCurve', () => {
   it('書かない側（長さ 0）は素の画のまま', () => {
     const onlyOut = createFadeCurve(LENGTH, { in: 0, out: 1.5 });
 
-    // 0 除算で NaN を作らないこと。頭から素の画で始まる
+    // 0 除算で NaN を作らないこと。頭から素の画で始まる。
+    // **時刻 0 も含めて見る**（レビュー指摘 🟡）— 0 は再生前にずっと居座る状態なので、
+    // ここだけ隠れた側に落ちると「読み込み中は真っ暗 → 1 フレーム目に突然明るくなる」
+    expect(onlyOut(0)).toBe(1);
     expect(onlyOut(0.001)).toBe(1);
     expect(onlyOut(LENGTH)).toBe(0);
   });
@@ -74,5 +77,7 @@ describe('createFadeCurve', () => {
     expect(() => createFadeCurve(0, { in: 0, out: 0 })).toThrow();
     expect(() => createFadeCurve(LENGTH, { in: -1, out: 1 })).toThrow();
     expect(() => createFadeCurve(LENGTH, { in: 1, out: NaN })).toThrow();
+    // 長さが無限の区間では in + out の比較を素通りするので、別に締める
+    expect(() => createFadeCurve(Infinity, { in: Infinity, out: 1 })).toThrow();
   });
 });

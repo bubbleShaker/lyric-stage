@@ -36,7 +36,7 @@ export type FadeCurve = (time: number) => number;
  * 尻のフェードが効かなくなるだけで、頭のフェードはそのまま働く。
  */
 export function createFadeCurve(length: number, spans: FadeSpans): FadeCurve {
-  if (!(spans.in >= 0) || !(spans.out >= 0)) {
+  if (!Number.isFinite(spans.in) || !Number.isFinite(spans.out) || spans.in < 0 || spans.out < 0) {
     throw new Error(`フェードの長さが不正です: in=${String(spans.in)} out=${String(spans.out)}`);
   }
   if (!(length > 0) || spans.in + spans.out > length) {
@@ -50,8 +50,12 @@ export function createFadeCurve(length: number, spans: FadeSpans): FadeCurve {
     // （画が明るいまま貼り付き、音も鳴りっぱなしになる）
     if (!Number.isFinite(time)) return 0;
 
-    // 頭より前（区間の外）は隠れている側
-    if (time <= 0) return 0;
+    // 頭より前（区間の外）は隠れている側。**`<= 0` にしないこと**（レビュー指摘 🟡）。
+    // `in: 0`（頭のフェード無し）と書いた時に、時刻 0 だけが隠れた側に落ちる。
+    // しかも時刻 0 は**再生前にずっと居座る状態**なので、「頭は無し」の設定にした日に
+    // 「読み込み中は真っ暗 → 最初のフレームで突然 1 に飛ぶ」になる。
+    // `in > 0` なら下の rising が 0 を返すので、値としては何も変わらない
+    if (time < 0) return 0;
 
     // **長さ 0 のときに 0 除算を作らない。** 書かない側は「ずっと素の画」なので 1。
     // 終端を跨いだ後（falling が負）は下の Math.max が 0 に締める

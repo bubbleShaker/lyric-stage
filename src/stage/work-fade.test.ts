@@ -98,10 +98,28 @@ describe('mountWorkFade', () => {
 });
 
 describe('膜の配線', () => {
-  it('style.css が現れ具合を読んでいる', () => {
+  it('style.css が現れ具合を不透明度として読んでいる', () => {
     // 読み忘れると、値は毎フレーム正しく書かれているのに画だけ開かない
-    // （M8-3a / M8-4 と同じ壊れ方。例外も型検査の赤も出ない）
-    expect(rulesFor(FADE_CLASS).some((body) => body.includes(WORK_FADE_VAR))).toBe(true);
+    // （M8-3a / M8-4 と同じ壊れ方。例外も型検査の赤も出ない）。
+    //
+    // **「その文字列が在るか」では粗い**（レビュー指摘 🟡）。別の宣言に紛れていても
+    // 緑になってしまうので、`opacity` が実際にこの値から決まっていることまで見る
+    const body = rulesFor(FADE_CLASS).join('\n');
+
+    expect(body).toMatch(new RegExp(`opacity:\\s*calc\\([^;]*${WORK_FADE_VAR}`));
+  });
+
+  it('膜が画面いっぱいを地の色で覆う', () => {
+    // 同じ理由（レビュー指摘 🟡）。値を読んでいても、色を失えば透明な箱、
+    // 大きさを失えば 0 幅の箱になり、**どちらも「何も起きない」で緑のまま**。
+    // 色はパレット変数から取ること（16 進を直に書くと palette.test.ts が落とす）
+    const body = rulesFor(FADE_CLASS).join('\n');
+
+    expect(body).toMatch(/position:\s*fixed/);
+    expect(body).toMatch(/inset:\s*0/);
+    expect(body).toMatch(/background:\s*var\(--stage-bg\)/);
+    // 覆っている間に操作を奪わない（opacity: 0 でも要素はそこに居る）
+    expect(body).toMatch(/pointer-events:\s*none/);
   });
 
   it('既定値は「見えている」側', () => {
@@ -123,6 +141,9 @@ describe('膜の配線', () => {
       return Number(found?.[1]);
     };
 
+    // **歌詞との関係も宣言側で見る**（レビュー指摘 🟡）。ここを見ないと、
+    // 「膜が歌詞を覆う」根拠が index.html の並び順しか無いことに気付けない
+    expect(depth(FADE_CLASS)).toBeGreaterThan(depth('stage__lines'));
     expect(depth(FADE_CLASS)).toBeLessThan(depth('transport'));
     expect(depth(FADE_CLASS)).toBeLessThan(depth('credit'));
     // 歌詞を読めなかった知らせも同じ理由（頭のフェードが明ける前にこそ出る）

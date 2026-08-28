@@ -216,7 +216,7 @@ body {
    三分割の分割線と四隅のマーク。M8-3a の図形が**語句**に貼り付くのに対し、
    こちらは**画面**に貼り付く（語句と一緒には動かないので、シートに口は無い）。
 
-   背景の canvas（-2）より手前、歌詞（z-index を持たない）より奥。負の z-index の
+   背景の canvas（-2）より手前、歌詞（.stage__lines / 0）より奥。負の z-index の
    要素は body の背景の上・通常の流れの下に描かれるので、この 1 段で挟まる。
 
    色はここで一度だけ currentColor に流し、子は色を書かない。**16 進で直に書くと
@@ -358,15 +358,18 @@ body {
    **色は var(--stage-bg)。** 地の色に溶けるので、極性が裏返っても
    （.scene の filter: invert(1) はこの膜にも掛かる）「地に沈む」ままになる。
 
-   z-index の 0 は**再生コントロール（1）とクレジット（1）より奥**という宣言。
-   手前に置くと、フェードインの最中＝まだ止まっている間に再生ボタンが霞んで
-   押し所が分からなくなるうえ、素材の利用条件であるクレジットまで覆う。
+   奥行きは**歌詞（.stage__lines / 0）より手前、再生コントロール・クレジット・
+   歌詞の知らせ（2）より奥**。手前に置きすぎると、フェードインの最中＝まだ止まって
+   いる間に再生ボタンが霞んで押し所が分からなくなるうえ、素材の利用条件である
+   クレジットまで覆う。
    **DOM 順に頼らない** — 同じ z-index の positioned な要素は木の順で描かれるので、
-   index.html の並べ替えだけで裏返る（.backdrop--graph / .screen-decor と同じ判断） */
+   index.html の並べ替えだけで裏返る（.backdrop--graph / .screen-decor と同じ判断）。
+   **歌詞との関係も宣言側で決めきる**（レビュー指摘 🟡）。当初は膜だけ 0 にしていたが、
+   それだと「膜が歌詞を覆う」根拠が index.html の並び順しか無かった */
 .work-fade {
   position: fixed;
   inset: 0;
-  z-index: 0;
+  z-index: 1;
   background: var(--stage-bg);
   opacity: calc(1 - var(--work-fade, 1));
 
@@ -409,6 +412,17 @@ body {
   position: absolute;
   inset: 0;
   perspective: clamp(600px, 70vw, 1400px);
+
+  /* フェードの膜（.work-fade / z-index: 1）より奥、という宣言（M12-2）。
+     **書かないと、膜が歌詞を覆う根拠が index.html の並び順しか無くなる**
+     （並べ替えただけで「背景だけ暮れて歌詞が残る」に裏返る／レビュー指摘 🟡）。
+
+     **`.stage` の側には書かないこと。** あちらに z-index を書くと重ね合わせ文脈が
+     でき、この箱の mix-blend-mode（下）が混ざる相手を .stage の中に閉じ込めてしまう
+     ＝ 地・粒・ビネットと刷り重ならなくなる（M9-2 が名指しで避けた壊れ方）。
+     この箱自身は既に perspective で文脈を作っているので、ここへ書くぶんには
+     混ざる相手（.scene の群）は変わらない */
+  z-index: 0;
 
   /* 画面いっぱいを覆うので、クリックは手前の再生コントロールへ通す
      （背景の canvas と同じ扱い。歌詞は読むもので、押すものではない） */
@@ -961,12 +975,12 @@ body {
 .stage__message {
   position: absolute;
 
-  /* フェードの膜（.work-fade / z-index: 0）より手前（M12-2）。**歌詞を読めなかった
+  /* フェードの膜（.work-fade / z-index: 1）より手前（M12-2）。**歌詞を読めなかった
      という知らせは、頭のフェードが明ける前＝まだ止まっている間にこそ出る。**
      覆うと、真っさらな紙だけが出て何も起きていないように見える。
      .stage は position: relative だが z-index を持たないので重ね合わせ文脈を作らず、
-     ここの 1 は膜と同じ土俵（.scene の中）で効く */
-  z-index: 1;
+     ここの 2 は膜と同じ土俵（.scene の中）で効く */
+  z-index: 2;
 
   /* .stage の grid をやめた（M8-1）ので、中央寄せは自分で持つ */
   left: 50%;
@@ -988,9 +1002,9 @@ body {
   position: fixed;
   right: 1rem;
   bottom: 1rem;
-  /* フェードの膜（.work-fade / z-index: 0）より手前。**素材の利用条件なので、
+  /* フェードの膜（.work-fade / z-index: 1）より手前。**素材の利用条件なので、
      頭と終わりも含めて常に読める側に置く**（M12-2） */
-  z-index: 1;
+  z-index: 2;
   font-size: 0.75rem;
   letter-spacing: 0.05em;
   opacity: 0.65;
@@ -1007,9 +1021,9 @@ body {
   left: 50%;
   bottom: 1.5rem;
   translate: -50% 0;
-  /* フェードの膜（.work-fade / z-index: 0）より手前。**霞ませてはいけない** —
+  /* フェードの膜（.work-fade / z-index: 1）より手前。**霞ませてはいけない** —
      頭のフェードは止まっている間に見えている画なので、押し所が分からなくなる（M12-2） */
-  z-index: 1;
+  z-index: 2;
   display: grid;
   grid-template-columns: auto 1fr auto;
   align-items: center;

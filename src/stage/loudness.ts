@@ -27,16 +27,15 @@ export type AudioContextFactory = () => AudioContext;
 export const systemAudioContext: AudioContextFactory = () => new AudioContext();
 
 /**
- * 3 つとも**メソッドではなくプロパティ**として宣言している。
- * `ticker.subscribe(loudness.sample)` のように関数だけを取り出して渡せることを
- * 契約の一部にするため（メソッド形だと this を使う実装も正当になり、
- * 取り出した瞬間に壊れる。しかも Ticker は例外を握るので気づきにくい）。
+ * 音の出口（M12-2 / Issue #70）。**`Loudness` から分けて名乗る**（レビュー指摘 🟡）。
+ *
+ * 「盛り上がりを読む」と「音量を書く」は別の役で、同じ層が持っているのは
+ * **出口を持っているのがこの層だから**という事実の側の都合でしかない。
+ * 型として分けておけば、呼ぶ側は要る方だけに依存できる。
  */
-export interface Loudness {
-  /** 今の強さ。読むだけで状態は進まない */
-  readonly level: IntensityQuery;
+export interface AudioOutput {
   /**
-   * 音量を 0〜1 で決める（M12-2 / Issue #70 のフェードが使う）。
+   * 音量を 0〜1 で決める。
    *
    * **解析と同じ層が持つのは、音の出口をこの層が持っているから。**
    * `createMediaElementSource` を呼んだ時点で出口は AudioContext 側へ移り、
@@ -44,8 +43,25 @@ export interface Loudness {
    * グラフに繋いだら音量は GainNode で作れと書いている）。ここが
    * 「まだ要素が鳴らしている / もうグラフが鳴らしている」を吸収すれば、
    * 呼ぶ側（`stage/work-fade.ts`）は 0〜1 を渡すだけで済む。
+   *
+   * **読み替えは線形のまま。** 知覚上の音量は dB で効くので厳密には指数の方が
+   * 素直だが、1.5〜2.25 秒の短いフェードでは差が小さく、**画と音で 1 本の曲線を
+   * 共有する**という M12-2 の芯を曲げるほどの理由が無い。耳で気になったら、
+   * 0〜1 をどう音量に読み替えるかの裁量はこの層にあるのでここで曲げること。
    */
   readonly setVolume: (level: number) => void;
+}
+
+/**
+ * どれも**メソッドではなくプロパティ**として宣言している。
+ * `ticker.subscribe(loudness.sample)` や `mountWorkFade(..., loudness.setVolume)` の
+ * ように関数だけを取り出して渡せることを契約の一部にするため（メソッド形だと
+ * this を使う実装も正当になり、取り出した瞬間に壊れる。しかも Ticker は例外を
+ * 握るので気づきにくい）。
+ */
+export interface Loudness extends AudioOutput {
+  /** 今の強さ。読むだけで状態は進まない */
+  readonly level: IntensityQuery;
   /**
    * 解析を始める。**ユーザー操作（再生ボタンのクリック）から呼ぶこと。**
    * ブラウザは操作なしに音を出すことを禁じており、AudioContext も
@@ -146,6 +162,9 @@ export function createLoudness(
       gain.gain.value = value;
       return;
     }
+    // まだ要素が鳴らしている間。**iOS Safari では volume が読み取り専用**で、
+    // 代入は黙って無視される。実害が出ないのは start() が再生ボタンの同じ
+    // クリックで走るからで、要素が鳴っている時間そのものが無いに等しいため
     media.volume = value;
   };
 
@@ -174,13 +193,17 @@ export function createLoudness(
       const output = created.createGain();
       output.gain.value = volume;
 
+      // **繋げるものは付け替えより前に繋いでおく**（レビュー指摘 🟡）。この 2 本は
+      // まだ source と関わらないので、先に済ませれば「付け替えた後に投げて音だけ
+      // 消える」窓が source.connect の 1 行ぶんまで狭まる
+      node.connect(output);
+      output.connect(created.destination);
+
       const source = created.createMediaElementSource(media);
 
       // **destination まで繋ぐこと。** 繋がないと音が消える
       // （解析は動くので背景は正しく反応し、原因が分かりにくい）
       source.connect(node);
-      node.connect(output);
-      output.connect(created.destination);
 
       bins = new Uint8Array(node.frequencyBinCount);
       context = created;

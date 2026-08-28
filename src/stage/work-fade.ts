@@ -24,7 +24,12 @@ import type { FadeCurve } from '../domain/fade';
 /** 現れ具合を書き込む CSS カスタムプロパティ。**`style.css` が読んでいなければ画は開かない** */
 export const WORK_FADE_VAR = '--work-fade';
 
-/** 音量を決める口。**実装は `stage/loudness.ts`**（音の出口をあちらが持っているため） */
+/**
+ * 音量を決める口。**実装は `stage/loudness.ts` の `AudioOutput`**（音の出口を
+ * あちらが持っているため）。ここが関数 1 本で受けるのは、膜が知る必要のあるのが
+ * 「0〜1 を渡す」ことだけだから — 解析の口まで見えていると、フェードが盛り上がりを
+ * 読めてしまう（依存は要る分だけ細くする）。
+ */
 export type VolumeControl = (level: number) => void;
 
 export interface WorkFade {
