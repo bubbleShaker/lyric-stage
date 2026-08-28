@@ -13,7 +13,7 @@ import { effects, isEffectName, resolveEffect } from './stage/effects';
 import { buildLineTimeline } from './stage/line-timeline';
 import { isSparkName, sparks, type SparkShape } from './stage/spark';
 import { secondsPerBeat } from './domain/beat';
-import { BEAT_GRID, DEFAULT_SHEET_NAME, WORK_WINDOW } from './work';
+import { BEAT_GRID, DEFAULT_SHEET_NAME, WORK_FADE, WORK_WINDOW } from './work';
 // Vite の ?raw は対象ファイルを文字列として読み込む。fs を使わずに済むので
 // Node の型定義をアプリ側の tsconfig に持ち込まなくてよい。
 import sampleJson from '../public/lyrics/sample.json?raw';
@@ -504,6 +504,24 @@ describe('WORK_WINDOW × 本編シート', () => {
     timeline.kill();
 
     expect(last.time + span).toBeLessThanOrEqual(WORK_WINDOW.end - WORK_WINDOW.start);
+  });
+
+  it('頭のフェードは歌い出しより前に明ける', () => {
+    // M12-2。助走の 1 小節を使い切って無音から立ち上がる形なので、明ける前に
+    // 歌が始まると**1 行目だけが薄い画で出る**。区間の頭を動かした日に効く
+    expect(WORK_FADE.in).toBeLessThanOrEqual(sliced.lines[0].time);
+  });
+
+  it('終わりのフェードは最後の語句が出揃ってから始まる', () => {
+    // M12-2。ここが破れると、最後の語句が**出た直後から薄れ始める**（Issue #69 で
+    // 区間の終わりを 52 拍に決めた時の、まさにその余白）。本番と同じ組み立てで測る
+    const last = sliced.lines[sliced.lines.length - 1];
+    const timeline = buildLineTimeline(last, (part) => dummyTarget(part.text.length));
+    const span = timeline.duration();
+    timeline.kill();
+
+    const length = WORK_WINDOW.end - WORK_WINDOW.start;
+    expect(last.time + span).toBeLessThanOrEqual(length - WORK_FADE.out);
   });
 
   it('切り出した後も極性の切り替えが速すぎない（明滅の安全）', () => {

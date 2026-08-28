@@ -7,6 +7,10 @@
  * 解析の対象は `<audio>` 要素。要素そのものは composition root（main.ts）が持ち、
  * 再生の制御（AudioPlayer）と解析（ここ）が別々の側面から使う。
  * AudioPlayer に解析まで持たせると「音を鳴らす」以上のことを知り始める。
+ *
+ * **音量もここが持つ**（M12-2 / Issue #70）。解析のためにグラフを立てた時点で
+ * 音の出口がこちら側へ移るので、**「出口を持っている層が音量を持つ」**のが
+ * 唯一ずれない置き方になる（`setVolume` の説明を見よ）。
  */
 
 import type { IntensityQuery } from '../lib/intensity';
@@ -23,12 +27,39 @@ export type AudioContextFactory = () => AudioContext;
 export const systemAudioContext: AudioContextFactory = () => new AudioContext();
 
 /**
- * 3 つとも**メソッドではなくプロパティ**として宣言している。
- * `ticker.subscribe(loudness.sample)` のように関数だけを取り出して渡せることを
- * 契約の一部にするため（メソッド形だと this を使う実装も正当になり、
- * 取り出した瞬間に壊れる。しかも Ticker は例外を握るので気づきにくい）。
+ * 音の出口（M12-2 / Issue #70）。**`Loudness` から分けて名乗る**（レビュー指摘 🟡）。
+ *
+ * 「盛り上がりを読む」と「音量を書く」は別の役で、同じ層が持っているのは
+ * **出口を持っているのがこの層だから**という事実の側の都合でしかない。
+ * 型として分けておけば、呼ぶ側は要る方だけに依存できる。
  */
-export interface Loudness {
+export interface AudioOutput {
+  /**
+   * 音量を 0〜1 で決める。
+   *
+   * **解析と同じ層が持つのは、音の出口をこの層が持っているから。**
+   * `createMediaElementSource` を呼んだ時点で出口は AudioContext 側へ移り、
+   * **`<audio>` の volume が効くかどうかはブラウザ任せになる**（MDN も、
+   * グラフに繋いだら音量は GainNode で作れと書いている）。ここが
+   * 「まだ要素が鳴らしている / もうグラフが鳴らしている」を吸収すれば、
+   * 呼ぶ側（`stage/work-fade.ts`）は 0〜1 を渡すだけで済む。
+   *
+   * **読み替えは線形のまま。** 知覚上の音量は dB で効くので厳密には指数の方が
+   * 素直だが、1.5〜2.25 秒の短いフェードでは差が小さく、**画と音で 1 本の曲線を
+   * 共有する**という M12-2 の芯を曲げるほどの理由が無い。耳で気になったら、
+   * 0〜1 をどう音量に読み替えるかの裁量はこの層にあるのでここで曲げること。
+   */
+  readonly setVolume: (level: number) => void;
+}
+
+/**
+ * どれも**メソッドではなくプロパティ**として宣言している。
+ * `ticker.subscribe(loudness.sample)` や `mountWorkFade(..., loudness.setVolume)` の
+ * ように関数だけを取り出して渡せることを契約の一部にするため（メソッド形だと
+ * this を使う実装も正当になり、取り出した瞬間に壊れる。しかも Ticker は例外を
+ * 握るので気づきにくい）。
+ */
+export interface Loudness extends AudioOutput {
   /** 今の強さ。読むだけで状態は進まない */
   readonly level: IntensityQuery;
   /**
@@ -116,6 +147,26 @@ export function createLoudness(
   let current = 0;
   /** 一度でも失敗したら諦める。押すたびに AudioContext を作ると数個で上限に当たる */
   let failed = false;
+  /** 音量つまみ。グラフが立つまでは null で、その間は要素の volume が出口 */
+  let gain: GainNode | null = null;
+  /** 今の音量。**グラフを立てる時に引き継ぐ**（フェードの途中で押されても飛び出さない） */
+  let volume = 1;
+
+  const setVolume = (level: number): void => {
+    // 要素の volume は範囲外の代入が例外になるので、ここで締める。
+    // NaN は Math.min/max をすり抜けるため別に落とす（`beat-impact.ts` と同じ手）
+    const value = Number.isFinite(level) ? Math.min(1, Math.max(0, level)) : 0;
+    volume = value;
+
+    if (gain) {
+      gain.gain.value = value;
+      return;
+    }
+    // まだ要素が鳴らしている間。**iOS Safari では volume が読み取り専用**で、
+    // 代入は黙って無視される。実害が出ないのは start() が再生ボタンの同じ
+    // クリックで走るからで、要素が鳴っている時間そのものが無いに等しいため
+    media.volume = value;
+  };
 
   const start = (): void => {
     if (context) {
@@ -135,16 +186,32 @@ export function createLoudness(
       const node = created.createAnalyser();
       node.fftSize = FFT_SIZE;
 
+      // 音量つまみ（M12-2）。**解析より後・destination の直前に挿す** —
+      // 前に挿すと、フェードで絞った音を解析することになり、
+      // **頭と尻で背景の反応まで一緒に落ちる**（フェードは画の演出であって、
+      // 曲の盛り上がりが変わったわけではない）
+      const output = created.createGain();
+      output.gain.value = volume;
+
+      // **繋げるものは付け替えより前に繋いでおく**（レビュー指摘 🟡）。この 2 本は
+      // まだ source と関わらないので、先に済ませれば「付け替えた後に投げて音だけ
+      // 消える」窓が source.connect の 1 行ぶんまで狭まる
+      node.connect(output);
+      output.connect(created.destination);
+
       const source = created.createMediaElementSource(media);
 
       // **destination まで繋ぐこと。** 繋がないと音が消える
       // （解析は動くので背景は正しく反応し、原因が分かりにくい）
       source.connect(node);
-      node.connect(created.destination);
 
       bins = new Uint8Array(node.frequencyBinCount);
       context = created;
       analyser = node;
+      gain = output;
+      // 出口がグラフへ移ったので、要素の側は素に戻す。**両方に掛けない** —
+      // 要素の volume が効くブラウザでは二重に掛かって曲線が変わってしまう
+      media.volume = 1;
       void created.resume();
     } catch (error) {
       // 解析は演出の足し。使えない環境でも音と歌詞と星空は動かす
@@ -162,5 +229,5 @@ export function createLoudness(
     current = smoothLevel(current, toIntensity(raw, range));
   };
 
-  return { level: () => current, start, sample };
+  return { level: () => current, setVolume, start, sample };
 }
