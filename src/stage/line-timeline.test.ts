@@ -236,7 +236,7 @@ describe('buildLineTimeline', () => {
     // 引き始める直前。漂っていればここで奥行きが 0 でなくなっている
     timeline.time(0.6001).time(0.6);
 
-    expect(Number(drift.z ?? 0)).toBe(0);
+    expect(Number(drift.z)).toBe(0);
     timeline.kill();
   });
 
@@ -258,7 +258,7 @@ describe('buildLineTimeline', () => {
 
     // 次の語句が出る直前は、まだ居る
     timeline.time(1.9001).time(1.9);
-    expect(Number(first.opacity ?? 1)).toBeCloseTo(1);
+    expect(Number(first.opacity)).toBeCloseTo(1);
 
     // 出た後は引きかけ（両方が見えている ＝ 受け渡し）
     timeline.time(2.3001).time(2.3);
@@ -270,6 +270,43 @@ describe('buildLineTimeline', () => {
     timeline.time(2.6001).time(2.6);
     expect(Number(first.opacity)).toBeCloseTo(0);
 
+    timeline.kill();
+  });
+
+  it('漂いと退場は時間が重ならない', () => {
+    // **この差分の中心的な不変条件**（レビュー指摘 🟡）。どちらも漂う層の transform を
+    // 書くので、重なると毎フレーム値を奪い合う。漂いが引き始めの時刻ちょうどに
+    // 元の位置へ戻り切っていれば、退場はそこから素直に拾える
+    const { timeline, targets } = build(
+      {
+        time: 0,
+        text: 'AB',
+        parts: [
+          { text: 'A', at: 0 },
+          { text: 'B', at: 3 },
+        ],
+      },
+      6,
+    );
+    const drift = targets[0].drift as unknown as Record<string, unknown>;
+
+    // 引き始める直前は漂いの途中（＝漂いがちゃんと動いている）
+    timeline.time(1.5001).time(1.5);
+    expect(Number(drift.z)).not.toBe(0);
+
+    // 引き始めるちょうどに元の位置。ここで両者が入れ替わる
+    timeline.time(3.0001).time(3);
+    expect(Number(drift.z)).toBeCloseTo(0);
+
+    timeline.kill();
+  });
+
+  it('行の長さが無限なら退場も漂いも積まない', () => {
+    // `lineSpanAt` は duration を持たない最終行に Infinity を返す（M13-1）。
+    // **どちらか一方でも通すと行のタイムラインの尺が無限になり、スクラブが壊れる**
+    const { timeline } = build({ time: 0, text: 'A' }, Infinity);
+
+    expect(Number.isFinite(timeline.duration())).toBe(true);
     timeline.kill();
   });
 

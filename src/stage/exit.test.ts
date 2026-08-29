@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildExit, EXIT_DURATION } from './exit';
+import { buildExit, BLUR, EXIT_DURATION, exitStartFor, MIN_STAY } from './exit';
 
 /**
  * 漂う層の当て先。gsap は要素でなくただのオブジェクトも動かせる（drift.test.ts と同じ手）。
@@ -19,16 +19,18 @@ function stateAt(time: number, reducedMotion = false) {
   // **一度だけ余計に動かしてから目的の時刻へ**（gsap は playhead が動いていない
   // タイムラインを描き直さない。decor.test.ts と同じ理由）
   timeline.time(time + 0.0001).time(time);
+  // **`kill()` は書かれた値を残す**（`revert()` は戻してしまう）。読むのはこの後
   timeline.kill();
 
   return target;
 }
 
 describe('buildExit', () => {
-  it('引き切るまでの長さで終わる', () => {
-    // **これが伸びると次の語句と重なる時間が増えて「1 語句ずつ」が崩れる**。
-    // 行の最後の語句は、この長さを行の終わりから逆算して置かれる（line-timeline.ts）
-    const timeline = buildExit(dummyDrift());
+  // **両方の枝で同じ尺**（レビュー指摘 🟡）。行の最後の語句はこの長さを行の終わりから
+  // 逆算して置かれる（exitStartFor）ので、片方だけ変えると消え終わりが行の外へずれる。
+  // 伸ばせば次の語句と重なる時間が増えて「1 語句ずつ」も崩れる
+  it.each([false, true])('引き切るまでの長さで終わる（動きを減らす設定: %s）', (reducedMotion) => {
+    const timeline = buildExit(dummyDrift(), { reducedMotion });
 
     expect(timeline.duration()).toBeCloseTo(EXIT_DURATION);
     timeline.kill();
@@ -61,7 +63,22 @@ describe('buildExit', () => {
     // 素の見えは `filter: none` で、`none → blur(8px)` は補間できない
     // （effects.ts の rushIn と同じ理由）。`.from()` では書けない
     expect(String(stateAt(0).filter)).toContain('blur(0');
-    expect(String(stateAt(EXIT_DURATION).filter)).toContain('blur(');
+    // **終点は名指しで見る**（レビュー指摘 🟡）。`blur(` が入っているかだけだと
+    // `blur(0px)` でも通る ＝ ぼかしが一切動かなくても緑になる
+    expect(String(stateAt(EXIT_DURATION).filter)).toContain(`blur(${BLUR}`);
+  });
+
+  it('組み立てただけでは何も書かない', () => {
+    // **gsap の `fromTo` は既定で始点を即座に書く**（レビュー指摘 🔴）。ここでは
+    // `filter: blur(0px)` が語句の出ている全区間に当たることになり、`none` 以外の
+    // `filter` は要素を平面に潰すので、`.stage__drift` の `preserve-3d` が効かなくなる
+    // （＝ rushIn の文字ごとの奥行きがただの平行移動になる）。素のオブジェクト相手では
+    // 画に出ないので、**ここで見張るしかない**
+    const target = dummyDrift();
+    buildExit(target).pause();
+
+    expect(target.filter).toBe('none');
+    expect(target.opacity).toBe(1);
   });
 
   it('動きを減らす設定でも消えるが、位置は動かさない', () => {
@@ -75,5 +92,35 @@ describe('buildExit', () => {
     expect(String(middle.filter)).toBe('none');
 
     expect(Number(stateAt(EXIT_DURATION, true).opacity)).toBeCloseTo(0);
+  });
+});
+
+describe('exitStartFor', () => {
+  it('次の語句があれば、その語句が出る時刻から引く', () => {
+    // 重ねるのは穴を空けないため。前の語句が消えてから次が出るまでに何も映って
+    // いない時間ができると、のっぺり以上に悪い
+    expect(exitStartFor(0.6, 2, 5)).toBe(2);
+  });
+
+  it('行の最後の語句は、行が終わるちょうどに消え終わる', () => {
+    expect(exitStartFor(0.6, undefined, 5)).toBeCloseTo(5 - EXIT_DURATION);
+  });
+
+  it('出揃ってすぐには引き始めない', () => {
+    // **境界を跨いだ瞬間に引き始めるのでは、この分岐の目的を果たさない**
+    // （レビュー指摘 🔴）。本編の `ネーション` は逆算した引き始めとの差が
+    // 0.001 秒しかなく、「一瞬映って消えた」になっていた
+    const span = 3;
+    const justEnough = span - EXIT_DURATION - MIN_STAY;
+
+    expect(exitStartFor(justEnough, undefined, span)).not.toBeNull();
+    expect(exitStartFor(justEnough + 0.01, undefined, span)).toBeNull();
+  });
+
+  it('行の長さが無限なら引かない', () => {
+    // `lineSpanAt` は duration を持たない最終行に Infinity を返す（M13-1）。
+    // そのまま逆算すると Infinity の位置に退場を置くことになり、**行のタイムラインの
+    // 尺ごと無限になる**（レビュー指摘 🔴）。buildDrift が同じ値を弾いているのと同じ理由
+    expect(exitStartFor(0.6, undefined, Infinity)).toBeNull();
   });
 });

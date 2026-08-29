@@ -449,6 +449,33 @@ describe(`${DEFAULT_SHEET_NAME}.json`, () => {
     expect(overrun).toStrictEqual([]);
   });
 
+  it('語句は次の語句が出るまでに出揃う', () => {
+    // **退場（M13-3）が入って初めて要る検査**（レビュー指摘 🟡）。語句は次の語句が
+    // 出る時刻から引き始めるので、そこまでに出揃っていないと**出切らないうちに
+    // 引き始める** ＝ 「一瞬映って消えた」になる。
+    //
+    // 上の「行の猶予に収まる」は行ぜんぶが出揃う時刻しか見ないので、**語句の間隔と
+    // 登場の尺の関係は誰も見ていなかった**。本編の余裕は 0.11 秒しかない
+    // （最短の間隔 0.751 秒 対 `fade` 2 文字の 0.64 秒）ので、Issue #37 で耳を頼りに
+    // `at` を詰めた日に静かに破れる
+    const hasty = sheet.lines.flatMap((line) =>
+      partsOf(line).flatMap((part, order, all) => {
+        const next = all[order + 1];
+        if (next === undefined) return [];
+
+        const timeline = resolveEffect(part.effect).build(dummyTarget(part.text.length));
+        const appears = timeline.duration();
+        timeline.kill();
+
+        const gap = next.at - part.at;
+
+        return appears <= gap ? [] : [`${part.text}: 登場 ${appears} 秒 / 次まで ${gap} 秒`];
+      }),
+    );
+
+    expect(hasty).toStrictEqual([]);
+  });
+
   it('どの演出も次の行が来る前に出揃う', () => {
     // 演出の所要時間は文字数で決まり、猶予は行間隔で決まる。どちらも実データ側で
     // 変わりうる（M6 のタイミング入力ツールで time を詰めたときなど）ので、
