@@ -1,10 +1,18 @@
 import { describe, expect, it } from 'vitest';
-import { buildCameraMove, CAMERA_CLASS, CAMERA_MOVE, framingFor, restCamera, type Focus } from './camera';
+import {
+  buildCameraMove,
+  CAMERA_CLASS,
+  CAMERA_MOVE,
+  focusIn,
+  framingFor,
+  restCamera,
+  type Focus,
+} from './camera';
 import { classRule as rulesFor } from '../test-support/css-rules';
 
 /** 画面のどこに・どれだけの幅で居るか。既定は真ん中の、画面の 3 割を占める語句 */
 function focus(overrides: Partial<Focus> = {}): Focus {
-  return { x: 0.5, y: 0.5, width: 0.3, aspect: 16 / 9, ...overrides };
+  return { x: 0.5, y: 0.5, width: 0.3, height: 0.2, aspect: 16 / 9, ...overrides };
 }
 
 /** カメラの当て先。gsap は要素でなくただのオブジェクトも動かせる（drift.test.ts と同じ手） */
@@ -15,7 +23,65 @@ function dummyCamera() {
   >;
 }
 
+/**
+ * カメラの値を当てたとき、その語句が画面のどこへ着くか。
+ *
+ * **`framingFor` とは逆向きに、独立に組み立てている**（レビュー指摘 🔴）。
+ * 「framingFor の答えを framingFor で確かめる」形だと同語反復になり、回転の
+ * 打ち消しを丸ごと落としても検査が通ってしまった（実測: 着地が 0.459..0.557 まで
+ * ずれるのに全件緑）。
+ *
+ * ここでは CSS が実際にする合成をなぞる —
+ * ずれ `d` に **拡大 → rotationY → rotate(Z)** を順に効かせ、最後に平行移動を足す。
+ * 遠近の割り算は掛け算なので、中心（0）に着くかどうかの判定には影響しない。
+ */
+function landingOf(spot: Focus, seed: number): { x: number; y: number } {
+  const framing = framingFor(spot, seed);
+  const rad = (deg: number) => (deg * Math.PI) / 180;
+
+  // 画面の幅を 1 とした画素の空間へ（高さは 1/aspect）
+  const dx = (spot.x - 0.5) * framing.scale;
+  const dy = ((spot.y - 0.5) / spot.aspect) * framing.scale;
+
+  // rotationY は縦軸まわり ＝ 横だけが縮む
+  const turnedX = dx * Math.cos(rad(framing.rotationY));
+  // rotate(Z) は画面の中で x と y を混ぜる
+  const cos = Math.cos(rad(framing.rotationZ));
+  const sin = Math.sin(rad(framing.rotationZ));
+  const rotatedX = turnedX * cos - dy * sin;
+  const rotatedY = turnedX * sin + dy * cos;
+
+  // 平行移動（xPercent は幅に対する％、yPercent は高さに対する％）
+  return {
+    x: 0.5 + rotatedX + framing.xPercent / 100,
+    y: 0.5 + (rotatedY + framing.yPercent / 100 / spot.aspect) * spot.aspect,
+  };
+}
+
 describe('framingFor', () => {
+  it('どこに居る語句も画面の真ん中に着く', () => {
+    // **この検査がこのファイルの要**。拡大の打ち消しだけでは足りず、回転（`rotate(Z)` と
+    // `rotationY`）と縦横比も通した後のずれを消さないと、**端に置いた語句が枠から外れる**
+    // （実測: `top-right` の語句が画面の 0.59 に着いた）。
+    //
+    // **x と y の両方を中心から外した場合**を必ず含める — 片方だけだと `rotate(Z)` が
+    // 混ぜる項が 0 になり、打ち消しを落としても気付けない
+    for (const seed of [0, 1, 2]) {
+      for (const spot of [
+        focus({ x: 0.5, y: 0.5 }),
+        focus({ x: 0.9, y: 0.2 }),
+        focus({ x: 0.1, y: 0.85 }),
+        focus({ x: 0.78, y: 0.9, aspect: 1 }),
+        focus({ x: 0.15, y: 0.1, aspect: 0.6 }),
+      ]) {
+        const landing = landingOf(spot, seed);
+
+        expect(landing.x, `seed ${seed} / x ${spot.x}`).toBeCloseTo(0.5, 6);
+        expect(landing.y, `seed ${seed} / y ${spot.y}`).toBeCloseTo(0.5, 6);
+      }
+    }
+  });
+
   it('画面の真ん中に居る語句には寄るだけ（動かさない）', () => {
     const framing = framingFor(focus(), 0);
 
@@ -54,8 +120,19 @@ describe('framingFor', () => {
   it('寄る量には上限と下限がある', () => {
     // 下限が 1 なのは**引くのはカメラの仕事ではない**から（小さく見せたいなら構図の段階）。
     // 上限が要るのは、極端に短い語句で字の縁がにじむため
-    expect(framingFor(focus({ width: 0.95 }), 0).scale).toBe(1);
-    expect(framingFor(focus({ width: 0.01 }), 0).scale).toBeLessThanOrEqual(2.4);
+    expect(framingFor(focus({ width: 0.95, height: 0.9 }), 0).scale).toBe(1);
+    expect(framingFor(focus({ width: 0.01, height: 0.01 }), 0).scale).toBeLessThanOrEqual(4);
+  });
+
+  it('縦に長い語句は高さで頭を押さえる', () => {
+    // **縦組みの語句は幅が狭く高さが画面いっぱいに近い**（レビュー指摘 🔴）。
+    // 幅だけで倍率を決めると、実測で 13 字の縦組みが画面の 1.97 倍になった
+    const tall = framingFor(focus({ width: 0.05, height: 0.62 }), 0);
+
+    // 寄せた後も画面に収まる
+    expect(tall.scale * 0.62).toBeLessThanOrEqual(1);
+    // 幅だけを見ていたら 3.6（上限）に張り付いていた
+    expect(tall.scale).toBeLessThan(3.6);
   });
 
   it('測れなかった語句には寄らない', () => {
@@ -153,5 +230,40 @@ describe('buildCameraMove', () => {
     const rules = rulesFor(CAMERA_CLASS);
 
     expect(rules.some((body) => /transform-style:\s*preserve-3d/u.test(body))).toBe(true);
+  });
+
+  it('カメラの箱は画面と完全に重なる', () => {
+    // **式が黙って前提にしている 2 つ**（レビュー指摘 🟡）:
+    // - `xPercent` / `yPercent` の 100% が画面の幅・高さと一致すること
+    // - 遠近を張る `.stage__lines` と原点が一致すること
+    //   （一致しているから「遠近の割り算を無視してよい」が成り立つ。ずれた瞬間、
+    //   画は中心から外れるのに例外も型検査の赤も出ない）
+    const rules = rulesFor(CAMERA_CLASS);
+
+    expect(rules.some((body) => /position:\s*absolute/u.test(body))).toBe(true);
+    expect(rules.some((body) => /inset:\s*0/u.test(body))).toBe(true);
+  });
+});
+
+describe('focusIn', () => {
+  it('画面に対する割合へ揃える', () => {
+    // **割り算をここに置いた理由**（レビュー指摘 🔴）。測る側（LyricStage）に持たせると、
+    // 幅を割り忘れても画は「なんとなく寄る」ので気付けない
+    const spot = focusIn({ left: 400, top: 90, width: 200, height: 60 }, { width: 1000, height: 500 });
+
+    expect(spot.x).toBeCloseTo(0.5);
+    expect(spot.y).toBeCloseTo(0.24);
+    expect(spot.width).toBeCloseTo(0.2);
+    expect(spot.height).toBeCloseTo(0.12);
+    expect(spot.aspect).toBeCloseTo(2);
+  });
+
+  it('画面が測れなければ寄らない値を返す', () => {
+    // 描かれる前の枠は 0 を返す。割り算がそのまま Infinity になると
+    // **カメラが無限に寄って画面が真っ黒になる**
+    const spot = focusIn({ left: 0, top: 0, width: 0, height: 0 }, { width: 0, height: 0 });
+
+    expect(framingFor(spot, 0).scale).toBe(1);
+    expect(Number.isFinite(spot.x)).toBe(true);
   });
 });

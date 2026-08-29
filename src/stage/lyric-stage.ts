@@ -3,7 +3,7 @@ import { SplitText } from 'gsap/SplitText';
 import type { LyricLine, ResolvedPart } from '../domain/lyrics';
 import type { LyricPresenter } from '../domain/ports';
 import type { ReducedMotionQuery } from '../lib/reduced-motion';
-import { CAMERA_CLASS, type Focus } from './camera';
+import { CAMERA_CLASS, focusIn, type Focus } from './camera';
 import { resolveComposition } from './composition';
 import { DECOR_BASE_CLASS, DECOR_LAYOUT_CLASS } from './decor';
 import { DRIFT_CLASS } from './drift';
@@ -45,11 +45,12 @@ export class LyricStage implements LyricPresenter {
   /**
    * 寄る・離れるを持つ層（M13-4）。**行をまたいで使い回す。**
    *
-   * 語句の枠は行ごとに捨てて作り直すが、こちらは 1 枚あればよい。作り直すと、
-   * 前の行の最後の寄せがそのまま次の行の頭に残る（transform は要素と一緒に消えるので、
-   * 作り直せば必ず素の姿から始まる — つまり作り直す方が安全に見えるが、
-   * **枠を測るのはこの箱の中**なので、行ごとに差し替えると測る基準まで作り直しになる）。
-   * 据え直すのは `clear()` の仕事。
+   * 語句の枠は行ごとに捨てて作り直すが、こちらは 1 枚あればよい。**枠を測る基準が
+   * この箱**なので、行ごとに差し替えると測る基準まで作り直しになる。
+   *
+   * 前の行の寄せは残るが、据え直す `restCamera` が全部の値を書くので上書きされる。
+   * 測る側も変形を通さない寸法（`offsetLeft` など）を読むので、**残っていても
+   * 測定は汚れない**（`focusOn` を見よ）。`clear()` の戻しは念のため。
    */
   private readonly camera: HTMLElement;
   private readonly prefersReducedMotion: ReducedMotionQuery;
@@ -176,31 +177,30 @@ export class LyricStage implements LyricPresenter {
   }
 
   /**
-   * カメラが向く先を測る（M13-4）。**画面に対する割合**で返す。
+   * カメラが向く先を測る（M13-4）。**割合へ揃えるのは `camera.ts` の `focusIn`。**
    *
-   * px ではなく割合にするのは、受け取る側（`stage/camera.ts`）に測り方を持たせない
-   * ため。あちらは「画面の真ん中からどれだけずれているか」と「画面の幅の何割か」だけで
-   * 寄る量を決められる。
+   * ここがするのは測ることだけ。割り算まで持つと、**幅を割り忘れても画が
+   * 「なんとなく寄る」ので気付けない**（レビュー指摘 🔴 — 割り算を落とす変異が
+   * 検査を素通りした）。
    *
-   * **カメラが素の姿であることが前提。** 寄せが残ったまま測ると、測った値に前の行の
-   * 倍率が掛かる（`clear()` が毎行戻している）。
+   * **`getBoundingClientRect` ではなく `offsetLeft` などを読む。** 前者は祖先の変形を
+   * 通した見かけの位置を返すので、**カメラが前の行の寄せを持ったまま測ると前の行の
+   * 倍率が掛かる**。組みの値を読めば、カメラがどんな姿でも同じ数が出る
+   * （＝「測る前にカメラを素へ戻す」という順序の約束に頼らなくて済む）。
    *
-   * **測れない時は画面の真ん中・幅 0 を返す。** `getBoundingClientRect` は要素が
-   * 描かれていなければ 0 を返し、幅 0 の割り算は `Infinity` になる。`camera.ts` の
-   * `zoomFor` が幅 0 を「寄らない」に倒すので、ここは素直に測った値を渡す。
+   * 枠の `offsetParent` はカメラ（`position: absolute` を持つ最も近い祖先）。
+   * 描かれていなければ 0 が返り、`focusIn` が「寄らない」に倒す。
    */
   private focusOn(frame: HTMLElement): Focus {
-    const box = frame.getBoundingClientRect();
-    const stage = this.camera.getBoundingClientRect();
-
-    if (stage.width === 0 || stage.height === 0) return { x: 0.5, y: 0.5, width: 0, aspect: 1 };
-
-    return {
-      x: (box.left + box.width / 2 - stage.left) / stage.width,
-      y: (box.top + box.height / 2 - stage.top) / stage.height,
-      width: box.width / stage.width,
-      aspect: stage.width / stage.height,
-    };
+    return focusIn(
+      {
+        left: frame.offsetLeft,
+        top: frame.offsetTop,
+        width: frame.offsetWidth,
+        height: frame.offsetHeight,
+      },
+      { width: this.camera.offsetWidth, height: this.camera.offsetHeight },
+    );
   }
 
   /**
