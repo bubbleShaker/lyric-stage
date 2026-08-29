@@ -4,6 +4,7 @@ import {
   createPolarityTrack,
   DEFAULT_POLARITY,
   findRapidPolarityFlip,
+  lineSpanAt,
   MIN_POLARITY_INTERVAL,
   NO_LINE,
   parseLyricSheet,
@@ -13,7 +14,7 @@ import {
   type LyricLine,
   type LyricSheet,
 } from './lyrics';
-import { WHOLE_SONG } from './work-window';
+import { WHOLE_SONG, type WorkWindow } from './work-window';
 
 describe('activeLineIndexAt', () => {
   const lines: LyricLine[] = [
@@ -619,6 +620,99 @@ describe('sliceSheet（曲を丸ごと扱う WHOLE_SONG）', () => {
   it('何も変えずに返す', () => {
     expect(sliceSheet(sheet, WHOLE_SONG)).toEqual(sheet);
   });
+
+  it('最終行に duration を足さない', () => {
+    // **区間を切る時だけの手当て**（M13-1）。素通しには「作品の終わり」が無いので、
+    // ここで閉じると `WHOLE_SONG` で元のシートと等しいものが返るという性質が壊れる
+    expect(sliceSheet(sheet, WHOLE_SONG).lines[2].duration).toBeUndefined();
+  });
+});
+
+/**
+ * 切り出した最終行を区間の終わりで閉じる（M13-1 / Issue #74）。
+ *
+ * 閉じないと `lineSpanAt` が `Infinity` を返し、行の中で時間を測る側 — 漂い（M13-2）・
+ * 退場・カメラ — が尺を決められない。**画面には歌詞が出たまま、動きだけが静かに
+ * 出なくなる**ので、目で気付ける壊れ方ではない。
+ */
+describe('sliceSheet（最終行を閉じる）', () => {
+  const window: WorkWindow = { start: 10, end: 20 };
+
+  it('duration を持たない最終行は区間の終わりで閉じる', () => {
+    const sheet: LyricSheet = { title: 't', lines: [{ time: 12, text: 'A' }] };
+    const sliced = sliceSheet(sheet, window);
+
+    expect(sliced.lines[0]).toEqual({ time: 2, text: 'A', duration: 8 });
+    expect(lineSpanAt(sliced.lines, 0)).toBe(8);
+  });
+
+  it('最終行が duration を持っていれば触らない', () => {
+    // 作者が「ここで消す」と書いた行を、区間の終わりまで伸ばしてはいけない
+    const sheet: LyricSheet = { title: 't', lines: [{ time: 12, text: 'A', duration: 3 }] };
+
+    expect(sliceSheet(sheet, window).lines[0].duration).toBe(3);
+  });
+
+  it('最終行より前の行は次の行までのまま', () => {
+    // **配るのは最後の 1 行だけ。** 全行に配ると duration が次の行より優先されるので、
+    // どの行も「区間の終わりまで」になり、行の長さが全部同じになる
+    const sheet: LyricSheet = {
+      title: 't',
+      lines: [
+        { time: 12, text: 'A' },
+        { time: 15, text: 'B' },
+      ],
+    };
+    const sliced = sliceSheet(sheet, window);
+
+    expect(sliced.lines[0].duration).toBeUndefined();
+    expect(lineSpanAt(sliced.lines, 0)).toBe(3);
+    expect(lineSpanAt(sliced.lines, 1)).toBe(5);
+  });
+
+  it('丸めて 0 以下になる最終行は、閉じるのではなく落とす', () => {
+    // `duration: 0` を書くと activeLineIndexAt が必ず NO_LINE を返す ＝ **シートには
+    // 載っているのに一度も画に出ない行**になる。しかも 0 は parseLyricSheet が弾く値
+    // （レビュー指摘 🟡）。duration を持つ行に対してループがしている手当てと同じ
+    const sheet: LyricSheet = {
+      title: 't',
+      lines: [
+        { time: 12, text: 'A' },
+        { time: 19.9996, text: 'Z' },
+      ],
+    };
+    const sliced = sliceSheet(sheet, window);
+
+    // Z は落ち、あらわれた新しい最終行（A）が区間の終わりで閉じる
+    expect(sliced.lines).toEqual([{ time: 2, text: 'A', duration: 8 }]);
+  });
+
+  it('行が 1 つも残らなければ何もしない', () => {
+    const sheet: LyricSheet = { title: 't', lines: [{ time: 40, text: 'A' }] };
+
+    expect(sliceSheet(sheet, window).lines).toEqual([]);
+  });
+});
+
+describe('lineSpanAt', () => {
+  it('duration があればそれ、無ければ次の行まで', () => {
+    const lines: LyricLine[] = [
+      { time: 0, text: 'A' },
+      { time: 5, text: 'B', duration: 2 },
+      { time: 10, text: 'C' },
+    ];
+
+    expect(lineSpanAt(lines, 0)).toBe(5);
+    expect(lineSpanAt(lines, 1)).toBe(2);
+  });
+
+  it('duration を持たない最終行は無限', () => {
+    // **受け取る側は有限を前提にしない**（stage/drift.ts が弾く）。作品のシートは
+    // sliceSheet が閉じるのでここには落ちないが、素のシートを読む所では起こる
+    const lines: LyricLine[] = [{ time: 0, text: 'A' }];
+
+    expect(lineSpanAt(lines, 0)).toBe(Infinity);
+  });
 });
 
 describe('極性（polarity）の変化点', () => {
@@ -885,7 +979,8 @@ describe('sliceSheet（極性の持ち越し）', () => {
     const sheet: LyricSheet = { title: 't', lines: [{ time: 12, text: 'B' }] };
     const sliced = sliceSheet(sheet, window);
 
-    expect(sliced.lines[0]).toEqual({ time: 2, text: 'B' });
+    // duration は最終行なので区間の終わりで閉じられる（M13-1。下の「最終行を閉じる」を見よ）
+    expect(sliced.lines[0]).toEqual({ time: 2, text: 'B', duration: 8 });
     expect('polarity' in sliced).toBe(false);
   });
 

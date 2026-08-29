@@ -101,9 +101,14 @@
       // 時計は 1 本だけ。呼ぶたびにループを増やすと、古いループが新しい行に
       // 別の時刻を書き込み続けて再生位置が飛ぶ
       let frame = null;
+      // 行が画面に出ている長さ（M13-1）。本編では次の行までの間隔が決めるが、
+      // このページには次の行が無いので、本編の行間隔（約 3 秒）を既定として渡す。
+      // **無限にはしない** — 漂い（M13-2）は有限の滞在に対して組むので、
+      // 無限を渡すと漂いだけが黙って出なくなる。window.lineSpan で変えられる
+      window.lineSpan = 3;
       const start = (line) => {
         if (frame !== null) cancelAnimationFrame(frame);
-        stage.show(line);
+        stage.show(line, window.lineSpan);
 
         let last = performance.now();
         let elapsed = 0;

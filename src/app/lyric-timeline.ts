@@ -1,4 +1,4 @@
-import { activeLineIndexAt, NO_LINE, type LyricSheet } from '../domain/lyrics';
+import { activeLineIndexAt, lineSpanAt, NO_LINE, type LyricSheet } from '../domain/lyrics';
 import type { LyricPresenter, Playback } from '../domain/ports';
 import type { Ticker } from './ticker';
 
@@ -30,7 +30,9 @@ export function mountLyricTimeline(
       if (index === NO_LINE) {
         stage.clear();
       } else {
-        stage.show(sheet.lines[index]);
+        // **「この行が何秒出ているか」を知っているのはここだけ**（M13-1）。行そのものは
+        // 次の行を知らないので、着地後も動き続ける演出は行を渡されただけでは尺を決められない
+        stage.show(sheet.lines[index], lineSpanAt(sheet.lines, index));
       }
     }
 
