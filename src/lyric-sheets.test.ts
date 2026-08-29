@@ -845,8 +845,15 @@ function movesText(effect: string | undefined): boolean {
   const timeline = resolveEffect(effect).build(target);
   const touches = touching(TRANSFORM_PROPERTIES);
 
-  // 語句そのものと、分割された文字のどちらを動かしても引っ掛ける
-  const moved = [target.root as unknown as object, ...(target.chars as unknown as object[])];
+  // 語句そのもの・分割された文字・**切った板**（M13-5）のどれを動かしても引っ掛ける。
+  // 板を数えないと、`slice` が「字を定位置に置くだけの演出」に化けて
+  // **`ghost`（語句の複製）を当ててよい**ことになる — 字が動く演出に複製を添えると、
+  // 複製だけが取り残されて別の語に見える
+  const moved = [
+    target.root as unknown as object,
+    ...(target.chars as unknown as object[]),
+    ...(target.slices as unknown as object[]),
+  ];
   const moves = tweensOf(timeline).some(
     (child) => child.targets().some((one) => moved.includes(one as object)) && touches(child.vars),
   );
@@ -879,6 +886,8 @@ function worstCase(lines: readonly LyricLine[]) {
  * ブラウザ無しで時間の組み立てだけを借りられる（stage/effects.test.ts と同じ手）。
  */
 function dummyTarget(count: number) {
+  const slices: Element[] = [];
+
   return {
     frame: {} as HTMLElement,
     // 漂いが書く項目を 0 で先に持たせる。空のオブジェクトに z を書かせると
@@ -890,6 +899,18 @@ function dummyTarget(count: number) {
     focus: { x: 0.5, y: 0.5, width: 0.3, height: 0.2, aspect: 16 / 9 },
     // 図形（M8-3a）も英字（M8-3c）も一過性の装飾（M10-1）も本番と同じ経路で組まれるので、
     // 当て先だけ返す。これらが行の尺に入ることも、これで「行の猶予に収まる」の検査が見てくれる
+    // 板（M13-5）。本番と同じ枚数を立てる — 減らすと、板ごとに違う値を書く演出の
+    // 尺が実際より短く測れる（一過性の装飾の破片と同じ理由）。
+    // **立てた板は控える** — `movesText` が「字が動いたか」を見るのに要る
+    slices,
+    sliceChars: (n: number) =>
+      Array.from({ length: count }, () =>
+        Array.from({ length: n }, () => {
+          const piece = {} as Element;
+          slices.push(piece);
+          return piece;
+        }),
+      ),
     createDecor: () => ({}) as HTMLElement,
     createSub: () => ({}) as HTMLElement,
     createSpark: (spark: SparkShape) => ({

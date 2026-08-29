@@ -968,6 +968,33 @@ body {
   transform-style: preserve-3d;
 }
 
+/* --- 板に切った字（M13-5 / Issue #81。動きは src/stage/effects.ts の slice） ---
+
+   1 文字の上に写しを重ね、clip-path で横帯に切って別々に動かす。
+
+   **字の側は色を透かすだけ。** 箱（幅・高さ・字送り）はそのまま残るので、切った字と
+   切らない字が混ざっても組みが動かない。visibility や display で消すと箱ごと消える。 */
+.stage__text--sliced {
+  /* 板の絶対配置の基準。**変形を持たないので包含ブロックは素直にここになる** */
+  position: relative;
+  color: transparent;
+
+  /* 板ごとの奥行きを平面に焼き込まない（枠・漂う層・カメラと同じ理由） */
+  transform-style: preserve-3d;
+}
+
+.stage__slice {
+  position: absolute;
+  inset: 0;
+
+  /* 字の側で透かした色をここで持ち直す。**継承では透明のままになる** */
+  color: var(--stage-ink);
+
+  /* 板は読むものでも押すものでもない（画面いっぱいの .stage__lines と同じ理由）。
+     読み上げからは JS 側で aria-hidden を当てて隠している */
+  pointer-events: none;
+}
+
 /* 縦書きの演出（src/stage/effects.ts の vertical）が付けるクラス。
    演出側は「縦書きにする」意思だけを持ち、どう組むかはここが決める。
    構図の枠ではなく行そのものに当たる（writing-mode は文字の組み方だから）。

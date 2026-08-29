@@ -11,6 +11,17 @@ export interface EffectTarget {
   readonly root: HTMLElement;
   /** SplitText が分解した 1 文字ずつの要素 */
   readonly chars: Element[];
+  /**
+   * 1 文字を横に切った板を立てて返す（M13-5 / Issue #81）。**返るのは文字ごとの配列。**
+   *
+   * **演出は DOM を触らない**（M4-2 の決定）。板は 1 文字につき何枚もの写しを重ねて
+   * `clip-path` で切るので DOM が要るが、作るのは `LyricStage` の仕事。図形
+   * （`createDecor`）・英字（`createSub`）・一過性の装飾（`createSpark`）と同じ形で、
+   * 演出は「板をくれ」と頼むだけにする。
+   *
+   * 呼ばなければ何も立たない。板を使わない演出は、この項目があることを知らなくてよい。
+   */
+  readonly sliceChars: (count: number) => Element[][];
 }
 
 /**
@@ -42,6 +53,15 @@ export type EffectLayout = 'vertical';
  * ここを引く（当て先の一覧を綴りで書かないため）。
  */
 export const TEXT_CLASS = 'stage__text';
+
+/**
+ * 板に切った字と、板そのものに当たるクラス（M13-5）。中身は src/style.css が持つ。
+ *
+ * **字の側は色を透明にするだけ**で、箱（幅・高さ・字送り）はそのまま残す。
+ * 切った字と切らない字が混ざっても組みが動かないようにするため。
+ */
+export const SLICE_TEXT_CLASS = 'stage__text--sliced';
+export const SLICE_CLASS = 'stage__slice';
 
 /** レイアウトごとの CSS クラス。中身は src/style.css が持つ */
 export const LAYOUT_CLASS: Record<EffectLayout, string> = {
@@ -87,6 +107,14 @@ export type EffectTimeline = ReturnType<Effect>;
  * 検査するため。表示側は参照しないので、縮めたい時はテストだけ見れば足りる。
  */
 export const MAX_STAGGER_SPAN = 0.8;
+
+/**
+ * 1 文字を切る板の枚数（M13-5）。
+ *
+ * 少ないと「割れた」に見えず、多いと 1 枚が細くなって字が読めないまま集まる。
+ * 5 枚は極太 900 の字（横画が 3〜4 本）で、**どの板にも字画が乗る**枚数。
+ */
+export const SLICE_COUNT = 5;
 
 /**
  * 1 文字ごとの遅延を決める。
@@ -347,6 +375,58 @@ export const effects = {
       duration: 0.6,
       ease: 'power3.out',
     }),
+
+  /**
+   * 字を横に切った板が、奥行きの違う場所から集まって字になる（M13-5 / Issue #81）。
+   *
+   * **字形ではなく箱で切る。** 5 等分は「割れて見える」ための道具で、部首としては嘘。
+   * 代わりに**どの文字にも同じように効く** — かなでも英字でも、書体が部首単体の
+   * 字形を持たない漢字（`法` の `氵`）でも変わらない。部首で割る案を採らなかった
+   * 理由は Issue #73 に書いた。
+   *
+   * 板ごとに散らす向きを変えているのは、**ばらけた破片が集まる**ように見せるため。
+   * 同じ向きから来ると「1 枚の板がずれて戻った」にしか見えない。
+   *
+   * 文字送り（`stagger`）は板の側ではなく**文字の側**に掛ける。板ごとに時間差を付けると
+   * 1 文字が組み上がる時間が伸びて、語句が出揃うのが遅れる。
+   */
+  slice: ({ sliceChars, chars }) => {
+    const timeline = gsap.timeline();
+    const glyphs = sliceChars(SLICE_COUNT);
+    const stagger = staggerFor(chars.length, 0.06);
+
+    glyphs.forEach((pieces, order) => {
+      pieces.forEach((piece, index) => {
+        // 上下の板は遠く、真ん中の板は近くから。中心へ吸い寄せられる形になる
+        const fromCenter = index - (SLICE_COUNT - 1) / 2;
+
+        timeline.fromTo(
+          piece,
+          {
+            opacity: 0,
+            xPercent: fromCenter * 46 + (index % 2 === 0 ? 18 : -18),
+            yPercent: fromCenter * 34,
+            z: -420 - Math.abs(fromCenter) * 320,
+            rotationY: fromCenter * 22,
+            rotationX: (index % 2 === 0 ? 1 : -1) * 14,
+          },
+          {
+            opacity: 1,
+            xPercent: 0,
+            yPercent: 0,
+            z: 0,
+            rotationY: 0,
+            rotationX: 0,
+            duration: 0.6,
+            ease: 'power3.out',
+          },
+          order * stagger,
+        );
+      });
+    });
+
+    return timeline;
+  },
 
   /**
    * 何も動かさず、行ごと静かに現れる。
