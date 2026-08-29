@@ -107,6 +107,14 @@ describe('語句に添えるものの取り付け（M8-3a / M8-3c）', () => {
     // 拭き取りが掛からない・位置が決まらないという形で画だけが壊れる
     ['英字の箱に箱のクラスを当てる', /box\.className = SUB_CLASS/],
     ['英字の字に字のクラスを当てる', /glyphs\.className = SUB_TEXT_CLASS/],
+    // 板（M13-5）。**素の字は色を透かしてある**ので、板を木に繋ぎ忘れると
+    // 語句が丸ごと消えるのに型検査も全テストも通る（英字の箱と同じ穴）
+    ['板を文字の中に足す', /^[^\S\n]*char\.append\(piece\)/m],
+    ['切った字にクラスを当てる（色を透かす）', /char\.classList\.add\(SLICE_TEXT_CLASS\)/],
+    ['板にクラスを当てる（色を持ち直す）', /piece\.className = SLICE_CLASS/],
+    // 帯に切る式。**i 枚目は上を i/n、下を (n-1-i)/n だけ削る** — 逆にすると
+    // 5 枚が同じ所を写して 1 枚にしか見えない
+    ['板を帯に切る', /clipPath = `inset\(\$\{\(index \* 100\) \/ count\}% 0 \$\{\(\(count - 1 - index\) \* 100\) \/ count\}% 0\)`/],
   ];
 
   it.each(wiring)('%s', (_label, pattern) => {

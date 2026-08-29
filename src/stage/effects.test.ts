@@ -6,8 +6,12 @@ import {
   MAX_STAGGER_SPAN,
   REDUCED_MOTION_EFFECT,
   resolveEffect,
+  SLICE_CLASS,
+  SLICE_COUNT,
+  SLICE_TEXT_CLASS,
   staggerFor,
 } from './effects';
+import { classRule as rulesFor } from '../test-support/css-rules';
 
 /**
  * 文字要素の代わりに渡すダミー。gsap は要素でなくただのオブジェクトも
@@ -29,7 +33,13 @@ function dummyChars(count: number): Element[] {
  * gsap は要素でなくただのオブジェクトもトゥイーンできるので、これで長さは測れる。
  */
 function dummyTarget(count: number) {
-  return { root: {} as HTMLElement, chars: dummyChars(count) };
+  return {
+    root: {} as HTMLElement,
+    chars: dummyChars(count),
+    // 板（M13-5）。本番と同じく**文字ごとに枚数分**返す
+    sliceChars: (slices: number) =>
+      Array.from({ length: count }, () => Array.from({ length: slices }, () => ({}) as Element)),
+  };
 }
 
 describe('staggerFor', () => {
@@ -268,5 +278,100 @@ describe('resolveEffect（動きを減らす設定）', () => {
         resolveEffect(name).build,
       );
     }
+  });
+});
+
+/**
+ * 板に切る分解（M13-5 / Issue #81）。
+ *
+ * 部首で割る案は採らなかった（**作品の書体が部首単体の字形を持っていない**）。
+ * 字形を見ずに箱で切るので、かなでも英字でも同じように効く。
+ */
+describe('slice', () => {
+  /** 板を控えながら組み立てる */
+  function buildSlice(chars: number) {
+    const pieces: Record<string, unknown>[][] = [];
+    const timeline = effects.slice({
+      root: {} as HTMLElement,
+      chars: dummyChars(chars),
+      // **1 回の呼び出しで文字ごとの配列を返す**（本番と同じ形）
+      sliceChars: (count) => {
+        const glyphs = Array.from({ length: chars }, () =>
+          Array.from({ length: count }, () => ({ z: 0, opacity: 1 })),
+        );
+        pieces.push(...glyphs);
+        return glyphs as unknown as Element[][];
+      },
+    });
+
+    return { timeline, pieces };
+  }
+
+  it('文字ごとに板を頼む', () => {
+    const { timeline, pieces } = buildSlice(3);
+
+    expect(pieces).toHaveLength(3);
+    expect(pieces[0]).toHaveLength(SLICE_COUNT);
+    timeline.kill();
+  });
+
+  /** 始点で散らしている項目（`z` `xPercent` `yPercent` `rotationY` `rotationX`） */
+  const SCATTERED = ['z', 'xPercent', 'yPercent', 'rotationY', 'rotationX'] as const;
+
+  it('板は集まりきると素の位置に戻る', () => {
+    // **戻り切らないと字が読めない。** 切った字は 5 枚が重なって初めて 1 文字になる。
+    //
+    // **散らした項目を全部見る**（レビュー指摘 🟡）。3 つだけ見ていた頃は、終点に
+    // `yPercent: 18, rotationY: 25` を書き足しても緑のままだった（画では板が縦に
+    // ずれて斜めのまま止まる ＝ まさにこの検査が防ぎたいもの）
+    const { timeline, pieces } = buildSlice(1);
+    timeline.pause();
+    timeline.time(timeline.duration() + 0.0001).time(timeline.duration());
+
+    for (const piece of pieces[0]) {
+      for (const key of SCATTERED) expect(Number(piece[key] ?? 0), key).toBeCloseTo(0);
+      expect(Number(piece.opacity)).toBeCloseTo(1);
+    }
+
+    timeline.kill();
+  });
+
+  it('板は散らばった所から集まる（同じ場所から来ない）', () => {
+    // 同じ向きから来ると「1 枚の板がずれて戻った」にしか見えない。
+    // **奥行きだけでなく、散らしている項目すべてがばらけていること**（レビュー指摘 🟡）
+    const { timeline, pieces } = buildSlice(1);
+    timeline.pause();
+    timeline.time(0.0001).time(0);
+
+    for (const key of SCATTERED) {
+      const spread = pieces[0].map((piece) => Number(piece[key] ?? 0));
+
+      expect(new Set(spread).size, key).toBeGreaterThan(1);
+    }
+
+    // 奥から来る（手前から迫ると登場の rushIn と紛れる）
+    for (const piece of pieces[0]) expect(Number(piece.z)).toBeLessThan(0);
+
+    timeline.kill();
+  });
+
+  it('時間差は板ではなく文字に掛かる', () => {
+    // 板ごとに時間差を付けると、1 文字が組み上がる時間が伸びて語句が出揃うのが遅れる
+    const one = buildSlice(1);
+    const many = buildSlice(4);
+
+    expect(many.timeline.duration()).toBeGreaterThan(one.timeline.duration());
+    expect(many.timeline.duration()).toBeLessThanOrEqual(one.timeline.duration() + MAX_STAGGER_SPAN);
+
+    one.timeline.kill();
+    many.timeline.kill();
+  });
+
+  it('板と切った字のクラスが CSS にある', () => {
+    // **CSS にしか書けない指定**（切った字の色を透かす／板が色を持ち直す）。
+    // 片方でも消えると、字が透明のままか、板と素の字が二重に見える
+    expect(rulesFor(SLICE_TEXT_CLASS).some((body) => /color:\s*transparent/u.test(body))).toBe(true);
+    expect(rulesFor(SLICE_CLASS).some((body) => /position:\s*absolute/u.test(body))).toBe(true);
+    expect(rulesFor(SLICE_CLASS).some((body) => /color:\s*var\(--stage-ink\)/u.test(body))).toBe(true);
   });
 });

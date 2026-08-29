@@ -52,6 +52,9 @@ function dummyTarget(
     subTexts,
     sparkNames,
     extras,
+    // 板（M13-5）。**呼ばれた時だけ立てる**ので、使わない演出では空のまま
+    sliceChars: (n: number) =>
+      Array.from({ length: count }, () => Array.from({ length: n }, () => extra() as unknown as Element)),
     createDecor: (className) => {
       decorClasses.push(className);
       return extra();

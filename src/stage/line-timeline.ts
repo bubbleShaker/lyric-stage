@@ -49,6 +49,13 @@ export interface PartTarget {
   /** SplitText が分解した 1 文字ずつの要素 */
   readonly chars: Element[];
   /**
+   * 1 文字を横に切った板を立てて返す（M13-5）。**演出へそのまま渡す。**
+   *
+   * 図形・英字・一過性の装飾（`createDecor` など）と同じく、DOM を作るのは
+   * 当て先を作る側の仕事（M4-2 の「演出は DOM を触らない」）。
+   */
+  readonly sliceChars: (count: number) => Element[][];
+  /**
    * カメラが向く先（M13-4）。**画面に対する割合で表した、この語句の居場所と大きさ。**
    *
    * 測るのは当て先を作る側（`LyricStage`）。ここが px ではなく割合を受け取るのは、
@@ -184,7 +191,10 @@ export function buildLineTimeline(
       timeline.add(spark.build(target.createSpark(spark)), part.at);
     }
 
-    timeline.add(build({ root: target.root, chars: target.chars }), part.at);
+    timeline.add(
+      build({ root: target.root, chars: target.chars, sliceChars: target.sliceChars }),
+      part.at,
+    );
 
     staying.push({
       target,

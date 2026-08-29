@@ -7,7 +7,14 @@ import { CAMERA_CLASS, focusIn, type Focus } from './camera';
 import { resolveComposition } from './composition';
 import { DECOR_BASE_CLASS, DECOR_LAYOUT_CLASS } from './decor';
 import { DRIFT_CLASS } from './drift';
-import { LAYOUT_CLASS, TEXT_CLASS, type EffectLayout, type EffectTimeline } from './effects';
+import {
+  LAYOUT_CLASS,
+  SLICE_CLASS,
+  SLICE_TEXT_CLASS,
+  TEXT_CLASS,
+  type EffectLayout,
+  type EffectTimeline,
+} from './effects';
 import { buildLineTimeline, type PartTarget } from './line-timeline';
 import {
   SPARK_BASE_CLASS,
@@ -173,7 +180,49 @@ export class LyricStage implements LyricPresenter {
       createDecor: (className) => this.insertDecor(text, className, layout),
       createSub: (sub) => this.insertSub(text, sub),
       createSpark: (spark) => this.appendSpark(drift, spark, part.text),
+      sliceChars: (count) => split.chars.map((char) => this.sliceChar(char as HTMLElement, count)),
     };
+  }
+
+  /**
+   * 1 文字を横に切った板を立てて返す（M13-5 / Issue #81）。
+   *
+   * **素の字の上に写しを重ねる**のではなく、素の字を透かして写しだけを見せる。
+   * `SLICE_TEXT_CLASS` が字の色を透明にし、板の側が色を持ち直す — こうすると
+   * **字の箱（幅・高さ・字送り）はそのまま**なので、切った字と切らない字が
+   * 混ざっても組みが動かない。
+   *
+   * 板は `clip-path` で横帯に切る。`inset()` の上下は「上から何 %・下から何 %」なので、
+   * i 枚目は上を `i/n`、下を `(n-1-i)/n` だけ削る。
+   *
+   * **読み上げから隠す。** 同じ字を 5 回写しているので、隠さないと 1 文字が
+   * 5 回読まれる（M10-1 の `ghost` と同じ手当て。本文は SplitText が `aria-label` に
+   * まとめている）。
+   */
+  private sliceChar(char: HTMLElement, count: number): Element[] {
+    // **字は先に控える**（レビュー指摘 🔴）。板は字の中へ入れるので、
+    // 1 枚立てるごとに `char.textContent` が伸びていく — 毎回読み直すと
+    // 板の字が 1 枚ごとに倍になり、5 枚目には 16 文字ぶんが入る。
+    // 今は行の高さの外へ溢れて `clip-path` に切られるので画には出ないが、
+    // **壊れていないのは偶然**（行間を詰めた日に二重の字が出る）
+    const glyph = char.textContent;
+
+    char.classList.add(SLICE_TEXT_CLASS);
+
+    return Array.from({ length: count }, (_unused, index) => {
+      const piece = document.createElement('span');
+      piece.className = SLICE_CLASS;
+      // **SplitText が既に文字の要素を `aria-hidden` にしている**ので二重だが、
+      // 分割の指定を変えた日に崩れないよう自分でも隠す（本文は `aria-label` にまとまる）
+      piece.setAttribute('aria-hidden', 'true');
+      // 歌詞と同じく外から来た文字列なので、必ず textContent で入れる
+      piece.textContent = glyph;
+      piece.style.clipPath = `inset(${(index * 100) / count}% 0 ${((count - 1 - index) * 100) / count}% 0)`;
+
+      char.append(piece);
+
+      return piece;
+    });
   }
 
   /**

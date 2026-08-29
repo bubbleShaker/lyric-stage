@@ -246,7 +246,7 @@
         {
           "text": "魔法が",
           "at": 0,
-          "effect": "rushIn",
+          "effect": "slice",
           "place": { "at": "middle-center", "size": "xl", "nudge": { "y": -0.1 }, "tilt": -3 },
           "sub": "LIKE MAGIC",
           "spark": "focus"
@@ -410,7 +410,7 @@
         {
           "text": "夢に眠る",
           "at": 0,
-          "effect": "fade",
+          "effect": "slice",
           "place": { "at": "middle-right", "size": "lg", "nudge": { "y": -0.06 }, "tilt": -3 },
           "decor": ["rule"]
         },
