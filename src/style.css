@@ -524,6 +524,24 @@ body {
   transform-style: preserve-3d;
 }
 
+/* 寄る・離れるを持つ層（M13-4 / Issue #79。動きは src/stage/camera.ts）。
+
+   **語句ではなくこの箱が動いて、歌っている語句を枠に入れる。** 構図（M8-1）は
+   「画面のどこに置くか」から「どこへカメラを向けるか」に読み替わり、語句は画面より
+   広い空間に置かれたままになる。
+
+   **`.stage__lines` の中に置く。** transform を持つ要素は重ね合わせ文脈を作り、
+   中の mix-blend-mode（M9-2）を地から切り離してしまうので、乗算と拍の揺れは
+   カメラの外＝ .stage__lines 側に残す。 */
+.stage__camera {
+  position: absolute;
+  inset: 0;
+
+  /* 中の枠を平面に潰さない。ここで潰すと、語句ごとの奥行き（漂い・退場）も
+     カメラ自身の z（移動の途中で一度引く）も、ただの拡大縮小になる */
+  transform-style: preserve-3d;
+}
+
 /* 着地した後も漂い続ける層（M13-2 / Issue #75。動きは src/stage/drift.ts）。
 
    **枠と文字の間に 1 枚挟んである。** 枠は構図（CSS）、この層は漂い（GSAP）、

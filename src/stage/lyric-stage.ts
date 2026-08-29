@@ -1,7 +1,9 @@
+import gsap from 'gsap';
 import { SplitText } from 'gsap/SplitText';
 import type { LyricLine, ResolvedPart } from '../domain/lyrics';
 import type { LyricPresenter } from '../domain/ports';
 import type { ReducedMotionQuery } from '../lib/reduced-motion';
+import { CAMERA_CLASS, focusIn, type Focus } from './camera';
 import { resolveComposition } from './composition';
 import { DECOR_BASE_CLASS, DECOR_LAYOUT_CLASS } from './decor';
 import { DRIFT_CLASS } from './drift';
@@ -40,6 +42,17 @@ import { SUB_CLASS, SUB_TEXT_CLASS } from './sub-text';
  */
 export class LyricStage implements LyricPresenter {
   private readonly root: HTMLElement;
+  /**
+   * 寄る・離れるを持つ層（M13-4）。**行をまたいで使い回す。**
+   *
+   * 語句の枠は行ごとに捨てて作り直すが、こちらは 1 枚あればよい。**枠を測る基準が
+   * この箱**なので、行ごとに差し替えると測る基準まで作り直しになる。
+   *
+   * 前の行の寄せは残るが、据え直す `restCamera` が全部の値を書くので上書きされる。
+   * 測る側も変形を通さない寸法（`offsetLeft` など）を読むので、**残っていても
+   * 測定は汚れない**（`focusOn` を見よ）。`clear()` の戻しは念のため。
+   */
+  private readonly camera: HTMLElement;
   private readonly prefersReducedMotion: ReducedMotionQuery;
   private timeline: EffectTimeline | null = null;
   /** 今出している語句の分割。縁を切るために控える（clear() を見よ） */
@@ -61,6 +74,10 @@ export class LyricStage implements LyricPresenter {
   constructor(root: HTMLElement, prefersReducedMotion: ReducedMotionQuery) {
     this.root = root;
     this.prefersReducedMotion = prefersReducedMotion;
+
+    this.camera = document.createElement('div');
+    this.camera.className = CAMERA_CLASS;
+    this.root.append(this.camera);
   }
 
   show(line: LyricLine, span: number): void {
@@ -72,6 +89,7 @@ export class LyricStage implements LyricPresenter {
     // 進めるのは render() だけ ＝ 音の再生位置
     this.timeline = buildLineTimeline(line, (part, layout) => this.appendPart(part, layout), {
       span,
+      camera: this.camera,
       reducedMotion: this.prefersReducedMotion(),
     });
   }
@@ -98,7 +116,12 @@ export class LyricStage implements LyricPresenter {
     for (const split of this.splits) split.kill();
     this.splits = [];
 
-    this.root.replaceChildren();
+    // **カメラは残して中身だけ捨てる**（M13-4）。捨てて作り直すと、次の行の枠を
+    // 測る基準そのものが作り直しになる（`camera` の説明を見よ）。
+    // 代わりに寄せを素へ戻す — **測るのはカメラが素の姿のときでなければならない**。
+    // 前の行の寄せが残ったまま測ると、行を追うごとに倍率がずれていく
+    gsap.set(this.camera, { clearProps: 'transform' });
+    this.camera.replaceChildren();
   }
 
   /**
@@ -136,7 +159,7 @@ export class LyricStage implements LyricPresenter {
     frame.append(drift);
     // 分割は木に繋いでから。SplitText は文字の位置を測るので、
     // 繋ぐ前だとレイアウトが決まっておらず測れない
-    this.root.append(frame);
+    this.camera.append(frame);
 
     const split = SplitText.create(text, { type: 'chars' });
     this.splits.push(split);
@@ -146,10 +169,38 @@ export class LyricStage implements LyricPresenter {
       drift,
       root: text,
       chars: split.chars,
+      focus: this.focusOn(frame),
       createDecor: (className) => this.insertDecor(text, className, layout),
       createSub: (sub) => this.insertSub(text, sub),
       createSpark: (spark) => this.appendSpark(drift, spark, part.text),
     };
+  }
+
+  /**
+   * カメラが向く先を測る（M13-4）。**割合へ揃えるのは `camera.ts` の `focusIn`。**
+   *
+   * ここがするのは測ることだけ。割り算まで持つと、**幅を割り忘れても画が
+   * 「なんとなく寄る」ので気付けない**（レビュー指摘 🔴 — 割り算を落とす変異が
+   * 検査を素通りした）。
+   *
+   * **`getBoundingClientRect` ではなく `offsetLeft` などを読む。** 前者は祖先の変形を
+   * 通した見かけの位置を返すので、**カメラが前の行の寄せを持ったまま測ると前の行の
+   * 倍率が掛かる**。組みの値を読めば、カメラがどんな姿でも同じ数が出る
+   * （＝「測る前にカメラを素へ戻す」という順序の約束に頼らなくて済む）。
+   *
+   * 枠の `offsetParent` はカメラ（`position: absolute` を持つ最も近い祖先）。
+   * 描かれていなければ 0 が返り、`focusIn` が「寄らない」に倒す。
+   */
+  private focusOn(frame: HTMLElement): Focus {
+    return focusIn(
+      {
+        left: frame.offsetLeft,
+        top: frame.offsetTop,
+        width: frame.offsetWidth,
+        height: frame.offsetHeight,
+      },
+      { width: this.camera.offsetWidth, height: this.camera.offsetHeight },
+    );
   }
 
   /**

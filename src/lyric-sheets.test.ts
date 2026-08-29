@@ -12,6 +12,7 @@ import {
 import { isAnchorName, isSizeName } from './stage/composition';
 import { decors, isDecorName } from './stage/decor';
 import { effects, isEffectName, resolveEffect } from './stage/effects';
+import { CAMERA_MOVE } from './stage/camera';
 import { EXIT_DURATION, exitStartFor } from './stage/exit';
 import { buildLineTimeline, LINE_SETTLED } from './stage/line-timeline';
 import { isSparkName, sparks, type SparkShape } from './stage/spark';
@@ -437,6 +438,7 @@ describe(`${DEFAULT_SHEET_NAME}.json`, () => {
         const gap = gapAfter(sheet.lines, index);
         const timeline = buildLineTimeline(line, (part) => dummyTarget(part.text.length), {
           span: gap,
+          camera: {},
         });
         const settled = timeline.labels[LINE_SETTLED];
         timeline.kill();
@@ -496,6 +498,20 @@ describe(`${DEFAULT_SHEET_NAME}.json`, () => {
     });
 
     expect(overrun).toStrictEqual([]);
+  });
+
+  it('カメラが次の語句へ移りきれる', () => {
+    // M13-4。カメラは語句の少し手前から動き出して、出た後に着く。**間隔がこれより
+    // 詰まると、前の語句がまだ画面の真ん中に居るうちに次へ動き出す**。
+    // `camera.test.ts` は定数どうしを比べているだけでシートを読んでいない
+    // （レビュー指摘 🟡）ので、噛み合わせはここで見る
+    const gaps = sheet.lines.flatMap((line) =>
+      partsOf(line).flatMap((part, order, all) =>
+        all[order + 1] === undefined ? [] : [all[order + 1].at - part.at],
+      ),
+    );
+
+    expect(CAMERA_MOVE).toBeLessThanOrEqual(Math.min(...gaps));
   });
 
   it('退場の長さが語句の間隔より短い', () => {
@@ -870,6 +886,8 @@ function dummyTarget(count: number) {
     drift: { z: 0, rotationY: 0, rotationX: 0, yPercent: 0, opacity: 1 } as unknown as HTMLElement,
     root: {} as HTMLElement,
     chars: Array.from({ length: count }, () => ({}) as unknown as Element),
+    // カメラが向く先（M13-4）。DOM が無いので測れない。組み立てが借りられれば足りる
+    focus: { x: 0.5, y: 0.5, width: 0.3, height: 0.2, aspect: 16 / 9 },
     // 図形（M8-3a）も英字（M8-3c）も一過性の装飾（M10-1）も本番と同じ経路で組まれるので、
     // 当て先だけ返す。これらが行の尺に入ることも、これで「行の猶予に収まる」の検査が見てくれる
     createDecor: () => ({}) as HTMLElement,
@@ -906,7 +924,7 @@ function settledOf(part: ResolvedPart): number {
     },
     () => dummyTarget(part.text.length),
     // 退場も漂いも入らない長さにする（測りたいのは出揃う時刻だけ）
-    { span: Infinity },
+    { span: Infinity, camera: {} },
   );
   const settled = timeline.labels[LINE_SETTLED];
   timeline.kill();
@@ -929,7 +947,10 @@ function onMillisecondGrid(seconds: number): number {
  * 「行の長さ」を測ることになる。
  */
 function settledTimeOf(line: LyricLine, span: number): number {
-  const timeline = buildLineTimeline(line, (part) => dummyTarget(part.text.length), { span });
+  const timeline = buildLineTimeline(line, (part) => dummyTarget(part.text.length), {
+    span,
+    camera: {},
+  });
   const settled = timeline.labels[LINE_SETTLED];
   timeline.kill();
 

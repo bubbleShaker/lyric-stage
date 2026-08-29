@@ -2,6 +2,7 @@ import gsap from 'gsap';
 import { partsOf, type LyricLine, type ResolvedPart } from '../domain/lyrics';
 import { resolveDecor } from './decor';
 import { buildDrift, DRIFT_SETTLE } from './drift';
+import { buildCameraMove, CAMERA_LEAD, restCamera, type Focus } from './camera';
 import { buildExit, exitStartFor } from './exit';
 import { resolveEffect, type EffectLayout, type EffectTimeline } from './effects';
 import { resolveSpark, type SparkShape, type SparkTarget } from './spark';
@@ -48,6 +49,14 @@ export interface PartTarget {
   /** SplitText が分解した 1 文字ずつの要素 */
   readonly chars: Element[];
   /**
+   * カメラが向く先（M13-4）。**画面に対する割合で表した、この語句の居場所と大きさ。**
+   *
+   * 測るのは当て先を作る側（`LyricStage`）。ここが px ではなく割合を受け取るのは、
+   * **測り方を知らないまま組み立てを検査できるようにする**ため — 行の尺の検査
+   * （`src/lyric-sheets.test.ts`）はダミーに好きな数を持たせて本番と同じ組み立てを borrow する。
+   */
+  readonly focus: Focus;
+  /**
    * 図形の当て先を 1 つ立てて返す（M8-3a）。**文字より奥に置かれる。**
    *
    * 「立てた要素の配列」を受け取る形にしなかったのは、**数と順序が図形の列と
@@ -92,6 +101,12 @@ export interface BuildLineOptions {
    * 漂いだけが静かに止まる — 画面には歌詞が出ているので気付けない。
    */
   readonly span: number;
+  /**
+   * カメラの層（M13-4）。**語句ではなくこちらが動いて、歌っている語句を枠に入れる。**
+   *
+   * 要素でなくてもよい（gsap はただのオブジェクトにも書ける）ので、検査はダミーを渡す。
+   */
+  readonly camera: object;
   /** OS の「視差効果を減らす」設定が有効か */
   readonly reducedMotion?: boolean;
 }
@@ -111,7 +126,7 @@ export const LINE_SETTLED = 'settled';
 export function buildLineTimeline(
   line: LyricLine,
   createTarget: PartTargetFactory,
-  { span, reducedMotion = false }: BuildLineOptions,
+  { span, camera, reducedMotion = false }: BuildLineOptions,
 ): EffectTimeline {
   // **止まった状態で作る。** 進めるのは外から与える時計（音の再生位置）だけで、
   // GSAP 自身の時計には乗せない。乗せると、音を止めても残りの語句が出続けて
@@ -122,6 +137,8 @@ export function buildLineTimeline(
   // ここでは当て先と刻みだけ控える
   const staying: {
     target: PartTarget;
+    /** その語句が出る時刻。カメラが着くのがここ */
+    appears: number;
     at: number;
     /** 引き始める時刻。**null は「引かない」**（行の切り替えに任せる。下記） */
     leaves: number | null;
@@ -171,6 +188,7 @@ export function buildLineTimeline(
 
     staying.push({
       target,
+      appears: part.at,
       at: part.at + DRIFT_SETTLE,
       // **「出揃う」は登場だけではない**（レビュー指摘 🟡）。図形・英字・一過性の装飾も
       // 同じ時刻から始まり、登場より長いことがある（`burst` の 1.0 秒 > `swing` の 0.6 秒）。
@@ -190,6 +208,24 @@ export function buildLineTimeline(
   // `burst` の 1.0 秒が `swing` の 0.6 秒を追い越す）。漂いを足す前の尺を読めば、
   // M13-2 より前の `timeline.duration()` と同じ意味がそのまま残る
   timeline.addLabel(LINE_SETTLED, timeline.duration());
+
+  // **カメラは語句を全部立ててから据える**（M13-4）。当て先を作る側（`LyricStage`）は
+  // カメラの箱の中で枠を測るので、**1 つ目の語句に寄せてから 2 つ目を測ると、
+  // 測った値に寄せた分が掛かる**（実測: 2 つ目の語句が画面の隅に飛ぶ）。
+  // 据えるのはタイムラインの外（時間を持たない）。**動き出しは語句が出るより
+  // わずかに前**（`CAMERA_LEAD`）で、着くのは語句が出た後になる — 着いた時に
+  // 合わせると、前の語句を運び去った枠に次の語句がまだ現れていない時間ができる
+  staying.forEach(({ target, appears }, order) => {
+    if (order === 0) {
+      restCamera(camera, target.focus, { reducedMotion });
+      return;
+    }
+
+    timeline.add(
+      buildCameraMove(camera, target.focus, order, { reducedMotion }),
+      Math.max(0, appears - CAMERA_LEAD),
+    );
+  });
 
   // **着地したら漂い始め、次へ渡すときに引く**（M13-2 / M13-3）。当て先が演出と
   // 別の層なので、登場の終わり際に重ねても取り合いにならない。
