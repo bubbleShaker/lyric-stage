@@ -80,25 +80,34 @@ export const BLUR = 8;
  *   前の語句が消えてから次が出るまでに何も映っていない時間ができると、のっぺり以上に悪い
  * - 行の最後の語句 … 次が無いので、**行が終わるちょうどに消え終わる**よう逆算する
  *
- * **出揃ってから `MIN_STAY` は留まる。** 間に合わない行では引かず、行の切り替えに
- * 任せる — 語句は漂ったまま次の行へ渡るので、止まった画にはならない。
+ * **`MIN_STAY` が守るのは行の最後の語句だけ**（再レビューの指摘 🟡）。出揃ってから
+ * それだけ留まれない行では引かず、行の切り替えに任せる — 語句は漂ったまま次の行へ渡る。
+ *
+ * **次の語句がある側は待てない。** そちらの引き始めは「次が出る時刻」に釘付けで、
+ * 遅らせると画面に 2 語句が居る時間が伸びる（「対応するセリフだけ映す」から外れる）。
+ * 本編には出揃ってから 0.111 秒で引き始める語句がある（`今も`）。**滞在の短さは
+ * 語句の刻み方の問題**なので、守るならシートの側（`lyric-sheets.test.ts`）。
  *
  * **`span` が有限でなければ引かない**（レビュー指摘 🔴）。`lineSpanAt` は duration を
  * 持たない最終行に `Infinity` を返す。そのまま逆算すると `Infinity` の位置に退場を置く
  * ことになり、**行のタイムラインの尺ごと無限になる**（`buildDrift` が同じ値を名指しで
  * 弾いているのと同じ理由）。`NaN` は下の比較が false になるので、この 1 行が無くても落ちる。
  *
- * `appears` は**その語句にまつわるものが出揃う時刻**（登場だけではない）。図形・英字・
- * 一過性の装飾は登場より長いことがあり（`burst` の 1.0 秒 > `swing` の 0.6 秒）、
+ * `settled` は**出揃う時刻**で、登場だけではない — 図形・英字・一過性の装飾も
+ * 語句と同じ時刻から始まり、登場より長いことがある（`burst` の 1.0 秒 > `swing` の 0.6 秒）。
  * 退場は箱ごと引くので、装飾が出ている最中に引き始めては噛み合わない。
+ *
+ * **呼ぶ側は行ぜんぶの終端を渡してよい**（`line-timeline.ts` はそうしている）。
+ * 読むのは最後の語句の枝だけで、その時この 2 つは同じ値になる。ずれても大きい側へ
+ * 振れるだけなので、退場を控える ＝ 安全な向きに倒れる。
  */
-export function exitStartFor(appears: number, nextPartAt: number | undefined, span: number): number | null {
+export function exitStartFor(settled: number, nextPartAt: number | undefined, span: number): number | null {
   if (nextPartAt !== undefined) return nextPartAt;
   if (!Number.isFinite(span)) return null;
 
   const leaves = span - EXIT_DURATION;
 
-  return leaves >= appears + MIN_STAY ? leaves : null;
+  return leaves >= settled + MIN_STAY ? leaves : null;
 }
 
 export interface ExitOptions {

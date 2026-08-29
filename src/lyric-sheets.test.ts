@@ -2,14 +2,17 @@ import { describe, expect, it } from 'vitest';
 import {
   createPolarityTrack,
   findRapidPolarityFlip,
+  lineSpanAt,
   parseLyricSheet,
   partsOf,
   sliceSheet,
   type LyricLine,
+  type ResolvedPart,
 } from './domain/lyrics';
 import { isAnchorName, isSizeName } from './stage/composition';
 import { decors, isDecorName } from './stage/decor';
 import { effects, isEffectName, resolveEffect } from './stage/effects';
+import { EXIT_DURATION, exitStartFor } from './stage/exit';
 import { buildLineTimeline, LINE_SETTLED } from './stage/line-timeline';
 import { isSparkName, sparks, type SparkShape } from './stage/spark';
 import { secondsPerBeat } from './domain/beat';
@@ -455,25 +458,58 @@ describe(`${DEFAULT_SHEET_NAME}.json`, () => {
     // 引き始める** ＝ 「一瞬映って消えた」になる。
     //
     // 上の「行の猶予に収まる」は行ぜんぶが出揃う時刻しか見ないので、**語句の間隔と
-    // 登場の尺の関係は誰も見ていなかった**。本編の余裕は 0.11 秒しかない
-    // （最短の間隔 0.751 秒 対 `fade` 2 文字の 0.64 秒）ので、Issue #37 で耳を頼りに
+    // 出揃う時刻の関係は誰も見ていなかった**。本編の余裕は 0.126 秒しかない
+    // （最短の間隔 0.751 秒 対 `スター` の 0.625 秒）ので、Issue #37 で耳を頼りに
     // `at` を詰めた日に静かに破れる
     const hasty = sheet.lines.flatMap((line) =>
       partsOf(line).flatMap((part, order, all) => {
         const next = all[order + 1];
         if (next === undefined) return [];
 
-        const timeline = resolveEffect(part.effect).build(dummyTarget(part.text.length));
-        const appears = timeline.duration();
-        timeline.kill();
-
+        const appears = settledOf(part);
         const gap = next.at - part.at;
 
-        return appears <= gap ? [] : [`${part.text}: 登場 ${appears} 秒 / 次まで ${gap} 秒`];
+        return appears <= gap ? [] : [`${part.text}: 出揃うまで ${appears} 秒 / 次まで ${gap} 秒`];
       }),
     );
 
     expect(hasty).toStrictEqual([]);
+  });
+
+  it('退場が行の終わりをはみ出さない', () => {
+    // M13-3。はみ出すと**引き切る前に行が切り替わって DOM ごと捨てられる** ＝
+    // 不透明度が残ったまま消える一瞬のポップになる。
+    //
+    // 上の「行の猶予に収まる」は退場の 0.4 秒を見ていないので、`at` を行末へ寄せた
+    // 語句はそこを通り抜ける（再レビューの指摘 🟡）
+    const overrun = sheet.lines.flatMap((line, index) => {
+      const span = lineSpanAt(sheet.lines, index);
+
+      return partsOf(line).flatMap((part, order, all) => {
+        const leaves = exitStartFor(settledOf(part), all[order + 1]?.at, span);
+        if (leaves === null) return [];
+
+        const ends = leaves + EXIT_DURATION;
+
+        return ends <= span ? [] : [`${part.text}: 消え終わり ${ends} 秒 / 行は ${span} 秒`];
+      });
+    });
+
+    expect(overrun).toStrictEqual([]);
+  });
+
+  it('退場の長さが語句の間隔より短い', () => {
+    // **これが逆転すると、次の語句が出ている間じゅう前の語句が引き続ける** ＝
+    // 「対応するセリフだけ映す」（Issue #73）と正面から擦れる。
+    // `EXIT_DURATION` を伸ばした日にここが落ちる（再レビューの指摘 🟡 — 3.0 秒に
+    // 書き換えても本編の検査は全部緑だった）
+    const gaps = sheet.lines.flatMap((line) =>
+      partsOf(line).flatMap((part, order, all) =>
+        all[order + 1] === undefined ? [] : [all[order + 1].at - part.at],
+      ),
+    );
+
+    expect(EXIT_DURATION).toBeLessThan(Math.min(...gaps));
   });
 
   it('どの演出も次の行が来る前に出揃う', () => {
@@ -845,6 +881,39 @@ function dummyTarget(count: number) {
       pieces: Array.from({ length: spark.pieces }, () => ({}) as HTMLElement),
     }),
   };
+}
+
+/**
+ * その語句にまつわるものが出揃うまでの秒数。**登場だけではない。**
+ *
+ * 図形（M8-3a）・英字（M8-3c）・一過性の装飾（M10-1）も語句と同じ時刻から始まり、
+ * 登場より長いことがある（`burst` の 1.0 秒 > `swing` の 0.6 秒）。退場は箱ごと引くので、
+ * **`stage/exit.ts` が見ているのと同じ「出揃う」で測らないと意味が無い**
+ * （再レビューの指摘 🟡 — 登場だけを測っていたので、`spark` を足しても緑のままだった）。
+ *
+ * **語句 1 つだけの行として本番の組み立てに通す。** 揃え方を書き並べると、
+ * 添え物を足した日に検査の側だけが古くなる
+ */
+function settledOf(part: ResolvedPart): number {
+  const timeline = buildLineTimeline(
+    {
+      time: 0,
+      text: part.text,
+      ...(part.effect !== undefined ? { effect: part.effect } : {}),
+      ...(part.decor.length > 0 ? { decor: [...part.decor] } : {}),
+      ...(part.sub !== undefined ? { sub: part.sub } : {}),
+      ...(part.spark !== undefined ? { spark: part.spark } : {}),
+    },
+    () => dummyTarget(part.text.length),
+    // 退場も漂いも入らない長さにする（測りたいのは出揃う時刻だけ）
+    { span: Infinity },
+  );
+  const settled = timeline.labels[LINE_SETTLED];
+  timeline.kill();
+
+  expect(settled).toBeTypeOf('number');
+
+  return settled;
 }
 
 /** domain と同じ 1ms の格子に載せる（`domain/lyrics.ts` の `trim`） */

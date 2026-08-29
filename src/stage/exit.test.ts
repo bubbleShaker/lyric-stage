@@ -107,14 +107,20 @@ describe('exitStartFor', () => {
   });
 
   it('出揃ってすぐには引き始めない', () => {
-    // **境界を跨いだ瞬間に引き始めるのでは、この分岐の目的を果たさない**
-    // （レビュー指摘 🔴）。本編の `ネーション` は逆算した引き始めとの差が
-    // 0.001 秒しかなく、「一瞬映って消えた」になっていた
-    const span = 3;
-    const justEnough = span - EXIT_DURATION - MIN_STAY;
+    // **境界を跨いだ瞬間に引き始めるのでは、この分岐の目的を果たさない**（レビュー指摘 🔴）。
+    //
+    // **数字は実際に壊れていた語句のものを直に書く**（再レビューの指摘 🟡）。
+    // `MIN_STAY` から境界を組み立てると自己言及になり、**猶予を 0 に戻しても緑のまま**に
+    // なる（＝直したはずの画が黙って戻る）。本編の `ネーション` は 3.0 秒の行の
+    // 1.879 秒に出て 2.449 秒に出揃うので、逆算した引き始め（3.0 - 0.4 = 2.6 秒）との
+    // 差は 0.151 秒しかない
+    expect(exitStartFor(2.449, undefined, 3)).toBeNull();
 
-    expect(exitStartFor(justEnough, undefined, span)).not.toBeNull();
-    expect(exitStartFor(justEnough + 0.01, undefined, span)).toBeNull();
+    // 猶予が足りていれば引く（`広がる` は 1.128 秒の行で 0.77 秒に出揃う）
+    expect(exitStartFor(0.77, undefined, 3)).toBeCloseTo(3 - EXIT_DURATION);
+
+    // 境界そのもの
+    expect(exitStartFor(3 - EXIT_DURATION - MIN_STAY, undefined, 3)).not.toBeNull();
   });
 
   it('行の長さが無限なら引かない', () => {
