@@ -44,6 +44,9 @@ function dummyTarget(
     drift: { z: 0, rotationY: 0, rotationX: 0, yPercent: 0, opacity: 1 } as unknown as HTMLElement,
     root: {} as HTMLElement,
     chars: Array.from({ length: count }, () => ({}) as unknown as Element),
+    // カメラが向く先（M13-4）。**語句ごとに違う値**にしておく — 同じ数を配ると、
+    // 「カメラが語句ごとに向きを変える」ことを検査が見張れなくなる
+    focus: { x: 0.2 + count * 0.1, y: 0.4, width: 0.3, aspect: 16 / 9 },
     decorClasses,
     subTexts,
     sparkNames,
@@ -90,7 +93,7 @@ function build(line: LyricLine, span = SPAN) {
       targets.push(target);
       return target;
     },
-    { span },
+    { span, camera: {} },
   );
   return { timeline, targets };
 }
@@ -273,6 +276,36 @@ describe('buildLineTimeline', () => {
     timeline.kill();
   });
 
+  it('カメラは語句を全部立ててから据える', () => {
+    // **当て先を作る側はカメラの箱の中で枠を測る**（M13-4 / `LyricStage.focusOn`）。
+    // 1 つ目の語句に寄せてから 2 つ目を測ると、測った値に寄せた分が掛かる
+    // （実測: 2 つ目の語句が画面の隅に飛んだ）。**当て先を作っている間、カメラは
+    // 素の姿でなければならない**
+    const camera: Record<string, unknown> = {};
+    const seen: unknown[] = [];
+
+    buildLineTimeline(
+      {
+        time: 0,
+        text: 'AB',
+        parts: [
+          { text: 'A', at: 0 },
+          { text: 'B', at: 1 },
+        ],
+      },
+      (part) => {
+        // 当て先を作っている最中のカメラの姿を控える
+        seen.push(camera.scale);
+        return dummyTarget(part.text.length);
+      },
+      { span: 4, camera },
+    );
+
+    expect(seen).toEqual([undefined, undefined]);
+    // 据えるのは組み立ての後（据えていないのでは意味が無い）
+    expect(camera.scale).toBeDefined();
+  });
+
   it('漂いと退場は時間が重ならない', () => {
     // **この差分の中心的な不変条件**（レビュー指摘 🟡）。どちらも漂う層の transform を
     // 書くので、重なると毎フレーム値を奪い合う。漂いが引き始めの時刻ちょうどに
@@ -385,7 +418,7 @@ describe('buildLineTimeline', () => {
         targets.push(target);
         return target;
       },
-      { span: SPAN, reducedMotion: true },
+      { span: SPAN, camera: {}, reducedMotion: true },
     );
 
     const used = timeline
@@ -409,7 +442,7 @@ describe('buildLineTimeline', () => {
         targets.push(target);
         return target;
       },
-      { span: SPAN, reducedMotion: true },
+      { span: SPAN, camera: {}, reducedMotion: true },
     );
 
     // 「時刻 0 の姿」を見ていることを明示する（再レビュー指摘 🟡）。組み立て直後の値は
@@ -640,7 +673,7 @@ describe('語句に一瞬だけ添える装飾（M10-1）', () => {
         targets.push(target);
         return target;
       },
-      { span: SPAN, reducedMotion: true },
+      { span: SPAN, camera: {}, reducedMotion: true },
     );
 
     expect(targets[0].sparkNames).toEqual([]);

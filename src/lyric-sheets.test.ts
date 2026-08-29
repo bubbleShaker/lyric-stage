@@ -437,6 +437,7 @@ describe(`${DEFAULT_SHEET_NAME}.json`, () => {
         const gap = gapAfter(sheet.lines, index);
         const timeline = buildLineTimeline(line, (part) => dummyTarget(part.text.length), {
           span: gap,
+          camera: {},
         });
         const settled = timeline.labels[LINE_SETTLED];
         timeline.kill();
@@ -870,6 +871,8 @@ function dummyTarget(count: number) {
     drift: { z: 0, rotationY: 0, rotationX: 0, yPercent: 0, opacity: 1 } as unknown as HTMLElement,
     root: {} as HTMLElement,
     chars: Array.from({ length: count }, () => ({}) as unknown as Element),
+    // カメラが向く先（M13-4）。DOM が無いので測れない。組み立てが借りられれば足りる
+    focus: { x: 0.5, y: 0.5, width: 0.3, aspect: 16 / 9 },
     // 図形（M8-3a）も英字（M8-3c）も一過性の装飾（M10-1）も本番と同じ経路で組まれるので、
     // 当て先だけ返す。これらが行の尺に入ることも、これで「行の猶予に収まる」の検査が見てくれる
     createDecor: () => ({}) as HTMLElement,
@@ -906,7 +909,7 @@ function settledOf(part: ResolvedPart): number {
     },
     () => dummyTarget(part.text.length),
     // 退場も漂いも入らない長さにする（測りたいのは出揃う時刻だけ）
-    { span: Infinity },
+    { span: Infinity, camera: {} },
   );
   const settled = timeline.labels[LINE_SETTLED];
   timeline.kill();
@@ -929,7 +932,10 @@ function onMillisecondGrid(seconds: number): number {
  * 「行の長さ」を測ることになる。
  */
 function settledTimeOf(line: LyricLine, span: number): number {
-  const timeline = buildLineTimeline(line, (part) => dummyTarget(part.text.length), { span });
+  const timeline = buildLineTimeline(line, (part) => dummyTarget(part.text.length), {
+    span,
+    camera: {},
+  });
   const settled = timeline.labels[LINE_SETTLED];
   timeline.kill();
 
