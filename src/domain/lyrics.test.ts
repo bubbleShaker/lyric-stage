@@ -670,6 +670,23 @@ describe('sliceSheet（最終行を閉じる）', () => {
     expect(lineSpanAt(sliced.lines, 1)).toBe(5);
   });
 
+  it('丸めて 0 以下になる最終行は、閉じるのではなく落とす', () => {
+    // `duration: 0` を書くと activeLineIndexAt が必ず NO_LINE を返す ＝ **シートには
+    // 載っているのに一度も画に出ない行**になる。しかも 0 は parseLyricSheet が弾く値
+    // （レビュー指摘 🟡）。duration を持つ行に対してループがしている手当てと同じ
+    const sheet: LyricSheet = {
+      title: 't',
+      lines: [
+        { time: 12, text: 'A' },
+        { time: 19.9996, text: 'Z' },
+      ],
+    };
+    const sliced = sliceSheet(sheet, window);
+
+    // Z は落ち、あらわれた新しい最終行（A）が区間の終わりで閉じる
+    expect(sliced.lines).toEqual([{ time: 2, text: 'A', duration: 8 }]);
+  });
+
   it('行が 1 つも残らなければ何もしない', () => {
     const sheet: LyricSheet = { title: 't', lines: [{ time: 40, text: 'A' }] };
 

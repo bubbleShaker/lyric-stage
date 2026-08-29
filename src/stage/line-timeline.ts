@@ -117,8 +117,9 @@ export function buildLineTimeline(
   // 行が勝手に組み上がる。組み立てる側で pause() を呼ぶ約束にすると、
   // その 1 行が消えた時に**全テストが緑のまま**その壊れ方が戻ってくる
   const timeline = gsap.timeline({ paused: true });
-  // 語句がすべて出揃う時刻。行の中でいちばん遅く終わる登場が決める
-  let settled = 0;
+  // 漂いは**全部の語句を積み終えてから**足す（下の LINE_SETTLED を見よ）。
+  // ここでは当て先と刻みだけ控える
+  const drifting: { target: PartTarget; at: number; seed: number }[] = [];
 
   partsOf(line).forEach((part, order) => {
     const { layout, build } = resolveEffect(part.effect, { reducedMotion });
@@ -158,24 +159,24 @@ export function buildLineTimeline(
       timeline.add(spark.build(target.createSpark(spark)), part.at);
     }
 
-    const entrance = build({ root: target.root, chars: target.chars });
-    timeline.add(entrance, part.at);
-    settled = Math.max(settled, part.at + entrance.duration());
+    timeline.add(build({ root: target.root, chars: target.chars }), part.at);
 
-    // **着地したら漂い始める**（M13-2）。当て先が演出と別の層なので、
-    // 登場の終わり際に重ねても取り合いにならない。
-    // 行が終わるまで動き続けるので、長さは「この語句が居られる残り」で決まる
-    timeline.add(
-      buildDrift(target.drift, {
-        span: span - part.at - DRIFT_SETTLE,
-        seed: order,
-        reducedMotion,
-      }),
-      part.at + DRIFT_SETTLE,
-    );
+    drifting.push({ target, at: part.at + DRIFT_SETTLE, seed: order });
   });
 
-  timeline.addLabel(LINE_SETTLED, settled);
+  // **ここまでの尺がそのまま「語句が出揃う時刻」**（レビュー指摘 🟡）。
+  // 登場だけを数えるのでは足りない — 図形（M8-3a）・英字（M8-3c）・一過性の装飾
+  // （M10-1）は語句と同じ時刻から始まるが、**登場より長い**ことがある（本編では
+  // `burst` の 1.0 秒が `swing` の 0.6 秒を追い越す）。漂いを足す前の尺を読めば、
+  // M13-2 より前の `timeline.duration()` と同じ意味がそのまま残る
+  timeline.addLabel(LINE_SETTLED, timeline.duration());
+
+  // **着地したら漂い始める**（M13-2）。当て先が演出と別の層なので、
+  // 登場の終わり際に重ねても取り合いにならない。
+  // 行が終わるまで動き続けるので、長さは「この語句が居られる残り」で決まる
+  for (const { target, at, seed } of drifting) {
+    timeline.add(buildDrift(target.drift, { span: span - at, seed, reducedMotion }), at);
+  }
 
   // **一度だけ動かして、時刻 0 の姿を確定させる。** gsap は playhead が動いていない
   // タイムラインを描き直さないので、組み立てただけでは「時刻 0 で出る語句」に

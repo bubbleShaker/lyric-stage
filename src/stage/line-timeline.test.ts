@@ -37,8 +37,9 @@ function dummyTarget(
     frame: {} as HTMLElement,
     // 漂い（M13-2）は演出とは別の層に書く。控えを読む必要は無いが、
     // **本物と同じく別のオブジェクト**にしておく（root と同じ物を渡すと、
-    // 層を分けた意味＝取り合いが起きないことを検査が見張れなくなる）
-    drift: {} as HTMLElement,
+    // 層を分けた意味＝取り合いが起きないことを検査が見張れなくなる）。
+    // 動かす項目を 0 で持たせているのは gsap の警告を避けるため（stage/drift.test.ts）
+    drift: { z: 0, rotationY: 0, rotationX: 0, yPercent: 0 } as unknown as HTMLElement,
     root: {} as HTMLElement,
     chars: Array.from({ length: count }, () => ({}) as unknown as Element),
     decorClasses,
@@ -190,6 +191,25 @@ describe('buildLineTimeline', () => {
 
     single.timeline.kill();
     spread.timeline.kill();
+  });
+
+  it('語句が出揃う時刻は添え物の尻尾も含む', () => {
+    // **登場だけを数えると足りない**（レビュー指摘 🟡）。図形・英字・一過性の装飾は
+    // 語句と同じ時刻から始まるが、登場より長いことがある（`burst` の 1.0 秒に対して
+    // `calm` は 0.4 秒）。ここが緩むと、行の最後の語句に長い装飾を当てた日に
+    // **はみ出しをシートの検査が見逃す**
+    const quiet = build({ time: 0, text: 'A', effect: 'calm' }, 6);
+    const sparked = build(
+      { time: 0, text: 'A', effect: 'calm', spark: 'burst' },
+      6,
+    );
+
+    expect(sparked.timeline.labels[LINE_SETTLED]).toBeGreaterThan(
+      quiet.timeline.labels[LINE_SETTLED],
+    );
+
+    quiet.timeline.kill();
+    sparked.timeline.kill();
   });
 
   it('行の尺は行が出ている長さになる（語句は最後まで漂う）', () => {

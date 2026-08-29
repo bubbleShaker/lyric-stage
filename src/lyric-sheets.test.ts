@@ -437,6 +437,10 @@ describe(`${DEFAULT_SHEET_NAME}.json`, () => {
         });
         const settled = timeline.labels[LINE_SETTLED];
         timeline.kill();
+        // **ラベルが消えたら落とす**（レビュー指摘 🟡）。型の上は number だが、
+        // `addLabel` を落とせば実行時は undefined になる。`undefined >= gap` は false
+        // なので、**この検査だけが黙って無効化されたまま緑になる**
+        expect(settled).toBeTypeOf('number');
         return { line, settled, gap };
       })
       .filter(({ settled, gap }) => settled >= gap)
@@ -798,7 +802,9 @@ function worstCase(lines: readonly LyricLine[]) {
 function dummyTarget(count: number) {
   return {
     frame: {} as HTMLElement,
-    drift: {} as HTMLElement,
+    // 漂いが書く項目を 0 で先に持たせる。空のオブジェクトに z を書かせると
+    // gsap が「プラグイン不足では」と警告する（stage/drift.test.ts と同じ手）
+    drift: { z: 0, rotationY: 0, rotationX: 0, yPercent: 0 } as unknown as HTMLElement,
     root: {} as HTMLElement,
     chars: Array.from({ length: count }, () => ({}) as unknown as Element),
     // 図形（M8-3a）も英字（M8-3c）も一過性の装飾（M10-1）も本番と同じ経路で組まれるので、

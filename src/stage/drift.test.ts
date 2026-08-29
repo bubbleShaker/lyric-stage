@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildDrift, DRIFT_CLASS, MIN_DRIFT_SPAN } from './drift';
+import { buildDrift, DRIFT_CLASS, MAX_AMPLITUDE_SEED, MIN_DRIFT_SPAN } from './drift';
 import { classRule as rulesFor } from '../test-support/css-rules';
 
 /**
@@ -12,6 +12,20 @@ function dummyDrift() {
   // CSSPlugin が受け持つ項目なので、素のオブジェクトでは持ち主が居ない）。
   // 実際の要素も 0 から始まるので、こちらの方が本番に近い
   return { z: 0, rotationY: 0, rotationX: 0, yPercent: 0 };
+}
+
+/** 片道 1 回ぶんの長さ（＝中のトゥイーンの尺）。往復の回数は尺との割り算で決まる */
+function legOf(timeline: ReturnType<typeof buildDrift>): number {
+  return timeline.getChildren()[0].duration();
+}
+
+/** 折り返し先の奥行き（＝漂いの深さ）。時刻に依らないので、周期の違いに邪魔されない */
+function depthTargetOf(seed: number): number {
+  const timeline = buildDrift(dummyDrift(), { span: 6, seed });
+  const depth = Number(timeline.getChildren()[0].vars.z);
+  timeline.kill();
+
+  return depth;
 }
 
 /** 組み立てたタイムラインを time 秒まで進めて、当て先に書かれた奥行きを読む */
@@ -51,16 +65,34 @@ describe('buildDrift', () => {
 
   it('語句ごとに周期が違う', () => {
     // 全部が同じ漂い方をすると 3 つが同時に同じ向きへ動き、「画面ごと揺れている」
-    // ように見える。**揃う瞬間が来ない**ことがこの演出の要
-    const first = buildDrift(dummyDrift(), { span: 5, seed: 0 });
-    const second = buildDrift(dummyDrift(), { span: 5, seed: 1 });
+    // ように見える。**揃う瞬間が来ない**ことがこの演出の要。
+    //
+    // **滞在は長めに取る**（レビュー指摘 🟡）。短い滞在では片道の回数が下限（2）に
+    // 揃ってしまい、周期の違いを見ているつもりで深さの違いだけを見ることになる
+    const first = buildDrift(dummyDrift(), { span: 6, seed: 0 });
+    const second = buildDrift(dummyDrift(), { span: 6, seed: 1 });
 
-    // 尺は同じ（どちらも滞在の長さ）でも、その中の往復の回数が違う
+    // 尺は同じ（どちらも滞在の長さ）でも、その中の片道の長さが違う
     expect(first.duration()).toBeCloseTo(second.duration());
-    expect(depthAt(5, 1.2, 0)).not.toBeCloseTo(depthAt(5, 1.2, 1));
+    expect(legOf(first)).not.toBeCloseTo(legOf(second));
 
     first.kill();
     second.kill();
+  });
+
+  it('深さは語句が増えても頭打ちになる', () => {
+    // **そのままだと語句を増やすほど際限なく深くなる**（レビュー指摘 🟡）。
+    // 今のシートは 1 行 3 語句までなので顕在化しないが、4 つ目を書いた日に
+    // z: 300 の語句が静かに生まれる。
+    //
+    // **折り返し先の値を直に読む。** ある時刻の z を比べる形にすると、周期が
+    // 語句ごとに違うぶん「たまたま戻り切っていた」時刻を掴んで嘘の緑になる
+    const deepest = depthTargetOf(MAX_AMPLITUDE_SEED);
+
+    expect(depthTargetOf(0)).toBeLessThan(deepest);
+    for (const seed of [MAX_AMPLITUDE_SEED + 1, MAX_AMPLITUDE_SEED + 3]) {
+      expect(depthTargetOf(seed)).toBe(deepest);
+    }
   });
 
   it('動きを減らす設定では何も動かさない', () => {

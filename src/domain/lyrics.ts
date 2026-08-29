@@ -796,9 +796,27 @@ export function sliceSheet(sheet: LyricSheet, workWindow: WorkWindow): LyricShee
   //
   // `WHOLE_SONG`（素通し）では end が `Infinity` なのでここには入らない。
   // **元のシートと等しいものが返る**という性質はそのまま保たれる。
-  const last = lines[lines.length - 1];
-  if (last !== undefined && last.duration === undefined && Number.isFinite(workWindow.end)) {
-    last.duration = trim(workWindow.end - workWindow.start - last.time);
+  //
+  // **丸めて 0 以下になるほど短い行は、閉じるのではなく落とす**（レビュー指摘 🟡）。
+  // `duration: 0` を書くと `activeLineIndexAt` が必ず `NO_LINE` を返す ＝ シートには
+  // 載っているのに一度も画に出ない行になる。しかも 0 は `parseLyricSheet` が弾く値なので、
+  // 「切り出した結果は入口を通せる形」という性質まで破れる。**duration を持つ行に対して
+  // 上のループがしている手当て（`clipped <= 0` なら行ごと落とす）と同じ**。
+  // 落とした結果あらわれた新しい最終行も、同じ規則で閉じる
+  if (Number.isFinite(workWindow.end)) {
+    while (lines.length > 0) {
+      const last = lines[lines.length - 1];
+      if (last.duration !== undefined) break;
+
+      const remaining = trim(workWindow.end - workWindow.start - last.time);
+      if (remaining <= 0) {
+        lines.pop();
+        continue;
+      }
+
+      lines[lines.length - 1] = { ...last, duration: remaining };
+      break;
+    }
   }
 
   // 既定と同じなら項目ごと持たない。**`WHOLE_SONG`（素通し）で元のシートと
