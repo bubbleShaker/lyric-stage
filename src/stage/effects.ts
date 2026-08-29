@@ -116,6 +116,11 @@ export const MAX_STAGGER_SPAN = 0.8;
  */
 export const SLICE_COUNT = 5;
 
+/** 板が真ん中から何枚ぶん離れているか（両端が ±2、真ん中が 0） */
+function fromCenter(index: number): number {
+  return index - (SLICE_COUNT - 1) / 2;
+}
+
 /**
  * 1 文字ごとの遅延を決める。
  *
@@ -395,34 +400,34 @@ export const effects = {
     const glyphs = sliceChars(SLICE_COUNT);
     const stagger = staggerFor(chars.length, 0.06);
 
+    // **1 文字あたり 1 本のトゥイーン**にまとめる（板ごとに 1 本ずつ立てない）。
+    // 値に関数を書くと gsap が対象ごとに呼ぶので、板 1 枚ずつ違う散らし方になる
+    // （`glitch` / `shatter` と同じ手）。板の数だけトゥイーンを作ると、長い行で
+    // 5 倍の本数になって組み立てそのものが重くなる
     glyphs.forEach((pieces, order) => {
-      pieces.forEach((piece, index) => {
-        // 上下の板は遠く、真ん中の板は近くから。中心へ吸い寄せられる形になる
-        const fromCenter = index - (SLICE_COUNT - 1) / 2;
-
-        timeline.fromTo(
-          piece,
-          {
-            opacity: 0,
-            xPercent: fromCenter * 46 + (index % 2 === 0 ? 18 : -18),
-            yPercent: fromCenter * 34,
-            z: -420 - Math.abs(fromCenter) * 320,
-            rotationY: fromCenter * 22,
-            rotationX: (index % 2 === 0 ? 1 : -1) * 14,
-          },
-          {
-            opacity: 1,
-            xPercent: 0,
-            yPercent: 0,
-            z: 0,
-            rotationY: 0,
-            rotationX: 0,
-            duration: 0.6,
-            ease: 'power3.out',
-          },
-          order * stagger,
-        );
-      });
+      timeline.fromTo(
+        pieces,
+        {
+          opacity: 0,
+          // 上下の板は遠く、真ん中の板は近くから。中心へ吸い寄せられる形になる
+          xPercent: (index: number) => fromCenter(index) * 46 + (index % 2 === 0 ? 18 : -18),
+          yPercent: (index: number) => fromCenter(index) * 34,
+          z: (index: number) => -420 - Math.abs(fromCenter(index)) * 320,
+          rotationY: (index: number) => fromCenter(index) * 22,
+          rotationX: (index: number) => (index % 2 === 0 ? 1 : -1) * 14,
+        },
+        {
+          opacity: 1,
+          xPercent: 0,
+          yPercent: 0,
+          z: 0,
+          rotationY: 0,
+          rotationX: 0,
+          duration: 0.6,
+          ease: 'power3.out',
+        },
+        order * stagger,
+      );
     });
 
     return timeline;

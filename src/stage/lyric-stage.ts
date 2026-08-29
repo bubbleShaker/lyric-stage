@@ -200,14 +200,23 @@ export class LyricStage implements LyricPresenter {
    * まとめている）。
    */
   private sliceChar(char: HTMLElement, count: number): Element[] {
+    // **字は先に控える**（レビュー指摘 🔴）。板は字の中へ入れるので、
+    // 1 枚立てるごとに `char.textContent` が伸びていく — 毎回読み直すと
+    // 板の字が 1 枚ごとに倍になり、5 枚目には 16 文字ぶんが入る。
+    // 今は行の高さの外へ溢れて `clip-path` に切られるので画には出ないが、
+    // **壊れていないのは偶然**（行間を詰めた日に二重の字が出る）
+    const glyph = char.textContent;
+
     char.classList.add(SLICE_TEXT_CLASS);
 
     return Array.from({ length: count }, (_unused, index) => {
       const piece = document.createElement('span');
       piece.className = SLICE_CLASS;
+      // **SplitText が既に文字の要素を `aria-hidden` にしている**ので二重だが、
+      // 分割の指定を変えた日に崩れないよう自分でも隠す（本文は `aria-label` にまとまる）
       piece.setAttribute('aria-hidden', 'true');
       // 歌詞と同じく外から来た文字列なので、必ず textContent で入れる
-      piece.textContent = char.textContent;
+      piece.textContent = glyph;
       piece.style.clipPath = `inset(${(index * 100) / count}% 0 ${((count - 1 - index) * 100) / count}% 0)`;
 
       char.append(piece);

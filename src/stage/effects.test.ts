@@ -315,30 +315,42 @@ describe('slice', () => {
     timeline.kill();
   });
 
+  /** 始点で散らしている項目（`z` `xPercent` `yPercent` `rotationY` `rotationX`） */
+  const SCATTERED = ['z', 'xPercent', 'yPercent', 'rotationY', 'rotationX'] as const;
+
   it('板は集まりきると素の位置に戻る', () => {
-    // **戻り切らないと字が読めない。** 切った字は 5 枚が重なって初めて 1 文字になる
+    // **戻り切らないと字が読めない。** 切った字は 5 枚が重なって初めて 1 文字になる。
+    //
+    // **散らした項目を全部見る**（レビュー指摘 🟡）。3 つだけ見ていた頃は、終点に
+    // `yPercent: 18, rotationY: 25` を書き足しても緑のままだった（画では板が縦に
+    // ずれて斜めのまま止まる ＝ まさにこの検査が防ぎたいもの）
     const { timeline, pieces } = buildSlice(1);
     timeline.pause();
     timeline.time(timeline.duration() + 0.0001).time(timeline.duration());
 
     for (const piece of pieces[0]) {
-      expect(Number(piece.z)).toBeCloseTo(0);
-      expect(Number(piece.xPercent)).toBeCloseTo(0);
+      for (const key of SCATTERED) expect(Number(piece[key] ?? 0), key).toBeCloseTo(0);
       expect(Number(piece.opacity)).toBeCloseTo(1);
     }
 
     timeline.kill();
   });
 
-  it('板は奥から集まる（同じ場所から来ない）', () => {
-    // 同じ向きから来ると「1 枚の板がずれて戻った」にしか見えない
+  it('板は散らばった所から集まる（同じ場所から来ない）', () => {
+    // 同じ向きから来ると「1 枚の板がずれて戻った」にしか見えない。
+    // **奥行きだけでなく、散らしている項目すべてがばらけていること**（レビュー指摘 🟡）
     const { timeline, pieces } = buildSlice(1);
     timeline.pause();
     timeline.time(0.0001).time(0);
 
-    const depths = pieces[0].map((piece) => Number(piece.z));
-    expect(new Set(depths).size).toBeGreaterThan(1);
-    for (const depth of depths) expect(depth).toBeLessThan(0);
+    for (const key of SCATTERED) {
+      const spread = pieces[0].map((piece) => Number(piece[key] ?? 0));
+
+      expect(new Set(spread).size, key).toBeGreaterThan(1);
+    }
+
+    // 奥から来る（手前から迫ると登場の rushIn と紛れる）
+    for (const piece of pieces[0]) expect(Number(piece.z)).toBeLessThan(0);
 
     timeline.kill();
   });
