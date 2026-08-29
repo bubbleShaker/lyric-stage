@@ -804,7 +804,7 @@ function dummyTarget(count: number) {
     frame: {} as HTMLElement,
     // 漂いが書く項目を 0 で先に持たせる。空のオブジェクトに z を書かせると
     // gsap が「プラグイン不足では」と警告する（stage/drift.test.ts と同じ手）
-    drift: { z: 0, rotationY: 0, rotationX: 0, yPercent: 0 } as unknown as HTMLElement,
+    drift: { z: 0, rotationY: 0, rotationX: 0, yPercent: 0, opacity: 1 } as unknown as HTMLElement,
     root: {} as HTMLElement,
     chars: Array.from({ length: count }, () => ({}) as unknown as Element),
     // 図形（M8-3a）も英字（M8-3c）も一過性の装飾（M10-1）も本番と同じ経路で組まれるので、

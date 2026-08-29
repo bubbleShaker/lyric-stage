@@ -11,7 +11,7 @@ function dummyDrift() {
   // gsap が「知らない項目 ＝ プラグイン不足では」と警告を出す（本物の要素なら
   // CSSPlugin が受け持つ項目なので、素のオブジェクトでは持ち主が居ない）。
   // 実際の要素も 0 から始まるので、こちらの方が本番に近い
-  return { z: 0, rotationY: 0, rotationX: 0, yPercent: 0 };
+  return { z: 0, rotationY: 0, rotationX: 0, yPercent: 0, opacity: 1 };
 }
 
 /** 片道 1 回ぶんの長さ（＝中のトゥイーンの尺）。往復の回数は尺との割り算で決まる */

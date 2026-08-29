@@ -2,6 +2,7 @@ import gsap from 'gsap';
 import { partsOf, type LyricLine, type ResolvedPart } from '../domain/lyrics';
 import { resolveDecor } from './decor';
 import { buildDrift, DRIFT_SETTLE } from './drift';
+import { buildExit, EXIT_DURATION } from './exit';
 import { resolveEffect, type EffectLayout, type EffectTimeline } from './effects';
 import { resolveSpark, type SparkShape, type SparkTarget } from './spark';
 import { buildSubText } from './sub-text';
@@ -117,11 +118,18 @@ export function buildLineTimeline(
   // 行が勝手に組み上がる。組み立てる側で pause() を呼ぶ約束にすると、
   // その 1 行が消えた時に**全テストが緑のまま**その壊れ方が戻ってくる
   const timeline = gsap.timeline({ paused: true });
-  // 漂いは**全部の語句を積み終えてから**足す（下の LINE_SETTLED を見よ）。
+  // 漂いと退場は**全部の語句を積み終えてから**足す（下の LINE_SETTLED を見よ）。
   // ここでは当て先と刻みだけ控える
-  const drifting: { target: PartTarget; at: number; seed: number }[] = [];
+  const staying: {
+    target: PartTarget;
+    at: number;
+    /** 引き始める時刻。**null は「引かない」**（行の切り替えに任せる。下記） */
+    leaves: number | null;
+    seed: number;
+  }[] = [];
+  const parts = partsOf(line);
 
-  partsOf(line).forEach((part, order) => {
+  parts.forEach((part, order) => {
     const { layout, build } = resolveEffect(part.effect, { reducedMotion });
     const target = createTarget(part, layout);
 
@@ -159,9 +167,15 @@ export function buildLineTimeline(
       timeline.add(spark.build(target.createSpark(spark)), part.at);
     }
 
-    timeline.add(build({ root: target.root, chars: target.chars }), part.at);
+    const entrance = build({ root: target.root, chars: target.chars });
+    timeline.add(entrance, part.at);
 
-    drifting.push({ target, at: part.at + DRIFT_SETTLE, seed: order });
+    staying.push({
+      target,
+      at: part.at + DRIFT_SETTLE,
+      leaves: leavingAt(part.at + entrance.duration(), parts[order + 1], span),
+      seed: order,
+    });
   });
 
   // **ここまでの尺がそのまま「語句が出揃う時刻」**（レビュー指摘 🟡）。
@@ -171,11 +185,16 @@ export function buildLineTimeline(
   // M13-2 より前の `timeline.duration()` と同じ意味がそのまま残る
   timeline.addLabel(LINE_SETTLED, timeline.duration());
 
-  // **着地したら漂い始める**（M13-2）。当て先が演出と別の層なので、
-  // 登場の終わり際に重ねても取り合いにならない。
-  // 行が終わるまで動き続けるので、長さは「この語句が居られる残り」で決まる
-  for (const { target, at, seed } of drifting) {
-    timeline.add(buildDrift(target.drift, { span: span - at, seed, reducedMotion }), at);
+  // **着地したら漂い始め、次へ渡すときに引く**（M13-2 / M13-3）。当て先が演出と
+  // 別の層なので、登場の終わり際に重ねても取り合いにならない。
+  //
+  // **漂いと退場は時間を分ける。** どちらも漂う層の transform を書くので、重ねると
+  // 毎フレーム値を奪い合う。漂いの尺は「引き始めるまで」に縮め、退場はその後ろに置く
+  for (const { target, at, leaves, seed } of staying) {
+    // 引かない語句は行が終わるまで漂う（漂いの尺は「次に何かが起きるまで」）
+    timeline.add(buildDrift(target.drift, { span: (leaves ?? span) - at, seed, reducedMotion }), at);
+
+    if (leaves !== null) timeline.add(buildExit(target.drift, { reducedMotion }), leaves);
   }
 
   // **一度だけ動かして、時刻 0 の姿を確定させる。** gsap は playhead が動いていない
@@ -185,6 +204,30 @@ export function buildLineTimeline(
   timeline.time(FIRST_FRAME).time(0);
 
   return timeline;
+}
+
+/**
+ * その語句が引き始める時刻（M13-3）。**引かないなら null。**
+ *
+ * - 次の語句がある … **その語句が出る時刻**から引き始める。重ねるのは穴を空けないため —
+ *   前の語句が消えてから次が出るまでに何も映っていない時間ができると、のっぺり以上に悪い
+ * - 行の最後の語句 … 次が無いので、**行が終わるちょうどに消え終わる**よう逆算する
+ *
+ * **ただし登場が終わる前には引き始めない。** 本編の 3 秒の行では最後の語句が
+ * 2.254 秒に出るので、逆算した 2.45 秒は**まだ出切っていない**（`swing` は 0.6 秒かかる）。
+ * そのまま引くと「一瞬映って消えた」になる。間に合わない行では引かず、行の切り替えに
+ * 任せる — 語句は漂ったまま次の行へ渡るので、止まった画にはならない。
+ *
+ * **次の語句がある側には同じ手当てをしていない。** 語句の間隔（本編で最短 1.1 秒）は
+ * どの登場（最長 0.85 秒）より広いので、まだ起きない。起きる時は間隔の方が詰まりすぎで、
+ * `lyric-sheets.test.ts` の「行の猶予に収まる」が先に落ちる。
+ */
+function leavingAt(entranceEnd: number, next: ResolvedPart | undefined, span: number): number | null {
+  if (next !== undefined) return next.at;
+
+  const leaves = span - EXIT_DURATION;
+
+  return leaves >= entranceEnd ? leaves : null;
 }
 
 /**
