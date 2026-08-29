@@ -2,6 +2,7 @@ import gsap from 'gsap';
 import { partsOf, type LyricLine, type ResolvedPart } from '../domain/lyrics';
 import { resolveDecor } from './decor';
 import { buildDrift, DRIFT_SETTLE } from './drift';
+import { buildExit, exitStartFor } from './exit';
 import { resolveEffect, type EffectLayout, type EffectTimeline } from './effects';
 import { resolveSpark, type SparkShape, type SparkTarget } from './spark';
 import { buildSubText } from './sub-text';
@@ -117,11 +118,18 @@ export function buildLineTimeline(
   // 行が勝手に組み上がる。組み立てる側で pause() を呼ぶ約束にすると、
   // その 1 行が消えた時に**全テストが緑のまま**その壊れ方が戻ってくる
   const timeline = gsap.timeline({ paused: true });
-  // 漂いは**全部の語句を積み終えてから**足す（下の LINE_SETTLED を見よ）。
+  // 漂いと退場は**全部の語句を積み終えてから**足す（下の LINE_SETTLED を見よ）。
   // ここでは当て先と刻みだけ控える
-  const drifting: { target: PartTarget; at: number; seed: number }[] = [];
+  const staying: {
+    target: PartTarget;
+    at: number;
+    /** 引き始める時刻。**null は「引かない」**（行の切り替えに任せる。下記） */
+    leaves: number | null;
+    seed: number;
+  }[] = [];
+  const parts = partsOf(line);
 
-  partsOf(line).forEach((part, order) => {
+  parts.forEach((part, order) => {
     const { layout, build } = resolveEffect(part.effect, { reducedMotion });
     const target = createTarget(part, layout);
 
@@ -161,7 +169,19 @@ export function buildLineTimeline(
 
     timeline.add(build({ root: target.root, chars: target.chars }), part.at);
 
-    drifting.push({ target, at: part.at + DRIFT_SETTLE, seed: order });
+    staying.push({
+      target,
+      at: part.at + DRIFT_SETTLE,
+      // **「出揃う」は登場だけではない**（レビュー指摘 🟡）。図形・英字・一過性の装飾も
+      // 同じ時刻から始まり、登場より長いことがある（`burst` の 1.0 秒 > `swing` の 0.6 秒）。
+      // 退場は箱ごと引くので、装飾が出ている最中に引き始めては噛み合わない。
+      //
+      // ここまでに積んだものの終端を渡す。**これを読むのは行の最後の語句だけ**
+      // （次の語句があれば、その語句が出る時刻が答えになる）で、その時この値は
+      // 行ぜんぶが出揃う時刻 ＝ 下で立てる `LINE_SETTLED` と同じものになる
+      leaves: exitStartFor(timeline.duration(), parts[order + 1]?.at, span),
+      seed: order,
+    });
   });
 
   // **ここまでの尺がそのまま「語句が出揃う時刻」**（レビュー指摘 🟡）。
@@ -171,11 +191,21 @@ export function buildLineTimeline(
   // M13-2 より前の `timeline.duration()` と同じ意味がそのまま残る
   timeline.addLabel(LINE_SETTLED, timeline.duration());
 
-  // **着地したら漂い始める**（M13-2）。当て先が演出と別の層なので、
-  // 登場の終わり際に重ねても取り合いにならない。
-  // 行が終わるまで動き続けるので、長さは「この語句が居られる残り」で決まる
-  for (const { target, at, seed } of drifting) {
-    timeline.add(buildDrift(target.drift, { span: span - at, seed, reducedMotion }), at);
+  // **着地したら漂い始め、次へ渡すときに引く**（M13-2 / M13-3）。当て先が演出と
+  // 別の層なので、登場の終わり際に重ねても取り合いにならない。
+  //
+  // **漂いと退場は時間を分ける。** どちらも漂う層の transform を書くので、重ねると
+  // 毎フレーム値を奪い合う。漂いの尺は「引き始めるまで」に縮め、退場はその後ろに置く
+  for (const { target, at, leaves, seed } of staying) {
+    // 漂うのは「次にこの層で何かが起きるまで」。引かない語句（`leaves` が null）は
+    // 行が終わるまで漂い、行の切り替えで消える。
+    // **負にもなりうる**（登場が長く、すぐ次の語句が来る場合）が、`buildDrift` が
+    // 短すぎる滞在を弾くので漂わないだけで済む
+    const drifts = (leaves ?? span) - at;
+
+    timeline.add(buildDrift(target.drift, { span: drifts, seed, reducedMotion }), at);
+
+    if (leaves !== null) timeline.add(buildExit(target.drift, { reducedMotion }), leaves);
   }
 
   // **一度だけ動かして、時刻 0 の姿を確定させる。** gsap は playhead が動いていない

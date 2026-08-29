@@ -38,8 +38,10 @@ function dummyTarget(
     // 漂い（M13-2）は演出とは別の層に書く。控えを読む必要は無いが、
     // **本物と同じく別のオブジェクト**にしておく（root と同じ物を渡すと、
     // 層を分けた意味＝取り合いが起きないことを検査が見張れなくなる）。
-    // 動かす項目を 0 で持たせているのは gsap の警告を避けるため（stage/drift.test.ts）
-    drift: { z: 0, rotationY: 0, rotationX: 0, yPercent: 0 } as unknown as HTMLElement,
+    // 動かす項目を先に持たせているのは gsap の警告を避けるためと、**素のオブジェクトでは
+    // 「値が無い ＝ 0 から始まる」と解釈される**ため（opacity を欠くと、退場が
+    // 0 → 0 の変化になって「ずっと消えている」ようにしか読めない）
+    drift: { z: 0, rotationY: 0, rotationX: 0, yPercent: 0, opacity: 1 } as unknown as HTMLElement,
     root: {} as HTMLElement,
     chars: Array.from({ length: count }, () => ({}) as unknown as Element),
     decorClasses,
@@ -212,9 +214,10 @@ describe('buildLineTimeline', () => {
     sparked.timeline.kill();
   });
 
-  it('行の尺は行が出ている長さになる（語句は最後まで漂う）', () => {
-    // M13-2。漂いが行の終わりまで続くので、尺は刻みではなく span で決まる。
-    // **これが破れると、行の終わり際に画が止まる時間ができる**
+  it('行の尺は行が出ている長さになる（最後の語句は行の終わりに消え終わる）', () => {
+    // M13-2 / M13-3。漂いが行の終わりまで続き、そこへ退場が積まれるので、
+    // 尺は刻みではなく span で決まる。**これが破れると、行の終わり際に画が
+    // 止まる時間ができるか、逆に消え切る前に行が変わる**
     const { timeline } = build({ time: 0, text: 'A' }, 5);
 
     expect(timeline.duration()).toBeCloseTo(5);
@@ -222,11 +225,126 @@ describe('buildLineTimeline', () => {
   });
 
   it('滞在が短すぎる語句は漂わせない', () => {
-    // 往復が 1 回も回らない長さで動かすと、漂いではなく「もう一度ゆっくり動いた」に
-    // 見える。行の尻に寄った語句がここに落ちる（stage/drift.ts の MIN_DRIFT_SPAN）
-    const { timeline } = build({ time: 0, text: 'A' }, 1);
+    // 1 往復すら収まらない長さで動かすと、漂いではなく「もう一度ゆっくり動いた」に
+    // 見える（stage/drift.ts の MIN_DRIFT_SPAN）。
+    //
+    // **尺では見分けられない**（M13-3）。退場が必ず行の終わりまで伸びるので、
+    // 漂っていてもいなくても尺は span になる。漂う層に書かれた値を直に読む
+    const { timeline, targets } = build({ time: 0, text: 'A' }, 1.2);
+    const drift = targets[0].drift as unknown as Record<string, unknown>;
 
-    expect(timeline.duration()).toBeLessThan(1);
+    // 引き始める直前。漂っていればここで奥行きが 0 でなくなっている
+    timeline.time(0.6001).time(0.6);
+
+    expect(Number(drift.z)).toBe(0);
+    timeline.kill();
+  });
+
+  it('語句は次の語句が出る時刻から引き始める', () => {
+    // M13-3。**重ねるのは穴を空けないため** — 前の語句が消えてから次が出るまでに
+    // 何も映っていない時間ができると、のっぺり以上に悪い
+    const { timeline, targets } = build(
+      {
+        time: 0,
+        text: 'AB',
+        parts: [
+          { text: 'A', at: 0 },
+          { text: 'B', at: 2 },
+        ],
+      },
+      5,
+    );
+    const first = targets[0].drift as unknown as Record<string, unknown>;
+
+    // 次の語句が出る直前は、まだ居る
+    timeline.time(1.9001).time(1.9);
+    expect(Number(first.opacity)).toBeCloseTo(1);
+
+    // 出た後は引きかけ（両方が見えている ＝ 受け渡し）
+    timeline.time(2.3001).time(2.3);
+    const handover = Number(first.opacity);
+    expect(handover).toBeLessThan(1);
+    expect(handover).toBeGreaterThan(0);
+
+    // 引き切った後は居ない
+    timeline.time(2.6001).time(2.6);
+    expect(Number(first.opacity)).toBeCloseTo(0);
+
+    timeline.kill();
+  });
+
+  it('漂いと退場は時間が重ならない', () => {
+    // **この差分の中心的な不変条件**（レビュー指摘 🟡）。どちらも漂う層の transform を
+    // 書くので、重なると毎フレーム値を奪い合う。漂いが引き始めの時刻ちょうどに
+    // 元の位置へ戻り切っていれば、退場はそこから素直に拾える
+    const { timeline, targets } = build(
+      {
+        time: 0,
+        text: 'AB',
+        parts: [
+          { text: 'A', at: 0 },
+          { text: 'B', at: 3 },
+        ],
+      },
+      6,
+    );
+    const drift = targets[0].drift as unknown as Record<string, unknown>;
+
+    // 引き始める直前は漂いの途中（＝漂いがちゃんと動いている）
+    timeline.time(1.5001).time(1.5);
+    expect(Number(drift.z)).not.toBe(0);
+
+    // 引き始めるちょうどに元の位置。ここで両者が入れ替わる
+    timeline.time(3.0001).time(3);
+    expect(Number(drift.z)).toBeCloseTo(0);
+
+    timeline.kill();
+  });
+
+  it('行の長さが無限なら退場も漂いも積まない', () => {
+    // `lineSpanAt` は duration を持たない最終行に Infinity を返す（M13-1）。
+    // **どちらか一方でも通すと行のタイムラインの尺が無限になり、スクラブが壊れる**
+    const { timeline } = build({ time: 0, text: 'A' }, Infinity);
+
+    expect(Number.isFinite(timeline.duration())).toBe(true);
+    timeline.kill();
+  });
+
+  it('最後の語句は行の終わりに消え終わる', () => {
+    // M13-3。**次の行が来た瞬間に消えるのではなく、行の中で引き切る**
+    const { timeline, targets } = build({ time: 0, text: 'A' }, 5);
+    const drift = targets[0].drift as unknown as Record<string, unknown>;
+
+    timeline.time(4.4001).time(4.4);
+    expect(Number(drift.opacity)).toBeCloseTo(1);
+
+    timeline.time(5.0001).time(5);
+    expect(Number(drift.opacity)).toBeCloseTo(0);
+
+    timeline.kill();
+  });
+
+  it('登場が終わる前には引き始めない', () => {
+    // **本編の 3 秒の行がまさにこれ** — 最後の語句は 2.254 秒に出るので、行の終わりから
+    // 逆算した 2.45 秒はまだ出切っていない。そのまま引くと「一瞬映って消えた」になる。
+    // 間に合わない行では引かず、行の切り替えに任せる（語句は漂ったまま次の行へ渡る）
+    const { timeline, targets } = build(
+      {
+        time: 0,
+        text: 'AB',
+        parts: [
+          { text: 'A', at: 0, effect: 'swing' },
+          { text: 'B', at: 2.254, effect: 'swing' },
+        ],
+      },
+      3,
+    );
+    const last = targets[1].drift as unknown as Record<string, unknown>;
+
+    // 行の終わりでもまだ居る（引かなかった）
+    timeline.time(3.0001).time(3);
+
+    expect(Number(last.opacity)).toBeCloseTo(1);
     timeline.kill();
   });
 
