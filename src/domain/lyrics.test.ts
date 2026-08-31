@@ -1002,9 +1002,19 @@ describe('sliceSheet（極性の持ち越し）', () => {
 });
 
 describe('withPrelude', () => {
-  /** 切り出した後のシート（作品の何秒目か、の軸） */
-  const sliced = { title: 'w', lines: [{ time: 9.02, text: '魔法が使えるような' }] };
-  const prelude = { time: 3.01, text: '魔法が使えるような', duration: 6.01, veil: 'single' };
+  /**
+   * 切り出した後のシート（作品の何秒目か、の軸）。
+   *
+   * **型を明示する**（レビュー指摘 🟢）。書かないと構造的に通っているだけで、
+   * `LyricSheet` / `LyricLine` が広がった日に検査の側が追随しない
+   */
+  const sliced: LyricSheet = { title: 'w', lines: [{ time: 9.02, text: '魔法が使えるような' }] };
+  const prelude: LyricLine = {
+    time: 3.01,
+    text: '魔法が使えるような',
+    duration: 6.01,
+    veil: 'single',
+  };
 
   it('序が無ければそのまま返す', () => {
     // 本編以外のシート（`preludeFor` が null を返す）はここを素通りする
@@ -1038,6 +1048,39 @@ describe('withPrelude', () => {
 
   it('負の時刻の序は受け取らない', () => {
     expect(() => withPrelude(sliced, { ...prelude, time: -1 })).toThrow(/time/u);
+  });
+
+  it('歌い出しより後ろの序は受け取らない', () => {
+    // **食い込みとは別の壊れ方**（レビュー指摘 🟡）。食い込みの判定は終わりの時刻しか
+    // 見ないので、`duration` の無い序を歌の後ろに置くとそこを素通りする。
+    // 並びが崩れると `activeLineIndexAt` の二分探索が**例外を投げずに別の行を返す**
+    const { duration: _duration, ...noDuration } = prelude;
+
+    expect(() => withPrelude(sliced, { ...noDuration, time: 12 })).toThrow(/後ろ/u);
+  });
+
+  it('型が見ない決まりも同じ門で落ちる', () => {
+    // 序は work.ts の定数なので型は付いているが、**型が見ない決まりが門の側にある**。
+    // 通さないと「JSON に書けば落ちる値が、序に書いたときだけ通る」穴が残る
+    expect(() => withPrelude(sliced, { ...prelude, duration: 0 })).toThrow(/duration/u);
+    expect(() =>
+      withPrelude(sliced, {
+        ...prelude,
+        place: { at: 'middle-right', size: 'md', nudge: { x: -9 } },
+      }),
+    ).toThrow(/nudge/u);
+  });
+
+  it('挿した後のシートで明滅の間隔を見る', () => {
+    // 序が極性を持つと、そこは新しい変化点になる。**JSON を通らない行なので、
+    // parseLyricSheet の壁の後ろから入る** — 挿した後にもう一度測って止める。
+    // 歌い出し（9.02）の 0.52 秒前に裏返すと、間隔が MIN_POLARITY_INTERVAL を割る
+    const flipped: LyricSheet = { title: 'w', lines: [{ ...sliced.lines[0], polarity: 'paper' }] };
+    const { duration: _duration, ...noDuration } = prelude;
+
+    expect(() =>
+      withPrelude(flipped, { ...noDuration, time: 8.5, polarity: 'ink' }),
+    ).toThrow(/polarity/u);
   });
 
   it('行の無いシートにも挿せる', () => {

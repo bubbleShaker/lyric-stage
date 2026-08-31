@@ -198,15 +198,15 @@ Promise.all([loadLyricSheet(sheetName), loadDeclaredFonts(document.fonts)])
     // 「作品の何秒目か」しか扱わない（WHOLE_SONG なら素通し）
     // 序（M14-2）は歌詞シートに書かない（理由は work.ts の PRELUDE）。
     // **切り出した後の軸で挿す** — 序の時刻は「作品の何秒目か」で書いてある
-    const sliced = withPrelude(sliceSheet(sheet, workWindow), preludeFor(sheetName));
-    mountLyricTimeline(player, ticker, sliced, stage);
+    const staged = withPrelude(sliceSheet(sheet, workWindow), preludeFor(sheetName));
+    mountLyricTimeline(player, ticker, staged, stage);
 
     // 画の明暗（M9-3a / Issue #57）。**変化点だけを抜いて一度だけ組み立てる** —
     // 行の列を毎フレーム遡ると、極性を書いていない行が続くほど探索が伸びる。
     // 歌詞と同じ時計（音の再生位置）で回すので、シークすれば極性も一緒に飛ぶ。
     // 歌詞が読めなければ極性も切り替わらない（既定の paper のまま）が、
     // それは「歌詞の無い画」として正しい姿
-    const polarity = mountScenePolarity(scene, createPolarityTrack(sliced));
+    const polarity = mountScenePolarity(scene, createPolarityTrack(staged));
     ticker.subscribe(() => polarity.render(player.currentTime));
   })
   .catch((error: unknown) => {
