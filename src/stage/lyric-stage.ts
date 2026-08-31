@@ -16,6 +16,7 @@ import {
   type EffectTimeline,
 } from './effects';
 import { buildLineTimeline, type PartTarget } from './line-timeline';
+import { kanjiOf, VEIL_CLASS, VEIL_GLYPH_CLASS, VEIL_LAYER_CLASS } from './kanji-veil';
 import {
   SPARK_BASE_CLASS,
   SPARK_ECHO_CLASS,
@@ -60,6 +61,18 @@ export class LyricStage implements LyricPresenter {
    * 測定は汚れない**（`focusOn` を見よ）。`clear()` の戻しは念のため。
    */
   private readonly camera: HTMLElement;
+  /**
+   * 帳の層（M14-1）。**カメラの外側・カメラより手前。** カメラと同じく行をまたいで使い回す。
+   *
+   * 中に居ると寄せが掛かる — カメラは語句が画面に収まるよう 1〜3.6 倍に寄るので、
+   * **短い一文ほど帳が画面から溢れる**（実測: 6 字の縦組みで `breath` の一字が
+   * 画面の高さを超えた）。帳は「語句に貼り付く添え物」ではなく画面を覆う層なので、
+   * 寄せの外に出せば大きさを画面の高さで書ける（＝作者が指定した見えのまま出る）。
+   *
+   * 副産物として、**語句の漂い・退場から切り離される**。帳は文から抜いた漢字を
+   * 別の層として重ねるものなので、語句と一緒に奥へ引く必要が無い。
+   */
+  private readonly veilLayer: HTMLElement;
   private readonly prefersReducedMotion: ReducedMotionQuery;
   private timeline: EffectTimeline | null = null;
   /** 今出している語句の分割。縁を切るために控える（clear() を見よ） */
@@ -84,7 +97,13 @@ export class LyricStage implements LyricPresenter {
 
     this.camera = document.createElement('div');
     this.camera.className = CAMERA_CLASS;
-    this.root.append(this.camera);
+
+    // 帳はカメラの**後ろに**足す（＝手前に描かれる）。木の順で重なりが決まるので、
+    // z-index は使わない（枠の中の図形・英字・装飾と同じ約束）
+    this.veilLayer = document.createElement('div');
+    this.veilLayer.className = VEIL_LAYER_CLASS;
+
+    this.root.append(this.camera, this.veilLayer);
   }
 
   show(line: LyricLine, span: number): void {
@@ -129,6 +148,8 @@ export class LyricStage implements LyricPresenter {
     // 前の行の寄せが残ったまま測ると、行を追うごとに倍率がずれていく
     gsap.set(this.camera, { clearProps: 'transform' });
     this.camera.replaceChildren();
+    // 帳もここで捨てる。**カメラの外に居るので、上の 1 行では消えない**
+    this.veilLayer.replaceChildren();
   }
 
   /**
@@ -180,6 +201,8 @@ export class LyricStage implements LyricPresenter {
       createDecor: (className) => this.insertDecor(text, className, layout),
       createSub: (sub) => this.insertSub(text, sub),
       createSpark: (spark) => this.appendSpark(drift, spark, part.text),
+      // 帳だけは語句の枠ではなく**カメラの外の層**へ立てる（`veilLayer` を見よ）
+      createVeil: (className) => this.appendVeil(className, part.text),
       sliceChars: (count) => split.chars.map((char) => this.sliceChar(char as HTMLElement, count)),
     };
   }
@@ -306,6 +329,46 @@ export class LyricStage implements LyricPresenter {
     host.append(box);
 
     return { box, pieces };
+  }
+
+  /**
+   * 漢字の帳の当て先を、語句の**漂う層の末尾**に足す（M14-1 / Issue #84）。
+   *
+   * **当て先は語句の枠ではなく、カメラの外の層**（`veilLayer`）。図形・英字・一過性の
+   * 装飾が語句に貼り付くのとはそこが違う — 帳は文から抜いた漢字を**別の層として**
+   * 画面に重ねるもので、語句の寄せ・漂い・退場に付き従う必要が無い。
+   *
+   * だから演出との噛み合わせ（`ghost` に付けた注意）も起きない。**代わりに
+   * 「帳を当てた行は語句に刻まない」だけを見張る**（`src/lyric-sheets.test.ts`）—
+   * 一文を据え置くことが帳の前提で、語句を 1 つずつ映すカメラ（M13-4）とは相反するため。
+   *
+   * **立てる字は歌詞から決まる**（`kanjiOf`）。レジストリが数を宣言する `spark` と
+   * 違い、帳の字は文そのものなので、数も中身も語句の歌詞にしか無い。
+   *
+   * **箱ごと支援技術から隠す。** 帳の字は据えた一文に含まれている字の写しなので、
+   * 隠さないと**同じ漢字が 2 度読み上げられる**（`ghost` と同じ問題。本文側は
+   * SplitText が `aria-label` にまとめている）。
+   */
+  private appendVeil(className: string, text: string): HTMLElement[] {
+    const box = document.createElement('div');
+    box.className = VEIL_CLASS;
+    box.classList.add(className);
+    box.setAttribute('aria-hidden', 'true');
+
+    const glyphs = kanjiOf(text).map((glyph) => {
+      const span = document.createElement('span');
+      span.className = VEIL_GLYPH_CLASS;
+      // 歌詞と同じく外から来た文字列なので、必ず textContent で入れる
+      span.textContent = glyph;
+
+      box.append(span);
+
+      return span;
+    });
+
+    this.veilLayer.append(box);
+
+    return glyphs;
   }
 
   /**

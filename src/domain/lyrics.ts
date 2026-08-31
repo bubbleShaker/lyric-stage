@@ -27,6 +27,14 @@ export interface LyricLine {
   /** 行に一瞬だけ添える装飾。M10-1 で足した。刻んだ行では使わない（`LyricPart.spark` を見よ） */
   spark?: string;
   /**
+   * 行に重ねる漢字の帳。M14-1 で足した。刻んだ行では使わない（`LyricPart.veil` を見よ）。
+   *
+   * **帳を当てる行は語句に刻まないのが普通**（一文を据え置くのが帳の前提で、
+   * 語句を 1 つずつ映すカメラとは相反する）。それでも語句の側に書けるようにして
+   * あるのは、他の軸（`decor` / `sub` / `spark`）と揃えるため。
+   */
+  veil?: string;
+  /**
    * 画の明暗（M9-3a）。**この行から先ずっと続く。**
    *
    * `effect` / `place` / `decor` / `sub` と決定的に違うのは、これが**行の属性ではなく
@@ -161,6 +169,19 @@ export interface LyricPart {
    * `stage/spark.ts` にあり、綴りの間違いは `src/lyric-sheets.test.ts` が落とす。
    */
   spark?: string;
+  /**
+   * 語句に重ねる漢字の帳の名前（M14-1）。**語句が居るあいだ続く。**
+   *
+   * `spark` と決定的に違うのは**時間の尺度**。あちらは語句が出る瞬間に 1 秒足らずで
+   * 弾けて消えるが、帳は語句の滞在いっぱいを使う（理由は `stage/kanji-veil.ts`）。
+   *
+   * **`decor` / `sub` / `spark` と同じく、行からは継がない**（`partsOf` を見よ）。
+   * 刻んだ行の全語句に帳が重なると、画は漢字で埋まる。
+   *
+   * 名前の語彙（どれが実在するか）はここでは持たない。レジストリは
+   * `stage/kanji-veil.ts` にあり、綴りの間違いは `src/lyric-sheets.test.ts` が落とす。
+   */
+  veil?: string;
 }
 
 /**
@@ -236,6 +257,8 @@ export interface ResolvedPart {
   readonly sub: string | undefined;
   /** 一瞬だけ添える装飾。無ければ undefined。**列ではなく 1 つ**（M10-1） */
   readonly spark: string | undefined;
+  /** 重ねる漢字の帳。無ければ undefined。**滞在いっぱい続く**（M14-1） */
+  readonly veil: string | undefined;
 }
 
 /**
@@ -256,6 +279,7 @@ export function partsOf(line: LyricLine): ResolvedPart[] {
         decor: line.decor ?? [],
         sub: line.sub,
         spark: line.spark,
+        veil: line.veil,
       },
     ];
   }
@@ -271,6 +295,7 @@ export function partsOf(line: LyricLine): ResolvedPart[] {
     decor: part.decor ?? [],
     sub: part.sub,
     spark: part.spark,
+    veil: part.veil,
   }));
 }
 
@@ -327,11 +352,23 @@ function parseLyricLine(value: unknown, index: number): LyricLine {
   // 画面には歌詞が出ているので、書いた本人にも原因が分からない
   rejectUnknownKeys(
     line,
-    ['time', 'text', 'effect', 'duration', 'place', 'parts', 'decor', 'sub', 'spark', 'polarity'],
+    [
+      'time',
+      'text',
+      'effect',
+      'duration',
+      'place',
+      'parts',
+      'decor',
+      'sub',
+      'spark',
+      'veil',
+      'polarity',
+    ],
     `lines[${index}]`,
   );
 
-  const { time, text, effect, duration, place, parts, decor, sub, spark, polarity } = line;
+  const { time, text, effect, duration, place, parts, decor, sub, spark, veil, polarity } = line;
 
   if (typeof time !== 'number' || !Number.isFinite(time) || time < 0) {
     throw new LyricSheetError(`lines[${index}].time が 0 以上の数値ではありません`);
@@ -363,6 +400,10 @@ function parseLyricLine(value: unknown, index: number): LyricLine {
       `lines[${index}] は語句に刻まれているので、spark は語句の側に書きます`,
     );
   }
+  // 帳も同じ（M14-1）。刻んだ行に行の veil を書いても画には何も出ない
+  if (parts !== undefined && veil !== undefined) {
+    throw new LyricSheetError(`lines[${index}] は語句に刻まれているので、veil は語句の側に書きます`);
+  }
   // **語彙をここで見るのは `effect` / `place` / `decor` と違う点。** あちらは名前が
   // 実在するかを `stage/` のレジストリに任せ（綴り間違いは lyric-sheets.test.ts が落とす）、
   // domain は形だけを見る。極性は取りうる状態が 2 つしかなく増える余地が無いので、
@@ -386,6 +427,7 @@ function parseLyricLine(value: unknown, index: number): LyricLine {
     ...(decor !== undefined ? { decor: parseDecor(decor, `lines[${index}]`) } : {}),
     ...(sub !== undefined ? { sub: parseSub(sub, `lines[${index}]`) } : {}),
     ...(spark !== undefined ? { spark: parseSpark(spark, `lines[${index}]`) } : {}),
+    ...(veil !== undefined ? { veil: parseVeil(veil, `lines[${index}]`) } : {}),
     ...(polarity !== undefined ? { polarity } : {}),
   };
 }
@@ -419,9 +461,13 @@ function parseParts(value: unknown, owner: string): LyricPart[] {
 function parsePart(value: unknown, where: string): LyricPart {
   if (!isPlainObject(value)) throw new LyricSheetError(`${where} がオブジェクトではありません`);
 
-  rejectUnknownKeys(value, ['text', 'at', 'effect', 'place', 'decor', 'sub', 'spark'], where);
+  rejectUnknownKeys(
+    value,
+    ['text', 'at', 'effect', 'place', 'decor', 'sub', 'spark', 'veil'],
+    where,
+  );
 
-  const { text, at, effect, place, decor, sub, spark } = value;
+  const { text, at, effect, place, decor, sub, spark, veil } = value;
 
   if (typeof text !== 'string' || text.trim() === '') {
     throw new LyricSheetError(`${where}.text が空でない文字列ではありません`);
@@ -443,6 +489,7 @@ function parsePart(value: unknown, where: string): LyricPart {
     ...(decor !== undefined ? { decor: parseDecor(decor, where) } : {}),
     ...(sub !== undefined ? { sub: parseSub(sub, where) } : {}),
     ...(spark !== undefined ? { spark: parseSpark(spark, where) } : {}),
+    ...(veil !== undefined ? { veil: parseVeil(veil, where) } : {}),
   };
 }
 
@@ -463,6 +510,15 @@ function parseSub(value: unknown, owner: string): string {
  */
 function parseSpark(value: unknown, owner: string): string {
   return parseTrimmed(value, `${owner}.spark`);
+}
+
+/**
+ * 重ねる漢字の帳の名前（M14-1）。**形だけを見る**（実在するかは `stage/kanji-veil.ts`）。
+ *
+ * `spark` と同じく列ではないので、重複を落とす手当ては要らない。
+ */
+function parseVeil(value: unknown, owner: string): string {
+  return parseTrimmed(value, `${owner}.veil`);
 }
 
 /**

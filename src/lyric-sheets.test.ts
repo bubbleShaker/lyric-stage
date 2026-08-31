@@ -14,6 +14,7 @@ import { decors, isDecorName } from './stage/decor';
 import { effects, isEffectName, resolveEffect } from './stage/effects';
 import { CAMERA_MOVE } from './stage/camera';
 import { EXIT_DURATION, exitStartFor } from './stage/exit';
+import { isVeilName, kanjiOf } from './stage/kanji-veil';
 import { buildLineTimeline, LINE_SETTLED } from './stage/line-timeline';
 import { isSparkName, sparks, type SparkShape } from './stage/spark';
 import { secondsPerBeat } from './domain/beat';
@@ -103,6 +104,44 @@ describe.each(Object.entries(SHEET_SOURCES))('%s.json', (_name, source) => {
       .map((part) => `${part.text}: ${part.spark}`);
 
     expect(unknown).toStrictEqual([]);
+  });
+
+  it('知らない帳の名前が書かれていない', () => {
+    // 帳（M14-1）も図形・装飾と同じで、未知の名前は既定に落ちず**完全に消える**。
+    // 帳は画の主役になる大きさなので、消えると「一文が縦に出ているだけの行」になり、
+    // しかもそれはそれで画として成立してしまう（間違いに気付く手掛かりが無い）
+    const unknown = sheet.lines
+      .flatMap((line) => partsOf(line))
+      .filter((part) => part.veil !== undefined && !isVeilName(part.veil))
+      .map((part) => `${part.text}: ${part.veil}`);
+
+    expect(unknown).toStrictEqual([]);
+  });
+
+  it('帳を当てた行は語句に刻んでいない', () => {
+    // **帳の前提は「一文を据え置くこと」**（`stage/kanji-veil.ts`）。語句を 1 つずつ
+    // 映すカメラ（M13-4）と相反するので、混ぜずに行の単位で切り替えると決めた。
+    //
+    // 刻んだ行の語句に帳を当てても動きはする（型も綴りも通る）が、**カメラが次の語句へ
+    // 移った先に、前の語句の帳だけが取り残される**。文章で書くだけだと M14-3 の
+    // 割り当てで静かに破れるので検査にしておく
+    const carved = sheet.lines
+      .filter((line) => line.parts !== undefined)
+      .filter((line) => partsOf(line).some((part) => part.veil !== undefined))
+      .map((line) => line.text);
+
+    expect(carved).toStrictEqual([]);
+  });
+
+  it('帳を当てた語句に漢字がある', () => {
+    // 帳に出るのは漢字だけ（`kanjiOf`）。かなだけの語句に当てると、**箱は立つのに
+    // 字が 1 つも無い**ので何も起きない。名前の綴りが正しいぶん、上の検査にも掛からない
+    const empty = sheet.lines
+      .flatMap((line) => partsOf(line))
+      .filter((part) => part.veil !== undefined && kanjiOf(part.text).length === 0)
+      .map((part) => `${part.text}: ${part.veil}`);
+
+    expect(empty).toStrictEqual([]);
   });
 
   it('縦組みの語句に一過性の装飾を当てていない', () => {
@@ -420,6 +459,43 @@ describe(`${DEFAULT_SHEET_NAME}.json`, () => {
     expect(hasty).toStrictEqual([]);
   });
 
+  it('帳が滞在に収まって、字が全部出る', () => {
+    // 帳は 1 字あたりの持ち時間に下限（`MIN_VEIL_SLOT` = 1 秒）を持ち、**収まらないなら
+    // 丸ごと出さない**（明滅の安全。字を間引くと文の漢字が黙って欠けるため）。
+    // つまり短い行に当てると、綴りも組み合わせも正しいのに**画には何も出ない**。
+    //
+    // **本番と同じ組み立て（`buildLineTimeline`）で測る**（レビュー指摘 🔴）。
+    // 滞在を「行の猶予 - 語句が出る時刻」と手で書くと、本番が渡している
+    // 「退場が始まるまで」（`exitStartFor` のぶん 0.4 秒短い）と食い違い、
+    // **境界の割り当てが検査を通ったまま画から消える**。刻んだ行では食い違いはもっと大きい
+    const silent = sheet.lines.flatMap((line, index) => {
+      const targets: ReturnType<typeof dummyTarget>[] = [];
+      const timeline = buildLineTimeline(
+        line,
+        (part) => {
+          const target = dummyTarget(part.text.length, kanjiOf(part.text).length);
+          targets.push(target);
+          return target;
+        },
+        { span: gapAfter(sheet.lines, index), camera: {} },
+      );
+      // 帳の字を動かしているトゥイーンがあるか。**当て先が作られたかではない** —
+      // 出せない時は当て先ごと作らないが、そこに頼ると「作りはしたが動かない」を見逃す
+      const moving = new Set(tweensOf(timeline).flatMap((tween) => tween.targets()));
+      timeline.kill();
+
+      return partsOf(line).flatMap((part, order) =>
+        part.veil !== undefined &&
+        isVeilName(part.veil) &&
+        !targets[order].veilGlyphs.some((glyph) => moving.has(glyph))
+          ? [`${part.text}: ${part.veil}（漢字 ${kanjiOf(part.text).length} 字）`]
+          : [],
+      );
+    });
+
+    expect(silent).toStrictEqual([]);
+  });
+
   it('各行の演出がその行の猶予に収まる', () => {
     // 割り当てが確定したので、実際の組み合わせ（その行に当てた演出 × その行の文字数
     // × その行の猶予）で測る。下の「どの演出も」はレジストリ全体の安全網で、
@@ -436,10 +512,11 @@ describe(`${DEFAULT_SHEET_NAME}.json`, () => {
     const overrun = sheet.lines
       .map((line, index) => {
         const gap = gapAfter(sheet.lines, index);
-        const timeline = buildLineTimeline(line, (part) => dummyTarget(part.text.length), {
-          span: gap,
-          camera: {},
-        });
+        const timeline = buildLineTimeline(
+          line,
+          (part) => dummyTarget(part.text.length, kanjiOf(part.text).length),
+          { span: gap, camera: {} },
+        );
         const settled = timeline.labels[LINE_SETTLED];
         timeline.kill();
         // **ラベルが消えたら落とす**（レビュー指摘 🟡）。型の上は number だが、
@@ -885,8 +962,9 @@ function worstCase(lines: readonly LyricLine[]) {
  * gsap は要素でなくただのオブジェクトもトゥイーンできるので、
  * ブラウザ無しで時間の組み立てだけを借りられる（stage/effects.test.ts と同じ手）。
  */
-function dummyTarget(count: number) {
+function dummyTarget(count: number, kanji = 0) {
   const slices: Element[] = [];
+  const veilGlyphs: HTMLElement[] = [];
 
   return {
     frame: {} as HTMLElement,
@@ -913,6 +991,15 @@ function dummyTarget(count: number) {
       ),
     createDecor: () => ({}) as HTMLElement,
     createSub: () => ({}) as HTMLElement,
+    // 帳（M14-1）。**字の数は本番どおりに揃える**（破片と同じ理由）— 減らすと、
+    // 字の数で持ち時間が決まる帳の尺が実際より短く測れる。
+    // 数の出どころは `kanjiOf`（呼ぶ側が語句の歌詞から数える）。
+    // **立てた字は控える** — 「帳が実際に出たか」を組み立てから読むのに要る
+    veilGlyphs,
+    createVeil: () => {
+      veilGlyphs.push(...Array.from({ length: kanji }, () => ({}) as HTMLElement));
+      return veilGlyphs;
+    },
     createSpark: (spark: SparkShape) => ({
       box: {} as HTMLElement,
       // 破片の数は本番どおりに揃える。減らすと、破片ごとに時間差を付ける案
@@ -943,7 +1030,7 @@ function settledOf(part: ResolvedPart): number {
       ...(part.sub !== undefined ? { sub: part.sub } : {}),
       ...(part.spark !== undefined ? { spark: part.spark } : {}),
     },
-    () => dummyTarget(part.text.length),
+    () => dummyTarget(part.text.length, kanjiOf(part.text).length),
     // 退場も漂いも入らない長さにする（測りたいのは出揃う時刻だけ）
     { span: Infinity, camera: {} },
   );
@@ -968,10 +1055,11 @@ function onMillisecondGrid(seconds: number): number {
  * 「行の長さ」を測ることになる。
  */
 function settledTimeOf(line: LyricLine, span: number): number {
-  const timeline = buildLineTimeline(line, (part) => dummyTarget(part.text.length), {
-    span,
-    camera: {},
-  });
+  const timeline = buildLineTimeline(
+    line,
+    (part) => dummyTarget(part.text.length, kanjiOf(part.text).length),
+    { span, camera: {} },
+  );
   const settled = timeline.labels[LINE_SETTLED];
   timeline.kill();
 

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { parseLyricSheet, partsOf } from './domain/lyrics';
 import { TEXT_CLASS } from './stage/effects';
+import { VEIL_GLYPH_CLASS } from './stage/kanji-veil';
 import { SUB_CLASS } from './stage/sub-text';
 // ?raw は対象ファイルを文字列として読み込む Vite の機能。fs を使わずに済むので
 // Node の型定義をアプリ側の tsconfig に持ち込まなくてよい（lyric-sheets.test.ts と同じ）
@@ -222,7 +223,7 @@ describe('書体の配線', () => {
     // 当て先はクラス名の定数から引く。直書きすると、改名したときに何が起きたのかを
     // 読み解く手間が増える（`sub-text.test.ts` は定数経由にしてある）
     expect(new Set(displayFontRules.map((rule) => rule.selector))).toStrictEqual(
-      new Set([`.${TEXT_CLASS}`, `.${SUB_CLASS}`]),
+      new Set([`.${TEXT_CLASS}`, `.${SUB_CLASS}`, `.${VEIL_GLYPH_CLASS}`]),
     );
     // 宣言は 1 か所（:root）。増やすとどちらが効くかが並び順で決まる
     expect(styleCss.match(/--font-display:/g)).toHaveLength(1);

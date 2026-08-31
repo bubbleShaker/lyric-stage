@@ -5,6 +5,14 @@ import { buildDrift, DRIFT_SETTLE } from './drift';
 import { buildCameraMove, CAMERA_LEAD, restCamera, type Focus } from './camera';
 import { buildExit, exitStartFor } from './exit';
 import { resolveEffect, type EffectLayout, type EffectTimeline } from './effects';
+import {
+  buildKanjiVeil,
+  fitsVeil,
+  kanjiOf,
+  resolveVeil,
+  type VeilEntry,
+  type VeilTarget,
+} from './kanji-veil';
 import { resolveSpark, type SparkShape, type SparkTarget } from './spark';
 import { buildSubText } from './sub-text';
 
@@ -89,6 +97,14 @@ export interface PartTarget {
    * 要る分だけ）で、演出の中身（`build`）は見せない。**
    */
   readonly createSpark: (spark: SparkShape) => SparkTarget;
+  /**
+   * 漢字の帳の当て先を立てて返す（M14-1）。**文字より手前、語句の滞在いっぱいに重なる。**
+   *
+   * 図形（`createDecor`）と同じくクラス名だけを渡す。立てる字の数と中身は
+   * **語句の歌詞から決まる**（`kanjiOf`）ので、渡す必要が無い — 外から来た文字列を
+   * DOM へ入れる所を 1 か所に閉じ込める形は `createSpark` の `ghost` と同じ。
+   */
+  readonly createVeil: (className: string) => VeilTarget;
 }
 
 /**
@@ -150,6 +166,12 @@ export function buildLineTimeline(
     /** 引き始める時刻。**null は「引かない」**（行の切り替えに任せる。下記） */
     leaves: number | null;
     seed: number;
+    /** その語句に重ねる帳（M14-1）。**滞在の長さが要る**ので、ここでは控えるだけ */
+    veil: VeilEntry | null;
+    /** 帳に出る漢字の数（`kanjiOf`）。当て先を作る前に「出るかどうか」を決めるのに要る */
+    kanji: number;
+    /** 登場が終わる時刻（語句が出てから何秒か）。帳はこの後ろから重なる */
+    settles: number;
   }[] = [];
   const parts = partsOf(line);
 
@@ -191,10 +213,16 @@ export function buildLineTimeline(
       timeline.add(spark.build(target.createSpark(spark)), part.at);
     }
 
-    timeline.add(
-      build({ root: target.root, chars: target.chars, sliceChars: target.sliceChars }),
-      part.at,
-    );
+    // **登場の尺を控える**（M14-1）。帳は一文が降り切ってから重なるので、
+    // 「降り切る時刻」を実測して渡す必要がある（定数の待ちだと、長い一文では
+    // まだ降りている字の上に帳が浮かぶ）
+    const entrance = build({
+      root: target.root,
+      chars: target.chars,
+      sliceChars: target.sliceChars,
+    });
+
+    timeline.add(entrance, part.at);
 
     staying.push({
       target,
@@ -209,6 +237,11 @@ export function buildLineTimeline(
       // 行ぜんぶが出揃う時刻 ＝ 下で立てる `LINE_SETTLED` と同じものになる
       leaves: exitStartFor(timeline.duration(), parts[order + 1]?.at, span),
       seed: order,
+      // 出さない指定（未指定・動きを減らす設定・知らない名前）は null で返る
+      veil: resolveVeil(part.veil, { reducedMotion }),
+      // 帳に出る字の数と、一文が降り切る時刻。**滞在が分かってから使う**
+      kanji: kanjiOf(part.text).length,
+      settles: entrance.duration(),
     });
   });
 
@@ -242,7 +275,23 @@ export function buildLineTimeline(
   //
   // **漂いと退場は時間を分ける。** どちらも漂う層の transform を書くので、重ねると
   // 毎フレーム値を奪い合う。漂いの尺は「引き始めるまで」に縮め、退場はその後ろに置く
-  for (const { target, at, leaves, seed } of staying) {
+  for (const { target, appears, at, leaves, seed, veil, kanji, settles } of staying) {
+    // **帳は語句が出た時刻から、居られる限り続く**（M14-1）。漂い（`at`）より前から
+    // 始まるのは、帳が「語句の登場」ではなく「語句が居ること」に付く軸だから。
+    // 待ち（一文が降り切るまで）は帳が自分で持つので、ここでは出る時刻をずらさない。
+    //
+    // **漂い・退場と時間を分けなくてよい。** どちらも当て先が別の要素（帳は自分の箱、
+    // 漂いは漂う層）なので、同じ時刻に重なっても値を奪い合わない。
+    //
+    // **出るかどうかを当て先より先に決める**（レビュー指摘 🟡）。滞在が足りずに
+    // 出せない語句で当て先だけ作ると、中身の無い箱と透明な字が漂う層に残る
+    // （動きを減らす設定では当て先ごと立てない、という作りと非対称になる）
+    const veilOptions = { span: (leaves ?? span) - appears, after: settles };
+
+    if (veil !== null && fitsVeil(kanji, veil, veilOptions)) {
+      timeline.add(buildKanjiVeil(target.createVeil(veil.className), veil, veilOptions), appears);
+    }
+
     // 漂うのは「次にこの層で何かが起きるまで」。引かない語句（`leaves` が null）は
     // 行が終わるまで漂い、行の切り替えで消える。
     // **負にもなりうる**（登場が長く、すぐ次の語句が来る場合）が、`buildDrift` が
