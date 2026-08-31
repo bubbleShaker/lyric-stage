@@ -6,6 +6,7 @@ import {
   parseLyricSheet,
   partsOf,
   sliceSheet,
+  withPrelude,
   type LyricLine,
   type ResolvedPart,
 } from './domain/lyrics';
@@ -18,7 +19,7 @@ import { isVeilName, kanjiOf } from './stage/kanji-veil';
 import { buildLineTimeline, LINE_SETTLED } from './stage/line-timeline';
 import { isSparkName, sparks, type SparkShape } from './stage/spark';
 import { secondsPerBeat } from './domain/beat';
-import { BEAT_GRID, DEFAULT_SHEET_NAME, WORK_FADE, WORK_WINDOW } from './work';
+import { BEAT_GRID, DEFAULT_SHEET_NAME, PRELUDE, WORK_FADE, WORK_WINDOW } from './work';
 // Vite の ?raw は対象ファイルを文字列として読み込む。fs を使わずに済むので
 // Node の型定義をアプリ側の tsconfig に持ち込まなくてよい。
 import sampleJson from '../public/lyrics/sample.json?raw';
@@ -433,13 +434,7 @@ describe(`${DEFAULT_SHEET_NAME}.json`, () => {
     // 数字も同じ理由で横倒しになるので併せて見る。
     // 語句に刻んだ行では、縦書きになるかどうかは語句ごとに決まる（M8-5）ので
     // partsOf 経由で見る。行の effect だけを見ると、刻んだ行が素通りする
-    const latin = sheet.lines
-      .flatMap((line) => partsOf(line))
-      .filter((part) => resolveEffect(part.effect).layout === 'vertical')
-      .filter((part) => /[\p{Script=Latin}\p{Nd}]/u.test(part.text))
-      .map((part) => part.text);
-
-    expect(latin).toStrictEqual([]);
+    expect(sidewaysLatinOf(sheet.lines)).toStrictEqual([]);
   });
 
   it('縦書きは行が長く留まる所にだけ当たっている', () => {
@@ -468,32 +463,7 @@ describe(`${DEFAULT_SHEET_NAME}.json`, () => {
     // 滞在を「行の猶予 - 語句が出る時刻」と手で書くと、本番が渡している
     // 「退場が始まるまで」（`exitStartFor` のぶん 0.4 秒短い）と食い違い、
     // **境界の割り当てが検査を通ったまま画から消える**。刻んだ行では食い違いはもっと大きい
-    const silent = sheet.lines.flatMap((line, index) => {
-      const targets: ReturnType<typeof dummyTarget>[] = [];
-      const timeline = buildLineTimeline(
-        line,
-        (part) => {
-          const target = dummyTarget(part.text.length, kanjiOf(part.text).length);
-          targets.push(target);
-          return target;
-        },
-        { span: gapAfter(sheet.lines, index), camera: {} },
-      );
-      // 帳の字を動かしているトゥイーンがあるか。**当て先が作られたかではない** —
-      // 出せない時は当て先ごと作らないが、そこに頼ると「作りはしたが動かない」を見逃す
-      const moving = new Set(tweensOf(timeline).flatMap((tween) => tween.targets()));
-      timeline.kill();
-
-      return partsOf(line).flatMap((part, order) =>
-        part.veil !== undefined &&
-        isVeilName(part.veil) &&
-        !targets[order].veilGlyphs.some((glyph) => moving.has(glyph))
-          ? [`${part.text}: ${part.veil}（漢字 ${kanjiOf(part.text).length} 字）`]
-          : [],
-      );
-    });
-
-    expect(silent).toStrictEqual([]);
+    expect(silentVeilLinesOf(sheet.lines)).toStrictEqual([]);
   });
 
   it('各行の演出がその行の猶予に収まる', () => {
@@ -509,26 +479,7 @@ describe(`${DEFAULT_SHEET_NAME}.json`, () => {
     // 「行が出ている長さ」そのものになった（着地した語句が行の終わりまで漂うため）ので、
     // 尺を猶予と比べても必ず等しくなるだけで何も分からない。知りたいのは
     // 「最後の語句が出揃うのは行が変わる前か」で、それが `LINE_SETTLED` の立つ時刻
-    const overrun = sheet.lines
-      .map((line, index) => {
-        const gap = gapAfter(sheet.lines, index);
-        const timeline = buildLineTimeline(
-          line,
-          (part) => dummyTarget(part.text.length, kanjiOf(part.text).length),
-          { span: gap, camera: {} },
-        );
-        const settled = timeline.labels[LINE_SETTLED];
-        timeline.kill();
-        // **ラベルが消えたら落とす**（レビュー指摘 🟡）。型の上は number だが、
-        // `addLabel` を落とせば実行時は undefined になる。`undefined >= gap` は false
-        // なので、**この検査だけが黙って無効化されたまま緑になる**
-        expect(settled).toBeTypeOf('number');
-        return { line, settled, gap };
-      })
-      .filter(({ settled, gap }) => settled >= gap)
-      .map(({ line, settled, gap }) => `${line.text}: ${settled} 秒 / 猶予 ${gap} 秒`);
-
-    expect(overrun).toStrictEqual([]);
+    expect(overrunningLinesOf(sheet.lines)).toStrictEqual([]);
   });
 
   it('語句は次の語句が出るまでに出揃う', () => {
@@ -652,8 +603,55 @@ describe('WORK_WINDOW × 本編シート', () => {
   });
 
   it('区間の頭に助走がある（いきなり歌から始まらない）', () => {
-    // 1 小節ぶん（79.85 BPM で 3.0055 秒）を目安に、無音から入る
-    expect(sliced.lines[0].time).toBeGreaterThan(1);
+    // **助走の中身は M14-2 で変わった**（レビュー指摘 🟢）。以前は無音・無画のまま
+    // 1 小節ぶん（79.85 BPM で 3.0055 秒）待つだけだったが、今は
+    // 「フェードが明ける → 序が出る → 序が消えて歌い出し」と 3 段に詰まっている。
+    // `sliced.lines[0].time > 1` は 9.02 秒になって自明なので、**順そのもの**を見る
+    expect(WORK_FADE.in).toBeLessThan(PRELUDE.time);
+    expect(PRELUDE.time).toBeLessThan(sliced.lines[0].time);
+  });
+
+  it('序が歌い出しに食い込まない', () => {
+    // 序（M14-2）は歌詞シートに書かず、切り出した後の頭に挿す（work.ts の PRELUDE）。
+    // **食い込むと `withPrelude` が投げる** — 起動時に落ちるので画面には
+    // 「歌詞ファイルを読み込めませんでした」しか出ない。値は定数なので、ここで止める
+    expect(() => withPrelude(sliced, PRELUDE)).not.toThrow();
+  });
+
+  it('序が助走の後に出て、歌い出しに繋がる', () => {
+    // 序が消えるのと 1 行目が出るのが同じ時刻。**間を空けると画が一度空になる**
+    // （無音の間奏に空の画面が数秒残る）ので、ぴったり繋げてある
+    const withIt = withPrelude(sliced, PRELUDE);
+    const sung = sliced.lines[0];
+
+    // **同じ値であって同じ物ではない。** `withPrelude` は序を JSON の行と同じ門
+    // （`parseLyricLine`）に通してから挿すので、返るのは組み直された別の物になる
+    expect(withIt.lines[0]).toStrictEqual(PRELUDE);
+    expect(PRELUDE.time + (PRELUDE.duration ?? 0)).toBeCloseTo(sung.time, 2);
+  });
+
+  it('序も行としての不変条件を満たす', () => {
+    // **序を検査の網の中に入れる**（レビュー指摘 🟡）。序は歌詞シートに載らないので、
+    // `sheet.lines` を回す検査群（縦組みにラテン文字が無い／帳が滞在に収まる／
+    // 語句が猶予に収まる）が**丸ごと素通りする**。work.ts の側へ写す道もあるが、
+    // それだと軸を足すたびに写しが増える。**同じ関数を作品の並びにも掛ける**形にすれば、
+    // 次に足す軸の検査も書いた時点で序に掛かる。
+    //
+    // 序は歌い出しの手前で閉じるので、`gapAfter` の測る猶予は `duration`（6.01 秒）に
+    // なる — 本番が渡す滞在と同じ値
+    const staged = withPrelude(sliced, PRELUDE);
+
+    expect(sidewaysLatinOf(staged.lines)).toStrictEqual([]);
+    expect(silentVeilLinesOf(staged.lines)).toStrictEqual([]);
+    expect(overrunningLinesOf(staged.lines)).toStrictEqual([]);
+  });
+
+  it('序の帳が実際に出る', () => {
+    // **序の尺（6.01 秒）に入る字数は限られる**（`MIN_VEIL_SLOT` の下限より、
+    // `single` なら 3 字まで）。一文を書き換えて漢字が増えると、綴りも組み合わせも
+    // 正しいのに**帳だけが黙って出なくなる**（画には縦の一文だけが残り、
+    // それはそれで成立してしまう）
+    expect(silentVeilsOf(PRELUDE, PRELUDE.duration ?? 0)).toStrictEqual([]);
   });
 
   it('最後の行が区間の終わりまでに収まる', () => {
@@ -1064,6 +1062,87 @@ function settledTimeOf(line: LyricLine, span: number): number {
   timeline.kill();
 
   return settled;
+}
+
+/**
+ * その行で「帳を書いたのに出ない」語句を挙げる（M14-1）。
+ *
+ * **本番と同じ組み立て（`buildLineTimeline`）で測る。** 滞在を手で計算すると、
+ * 本番が渡す「退場が始まるまで」（`exitStartFor` のぶん 0.4 秒短い）と食い違い、
+ * 境界の割り当てが検査を通ったまま画から消える。
+ *
+ * 見るのは**字が動いているか**であって、当て先が作られたかではない。出せない時は
+ * 当て先ごと作らない作りだが、そこに頼ると「作りはしたが動かない」を見逃す。
+ */
+function silentVeilsOf(line: LyricLine, span: number): string[] {
+  const targets: ReturnType<typeof dummyTarget>[] = [];
+  const timeline = buildLineTimeline(
+    line,
+    (part) => {
+      const target = dummyTarget(part.text.length, kanjiOf(part.text).length);
+      targets.push(target);
+      return target;
+    },
+    { span, camera: {} },
+  );
+  const moving = new Set(tweensOf(timeline).flatMap((tween) => tween.targets()));
+  timeline.kill();
+
+  return partsOf(line).flatMap((part, order) =>
+    part.veil !== undefined &&
+    isVeilName(part.veil) &&
+    !targets[order].veilGlyphs.some((glyph) => moving.has(glyph))
+      ? [`${part.text}: ${part.veil}（漢字 ${kanjiOf(part.text).length} 字）`]
+      : [],
+  );
+}
+
+/*
+ * ここから 3 つは**行の並びさえあれば測れる不変条件**（レビュー指摘 🟡）。
+ *
+ * 関数に切り出してあるのは、**同じ検査を 2 つの並びに掛けるため** — 51 行の
+ * 歌詞シートと、序（M14-2）を挿した後の作品の並び（`staged`）。序は歌詞シートに
+ * 載らないので、`sheet.lines` を回す検査群からは丸ごと見えない。
+ *
+ * `work.ts` の側に検査を写す道もあるが、それだと**軸を足すたびに写しが 1 つ増える**
+ * （PLAN.md が数えている「6 か所」の 7 か所目になる）。並びを渡す形にしておけば、
+ * 次に足す軸の検査も書いた時点で序に掛かる。
+ */
+
+/** 縦組みになる語句のうち、横倒しになる字（ラテン文字・数字）を含むもの */
+function sidewaysLatinOf(lines: readonly LyricLine[]): string[] {
+  return lines
+    .flatMap((line) => partsOf(line))
+    .filter((part) => resolveEffect(part.effect).layout === 'vertical')
+    .filter((part) => /[\p{Script=Latin}\p{Nd}]/u.test(part.text))
+    .map((part) => part.text);
+}
+
+/** 帳を書いたのに字が動かない（＝画に出ない）語句を、行の猶予から測って挙げる */
+function silentVeilLinesOf(lines: readonly LyricLine[]): string[] {
+  return lines.flatMap((line, index) => silentVeilsOf(line, gapAfter(lines, index)));
+}
+
+/** 語句が出揃う前に次の行へ変わってしまう行を挙げる */
+function overrunningLinesOf(lines: readonly LyricLine[]): string[] {
+  return lines
+    .map((line, index) => {
+      const gap = gapAfter(lines, index);
+      const timeline = buildLineTimeline(
+        line,
+        (part) => dummyTarget(part.text.length, kanjiOf(part.text).length),
+        { span: gap, camera: {} },
+      );
+      const settled = timeline.labels[LINE_SETTLED];
+      timeline.kill();
+      // **ラベルが消えたら落とす**（レビュー指摘 🟡）。型の上は number だが、
+      // `addLabel` を落とせば実行時は undefined になる。`undefined >= gap` は false
+      // なので、**この検査だけが黙って無効化されたまま緑になる**
+      expect(settled).toBeTypeOf('number');
+      return { line, settled, gap };
+    })
+    .filter(({ settled, gap }) => settled >= gap)
+    .map(({ line, settled, gap }) => `${line.text}: ${settled} 秒 / 猶予 ${gap} 秒`);
 }
 
 /** 空白を落とす。画の都合で入れた空白で歌詞の一致を落としたくない */

@@ -321,28 +321,45 @@ export function parseLyricSheet(data: unknown): LyricSheet {
   if (typeof title !== 'string') throw new LyricSheetError('title が文字列ではありません');
   if (!Array.isArray(lines)) throw new LyricSheetError('lines が配列ではありません');
 
-  const parsed = lines.map((line, index) => parseLyricLine(line, index));
+  const parsed = lines.map((line, index) => parseLyricLine(line, `lines[${index}]`));
 
   // 以降の判定は昇順であることを前提にするので、ここで必ず整列させる
   parsed.sort((a, b) => a.time - b.time);
 
-  // **明滅の安全はここが最後の砦**（M9-3a）。行ごとの検証では届かない —
-  // 極性は状態なので、速すぎるかどうかは「隣の行に何が書いてあるか」で決まる。
-  // 整列の後でなければ間隔そのものが意味を持たない
-  const rapid = findRapidPolarityFlip(createPolarityTrack({ title, lines: parsed }));
+  const sheet = { title, lines: parsed };
+  assertPolarityPace(sheet);
+
+  return sheet;
+}
+
+/**
+ * 極性の切り替えが速すぎないことを確かめる。**明滅の安全の最後の砦**（M9-3a）。
+ *
+ * 行ごとの検証では届かない — 極性は状態なので、速すぎるかどうかは「隣の行に何が
+ * 書いてあるか」で決まる。整列の後でなければ間隔そのものが意味を持たない。
+ *
+ * **行を足す口はここも通す**（レビュー指摘 🟡）。`parseLyricSheet` の中だけに書くと、
+ * JSON を通らない行（序 / `withPrelude`）が**壁の後ろから入る**。
+ */
+function assertPolarityPace(sheet: LyricSheet): void {
+  const rapid = findRapidPolarityFlip(createPolarityTrack(sheet));
   if (rapid !== null) {
     throw new LyricSheetError(
       `${rapid.time} 秒の polarity の切り替えが前の切り替えから ${MIN_POLARITY_INTERVAL} 秒以内です` +
         '（全画面の反転は明滅なので、光過敏性発作を避けるため間隔を空けます）',
     );
   }
-
-  return { title, lines: parsed };
 }
 
-function parseLyricLine(value: unknown, index: number): LyricLine {
+/**
+ * 1 行を検証して `LyricLine` にする。
+ *
+ * `where` は落ちた時に指す場所（`lines[3]` / `序`）。**番号ではなく文字列**なのは、
+ * JSON の行以外にもこの門を通すものがあるため（序 / `withPrelude`）。
+ */
+function parseLyricLine(value: unknown, where: string): LyricLine {
   if (typeof value !== 'object' || value === null) {
-    throw new LyricSheetError(`lines[${index}] がオブジェクトではありません`);
+    throw new LyricSheetError(`${where} がオブジェクトではありません`);
   }
 
   const line = value as Record<string, unknown>;
@@ -365,44 +382,44 @@ function parseLyricLine(value: unknown, index: number): LyricLine {
       'veil',
       'polarity',
     ],
-    `lines[${index}]`,
+    where,
   );
 
   const { time, text, effect, duration, place, parts, decor, sub, spark, veil, polarity } = line;
 
   if (typeof time !== 'number' || !Number.isFinite(time) || time < 0) {
-    throw new LyricSheetError(`lines[${index}].time が 0 以上の数値ではありません`);
+    throw new LyricSheetError(`${where}.time が 0 以上の数値ではありません`);
   }
   if (typeof text !== 'string') {
-    throw new LyricSheetError(`lines[${index}].text が文字列ではありません`);
+    throw new LyricSheetError(`${where}.text が文字列ではありません`);
   }
   if (effect !== undefined && typeof effect !== 'string') {
-    throw new LyricSheetError(`lines[${index}].effect が文字列ではありません`);
+    throw new LyricSheetError(`${where}.effect が文字列ではありません`);
   }
   if (duration !== undefined && (typeof duration !== 'number' || !(duration > 0))) {
-    throw new LyricSheetError(`lines[${index}].duration が正の数値ではありません`);
+    throw new LyricSheetError(`${where}.duration が正の数値ではありません`);
   }
   // 図形は行から語句へ継がない（partsOf を見よ）。刻んだ行に行の decor を書くと
   // **検証も型も検査も通るのに、画には何も出ない**。継がないと決めた以上、
   // 継がない指定を書けてしまう方を塞ぐ（`decor: []` を書き掛けとして弾くのと同じ立場）
   if (parts !== undefined && decor !== undefined) {
     throw new LyricSheetError(
-      `lines[${index}] は語句に刻まれているので、decor は語句の側に書きます`,
+      `${where} は語句に刻まれているので、decor は語句の側に書きます`,
     );
   }
   // 英字も図形と同じ扱い（M8-3c）。継がないと決めた以上、書けてしまう方を塞ぐ
   if (parts !== undefined && sub !== undefined) {
-    throw new LyricSheetError(`lines[${index}] は語句に刻まれているので、sub は語句の側に書きます`);
+    throw new LyricSheetError(`${where} は語句に刻まれているので、sub は語句の側に書きます`);
   }
   // 一瞬の装飾も同じ（M10-1）
   if (parts !== undefined && spark !== undefined) {
     throw new LyricSheetError(
-      `lines[${index}] は語句に刻まれているので、spark は語句の側に書きます`,
+      `${where} は語句に刻まれているので、spark は語句の側に書きます`,
     );
   }
   // 帳も同じ（M14-1）。刻んだ行に行の veil を書いても画には何も出ない
   if (parts !== undefined && veil !== undefined) {
-    throw new LyricSheetError(`lines[${index}] は語句に刻まれているので、veil は語句の側に書きます`);
+    throw new LyricSheetError(`${where} は語句に刻まれているので、veil は語句の側に書きます`);
   }
   // **語彙をここで見るのは `effect` / `place` / `decor` と違う点。** あちらは名前が
   // 実在するかを `stage/` のレジストリに任せ（綴り間違いは lyric-sheets.test.ts が落とす）、
@@ -411,7 +428,7 @@ function parseLyricLine(value: unknown, index: number): LyricLine {
   // 掛かる操作で、語句という単位に意味が無い（`parsePart` の許す項目に polarity は無い）
   if (polarity !== undefined && !isPolarity(polarity)) {
     throw new LyricSheetError(
-      `lines[${index}].polarity が ${POLARITIES.join(' / ')} のどれでもありません: ${JSON.stringify(polarity)}`,
+      `${where}.polarity が ${POLARITIES.join(' / ')} のどれでもありません: ${JSON.stringify(polarity)}`,
     );
   }
 
@@ -422,12 +439,12 @@ function parseLyricLine(value: unknown, index: number): LyricLine {
     text,
     ...(effect ? { effect } : {}),
     ...(duration ? { duration } : {}),
-    ...(place !== undefined ? { place: parsePlacement(place, `lines[${index}]`) } : {}),
-    ...(parts !== undefined ? { parts: parseParts(parts, `lines[${index}]`) } : {}),
-    ...(decor !== undefined ? { decor: parseDecor(decor, `lines[${index}]`) } : {}),
-    ...(sub !== undefined ? { sub: parseSub(sub, `lines[${index}]`) } : {}),
-    ...(spark !== undefined ? { spark: parseSpark(spark, `lines[${index}]`) } : {}),
-    ...(veil !== undefined ? { veil: parseVeil(veil, `lines[${index}]`) } : {}),
+    ...(place !== undefined ? { place: parsePlacement(place, where) } : {}),
+    ...(parts !== undefined ? { parts: parseParts(parts, where) } : {}),
+    ...(decor !== undefined ? { decor: parseDecor(decor, where) } : {}),
+    ...(sub !== undefined ? { sub: parseSub(sub, where) } : {}),
+    ...(spark !== undefined ? { spark: parseSpark(spark, where) } : {}),
+    ...(veil !== undefined ? { veil: parseVeil(veil, where) } : {}),
     ...(polarity !== undefined ? { polarity } : {}),
   };
 }
@@ -786,6 +803,61 @@ function displayEnd(lines: readonly LyricLine[], index: number): number {
 }
 
 /**
+ * 切り出したシートの頭に、歌われない一行（序）を挿す（M14-2 / Issue #84）。
+ *
+ * **序を歌詞シートに書かない**ための口。シートは「歌われた歌詞」で、
+ * `src/lyric-sheets.test.ts` の検査群（`同じ歌詞の行には同じ演出が当たっている` /
+ * `語句が出る時刻が拍の格子に載っている` など）はどれもそれを前提にしている。
+ * 序は作品の作り（どの一文を掲げるか）なので、`src/work.ts` が持って組み立て時に挿す。
+ *
+ * **時刻は切り出した後の軸**（作品の何秒目か）。区間を動かすと序の居場所も動くので、
+ * 曲の先頭起点で書くと区間を広げるたびに書き直しになる。
+ *
+ * 歌い出しに食い込む序は**受け取らない**。据えた一文の上に次の行が重なると、
+ * 画は「読めない 2 つの文が重なったもの」になり、しかも**例外も検査の赤も出ない**。
+ * 値は `work.ts` の定数なので、ここで投げれば検査（`work.test.ts`）が落ちる。
+ *
+ * **序も JSON の行と同じ門（`parseLyricLine`）を通す**（レビュー指摘 🟡）。序は
+ * `work.ts` の定数なので型は付いているが、**型が見ない決まりが門の側にある** —
+ * `duration` が正であること・`nudge` が枠（`MAX_NUDGE`）に収まっていること・
+ * 刻んだ行に行の `decor` / `sub` / `spark` / `veil` を書いていないこと。通さないと
+ * 「JSON に書けば落ちる値が、序に書いたときだけ通る」という穴が残る。
+ */
+export function withPrelude(sheet: LyricSheet, prelude: LyricLine | null): LyricSheet {
+  if (prelude === null) return sheet;
+
+  // 門を通った値をそのまま使う（検証だけして元を使うと、門が正規化した分を捨てる）
+  const checked = parseLyricLine(prelude, '序');
+
+  const first = sheet.lines[0];
+  const end = checked.time + (checked.duration ?? 0);
+
+  // **昇順は食い込みとは別に見る**（レビュー指摘 🟡）。`activeLineIndexAt` の
+  // 二分探索は行が時刻順に並んでいることを前提にする。食い込みの判定は終わりの
+  // 時刻（`end`）しか見ないので、**頭の時刻が歌い出しより後ろでも通りうる**
+  // （`duration` が無い序を歌の後ろに置いた場合）。並びが崩れると、探索は
+  // 例外を投げずに**別の行を返す** — 画は動いたまま歌詞だけがずれる
+  if (first !== undefined && checked.time >= first.time) {
+    throw new LyricSheetError(
+      `序が歌い出しより後ろにあります: 序は ${checked.time} 秒、歌は ${first.time} 秒から始まります`,
+    );
+  }
+  if (first !== undefined && end > first.time) {
+    throw new LyricSheetError(
+      `序が歌い出しに食い込んでいます: ${end} 秒まで出しますが、歌は ${first.time} 秒から始まります`,
+    );
+  }
+
+  // **極性の間隔は挿した後のシートで見る**（レビュー指摘 🟡）。序が `polarity` を
+  // 持つと、そこは新しい変化点になり、直後の歌い出しの切り替えと近づきうる。
+  // 今の序は極性を持たないので変化点は増えないが、**足した日に黙って壁を越える**
+  const staged = { ...sheet, lines: [checked, ...sheet.lines] };
+  assertPolarityPace(staged);
+
+  return staged;
+}
+
+/**
  * シートを作品の区間で切り出し、時刻を**区間の先頭からの秒数に付け替える**。
  *
  * 切り出した後は「区間の外」という概念そのものが消えるので、これを通した後の
@@ -794,6 +866,7 @@ function displayEnd(lines: readonly LyricLine[], index: number): number {
  *
  * 元のシートは書き換えない（行は複製して返す）。
  */
+
 export function sliceSheet(sheet: LyricSheet, workWindow: WorkWindow): LyricSheet {
   const lines: LyricLine[] = [];
 
