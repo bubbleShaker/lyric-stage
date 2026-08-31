@@ -14,7 +14,7 @@ import { decors, isDecorName } from './stage/decor';
 import { effects, isEffectName, resolveEffect } from './stage/effects';
 import { CAMERA_MOVE } from './stage/camera';
 import { EXIT_DURATION, exitStartFor } from './stage/exit';
-import { buildKanjiVeil, isVeilName, kanjiOf, veils, type VeilName } from './stage/kanji-veil';
+import { isVeilName, kanjiOf } from './stage/kanji-veil';
 import { buildLineTimeline, LINE_SETTLED } from './stage/line-timeline';
 import { isSparkName, sparks, type SparkShape } from './stage/spark';
 import { secondsPerBeat } from './domain/beat';
@@ -116,6 +116,21 @@ describe.each(Object.entries(SHEET_SOURCES))('%s.json', (_name, source) => {
       .map((part) => `${part.text}: ${part.veil}`);
 
     expect(unknown).toStrictEqual([]);
+  });
+
+  it('帳を当てた行は語句に刻んでいない', () => {
+    // **帳の前提は「一文を据え置くこと」**（`stage/kanji-veil.ts`）。語句を 1 つずつ
+    // 映すカメラ（M13-4）と相反するので、混ぜずに行の単位で切り替えると決めた。
+    //
+    // 刻んだ行の語句に帳を当てても動きはする（型も綴りも通る）が、**カメラが次の語句へ
+    // 移った先に、前の語句の帳だけが取り残される**。文章で書くだけだと M14-3 の
+    // 割り当てで静かに破れるので検査にしておく
+    const carved = sheet.lines
+      .filter((line) => line.parts !== undefined)
+      .filter((line) => partsOf(line).some((part) => part.veil !== undefined))
+      .map((line) => line.text);
+
+    expect(carved).toStrictEqual([]);
   });
 
   it('帳を当てた語句に漢字がある', () => {
@@ -449,26 +464,34 @@ describe(`${DEFAULT_SHEET_NAME}.json`, () => {
     // 丸ごと出さない**（明滅の安全。字を間引くと文の漢字が黙って欠けるため）。
     // つまり短い行に当てると、綴りも組み合わせも正しいのに**画には何も出ない**。
     //
-    // 本番と同じ組み立て（`buildKanjiVeil`）で測る。滞在は縦書きの検査と同じ
-    // 「行の猶予 - 語句が出る時刻」
-    const silent = sheet.lines
-      .flatMap((line, index) =>
-        partsOf(line).map((part) => ({ part, stay: gapAfter(sheet.lines, index) - part.at })),
-      )
-      .filter(({ part }) => part.veil !== undefined && isVeilName(part.veil))
-      .filter(({ part, stay }) => {
-        const glyphs = kanjiOf(part.text).map(() => ({}) as HTMLElement);
-        const entry = veils[part.veil as VeilName];
-        const timeline = buildKanjiVeil({ box: {} as HTMLElement, glyphs }, entry, { span: stay });
-        const silent = timeline.duration() === 0;
-        timeline.kill();
-
-        return silent;
-      })
-      .map(
-        ({ part, stay }) =>
-          `${part.text}: 漢字 ${kanjiOf(part.text).length} 字 / 滞在 ${stay.toFixed(2)} 秒`,
+    // **本番と同じ組み立て（`buildLineTimeline`）で測る**（レビュー指摘 🔴）。
+    // 滞在を「行の猶予 - 語句が出る時刻」と手で書くと、本番が渡している
+    // 「退場が始まるまで」（`exitStartFor` のぶん 0.4 秒短い）と食い違い、
+    // **境界の割り当てが検査を通ったまま画から消える**。刻んだ行では食い違いはもっと大きい
+    const silent = sheet.lines.flatMap((line, index) => {
+      const targets: ReturnType<typeof dummyTarget>[] = [];
+      const timeline = buildLineTimeline(
+        line,
+        (part) => {
+          const target = dummyTarget(part.text.length, kanjiOf(part.text).length);
+          targets.push(target);
+          return target;
+        },
+        { span: gapAfter(sheet.lines, index), camera: {} },
       );
+      // 帳の字を動かしているトゥイーンがあるか。**当て先が作られたかではない** —
+      // 出せない時は当て先ごと作らないが、そこに頼ると「作りはしたが動かない」を見逃す
+      const moving = new Set(tweensOf(timeline).flatMap((tween) => tween.targets()));
+      timeline.kill();
+
+      return partsOf(line).flatMap((part, order) =>
+        part.veil !== undefined &&
+        isVeilName(part.veil) &&
+        !targets[order].veilGlyphs.some((glyph) => moving.has(glyph))
+          ? [`${part.text}: ${part.veil}（漢字 ${kanjiOf(part.text).length} 字）`]
+          : [],
+      );
+    });
 
     expect(silent).toStrictEqual([]);
   });
@@ -941,6 +964,7 @@ function worstCase(lines: readonly LyricLine[]) {
  */
 function dummyTarget(count: number, kanji = 0) {
   const slices: Element[] = [];
+  const veilGlyphs: HTMLElement[] = [];
 
   return {
     frame: {} as HTMLElement,
@@ -969,11 +993,13 @@ function dummyTarget(count: number, kanji = 0) {
     createSub: () => ({}) as HTMLElement,
     // 帳（M14-1）。**字の数は本番どおりに揃える**（破片と同じ理由）— 減らすと、
     // 字の数で持ち時間が決まる帳の尺が実際より短く測れる。
-    // 数の出どころは `kanjiOf`（呼ぶ側が語句の歌詞から数える）
-    createVeil: () => ({
-      box: {} as HTMLElement,
-      glyphs: Array.from({ length: kanji }, () => ({}) as HTMLElement),
-    }),
+    // 数の出どころは `kanjiOf`（呼ぶ側が語句の歌詞から数える）。
+    // **立てた字は控える** — 「帳が実際に出たか」を組み立てから読むのに要る
+    veilGlyphs,
+    createVeil: () => {
+      veilGlyphs.push(...Array.from({ length: kanji }, () => ({}) as HTMLElement));
+      return veilGlyphs;
+    },
     createSpark: (spark: SparkShape) => ({
       box: {} as HTMLElement,
       // 破片の数は本番どおりに揃える。減らすと、破片ごとに時間差を付ける案

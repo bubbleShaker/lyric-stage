@@ -1,11 +1,16 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import styleCss from '../style.css?raw';
 import {
   buildKanjiVeil,
+  fitsVeil,
   isVeilName,
   kanjiOf,
   MIN_VEIL_SLOT,
   resolveVeil,
   veils,
+  VEIL_CLASS,
+  VEIL_GLYPH_CLASS,
+  VEIL_LAYER_CLASS,
   type VeilEntry,
   type VeilTarget,
 } from './kanji-veil';
@@ -22,13 +27,10 @@ import {
  * これで尺と値の動きを読める（`drift.test.ts` / `spark.test.ts` と同じ手）。
  */
 function dummyTarget(count: number): VeilTarget {
-  return {
-    box: {} as HTMLElement,
-    glyphs: Array.from(
-      { length: count },
-      () => ({ opacity: 0, xPercent: 0, yPercent: 0, scale: 1 }) as unknown as HTMLElement,
-    ),
-  };
+  return Array.from(
+    { length: count },
+    () => ({ opacity: 0, xPercent: 0, yPercent: 0, scale: 1 }) as unknown as HTMLElement,
+  );
 }
 
 afterEach(() => {
@@ -119,6 +121,30 @@ describe('buildKanjiVeil', () => {
     expect(glyph.opacity).toBeGreaterThan(0);
   });
 
+  it('登場が長い一文では、待ちがそのぶん後ろへ動く', () => {
+    // **待ちは定数だけでは足りない**（レビュー指摘 🟡）。`vertical` の着地は文字数で
+    // 伸びる（最長 1.3 秒）ので、定数の待ちだとまだ降りている字の上に帳が浮かぶ。
+    // 実測した着地（`after`）を受け取り、`lead` はその後ろに置く間として働く
+    const after = 1.3;
+    const timeline = buildKanjiVeil(dummyTarget(3), entry, { span: 14, after });
+    const glyph = timeline.getChildren()[0].targets()[0] as { opacity: number };
+
+    timeline.time(after * 0.9 + entry.lead);
+    expect(glyph.opacity).toBe(0);
+
+    timeline.time(after + entry.lead + entry.slot * entry.life * 0.5);
+    expect(glyph.opacity).toBeGreaterThan(0);
+  });
+
+  it('待ちが伸びたぶんも滞在に収める', () => {
+    // 待ちを後ろへ動かしたぶん、1 字あたりの持ち時間が縮む（＝はみ出さない）
+    const span = 12;
+    const timeline = buildKanjiVeil(dummyTarget(4), entry, { span, after: 1.3 });
+
+    expect(timeline.duration()).toBeGreaterThan(0);
+    expect(timeline.duration()).toBeLessThanOrEqual(span);
+  });
+
   it('字が増えても滞在からはみ出さない', () => {
     // 持ち時間を望みの値から縮めて詰める。**間引きはしない**ので、
     // 6 字でも 6 字ぶんが同じ滞在に収まる
@@ -155,6 +181,15 @@ describe('buildKanjiVeil', () => {
     }
   });
 
+  it('出るかどうかは組み立てる前に決められる', () => {
+    // 当て先（DOM）を作る前に呼べる形にしてある。呼ばずに組み立てても
+    // 明滅が速くなることは無い（判定は buildKanjiVeil の中にも残っている）
+    expect(fitsVeil(4, entry, { span: 9 })).toBe(true);
+    expect(fitsVeil(6, entry, { span: 4 })).toBe(false);
+    expect(fitsVeil(0, entry, { span: 30 })).toBe(false);
+    expect(fitsVeil(3, entry, { span: Infinity })).toBe(false);
+  });
+
   it('滞在が無限なら出さない', () => {
     // 最終行の猶予は Infinity になりうる（domain の lineSpanAt）。
     // 通すと 1 字が永久に出入りするトゥイーンになる
@@ -164,7 +199,7 @@ describe('buildKanjiVeil', () => {
   it('字は透明から現れて、透明へ戻る', () => {
     const target = dummyTarget(2);
     const timeline = buildKanjiVeil(target, entry, { span: 12 });
-    const [first] = target.glyphs as unknown as { opacity: number }[];
+    const [first] = target as unknown as { opacity: number }[];
 
     timeline.time(0);
     expect(first.opacity).toBe(0);
@@ -180,7 +215,7 @@ describe('buildKanjiVeil', () => {
   it('案ごとの散らし方がそのまま字に置かれる', () => {
     const target = dummyTarget(2);
     const timeline = buildKanjiVeil(target, veils.pair, { span: 12 });
-    const glyphs = target.glyphs as unknown as { xPercent: number; yPercent: number }[];
+    const glyphs = target as unknown as { xPercent: number; yPercent: number }[];
 
     timeline.time(veils.pair.lead + 0.01);
     expect(glyphs[0].xPercent).toBeCloseTo(veils.pair.spot(0).x);
@@ -188,5 +223,67 @@ describe('buildKanjiVeil', () => {
     // 2 字目は自分の出番が来るまで置かれない（`set` が出番の時刻に立っている）
     timeline.time(timeline.duration());
     expect(glyphs[1].xPercent).toBeCloseTo(veils.pair.spot(1).x);
+  });
+});
+
+describe('veils（案のレジストリ）', () => {
+  it('どの案も出入りが寿命に収まる', () => {
+    // 出入りの合計が寿命を超えると、居座る段の長さが負になる（gsap は落ちないので
+    // 画では「重なり方が案の狙いと違う」としか出ない）
+    for (const [name, plan] of Object.entries(veils) as [string, VeilEntry][]) {
+      expect(plan.fade.in + plan.fade.out, name).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it('どの案も待ちが 0 以上で、寿命が持ち時間以上ある', () => {
+    for (const [name, plan] of Object.entries(veils) as [string, VeilEntry][]) {
+      expect(plan.lead, name).toBeGreaterThanOrEqual(0);
+      // 1 を下回ると字と字の間に「何も出ていない間」ができる。帳は続くものなので、
+      // 途切れさせたいなら持ち時間（slot）の側を伸ばす
+      expect(plan.life, name).toBeGreaterThanOrEqual(1);
+    }
+  });
+});
+
+describe('CSS との対応', () => {
+  // **コメントを落としてから走査する**（`spark.test.ts` と同じ）。このリポジトリは
+  // コメントにクラス名を書くので、素で見ると「説明を 1 行足しただけで緑になる」
+  const css = styleCss.replace(/\/\*[\s\S]*?\*\//g, '');
+  const ruleOf = (className: string) =>
+    new RegExp(`\\.${className}(?![\\w-])[^{]*\\{([^}]*)\\}`, 'g');
+  const declared = (className: string) => ruleOf(className).test(css);
+
+  const cases: [string, string][] = [
+    ['帳の層', VEIL_LAYER_CLASS],
+    ['帳の箱', VEIL_CLASS],
+    ['帳の字', VEIL_GLYPH_CLASS],
+    ...Object.entries(veils).map(([name, entry]): [string, string] => [
+      `案 ${name}`,
+      entry.className,
+    ]),
+  ];
+
+  it.each(cases)('%s のクラス .%s が style.css にある', (_label, className) => {
+    // レジストリは「名前 → クラス」の唯一の関門だが、その先の対応は無防備。
+    // 綴りを間違えても型検査も検査も通り、起きるのは「帳だけが出ない」という
+    // 例外も警告も出ない壊れ方（`decor.test.ts` / `spark.test.ts` と同じ穴）
+    expect(declared(className)).toBe(true);
+  });
+
+  it.each(Object.entries(veils))('%s は自分の大きさを配る', (_name, entry) => {
+    // 大きさは案ごとに違う（画面の高さの 46〜82%）。書き忘れると**どの案も同じ
+    // 大きさで出る**（フォールバックが効くので、例外にも赤にもならない）
+    const rules = [...css.matchAll(ruleOf(entry.className))].map(([, body]) => body);
+
+    expect(rules.some((body) => body.includes('--veil-size'))).toBe(true);
+  });
+
+  it('字は塗らず、輪郭だけで描かれる', () => {
+    // **依頼の核がここ**（作者が選んだのは「輪郭だけ」）。塗りを足すと下に据えた
+    // 一文が透けなくなり、重ねる意味が変わる
+    const [, body] = ruleOf(VEIL_GLYPH_CLASS).exec(css) ?? [];
+
+    expect(body).toContain('color: transparent');
+    expect(body).toContain('-webkit-text-stroke');
   });
 });

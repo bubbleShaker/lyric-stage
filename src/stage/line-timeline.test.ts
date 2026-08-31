@@ -2,6 +2,7 @@ import gsap from 'gsap';
 import { describe, expect, it, vi } from 'vitest';
 import type { LyricLine } from '../domain/lyrics';
 import { CAMERA_LEAD, CAMERA_MOVE, framingFor } from './camera';
+import { EXIT_DURATION } from './exit';
 import { kanjiOf } from './kanji-veil';
 import { buildLineTimeline, LINE_SETTLED, type PartTarget } from './line-timeline';
 
@@ -79,7 +80,7 @@ function dummyTarget(
       veilClasses.push(className);
       // 字は本物と同じ数だけ立てる（破片と同じ理由）。数で持ち時間が決まるので、
       // 減らすと帳の尺が実際より短く測れる
-      return { box: extra(), glyphs: Array.from({ length: kanji }, () => extra()) };
+      return Array.from({ length: kanji }, () => extra());
     },
   };
 }
@@ -818,10 +819,14 @@ describe('一文に重ねる漢字の帳（M14-1）', () => {
     timeline.kill();
   });
 
-  it('帳は語句が居られる長さに収まる', () => {
-    // 滞在を知っているのはここだけなので、渡し間違えると**行が変わっても帳だけが
-    // 続く**（次の行では要素ごと捨てられるので、画では「途中で切れる」に見える）。
-    // **行の尺では測れない** — 漂いが滞在いっぱいまで伸ばすので必ず等しくなる
+  it('帳は語句が引き始めるまでに畳まれる', () => {
+    // 滞在を知っているのはここだけなので、渡し間違えると**引き始めた語句の上に
+    // 帳だけが残る**（次の行では要素ごと捨てられるので、画では「途中で切れる」に見える）。
+    //
+    // **上限は `span` ではなく「退場が始まる時刻」**（レビュー指摘 🟡）。`span` と
+    // 比べるだけだと、`(leaves ?? span)` を `span` に書き換える変異（退場と重なる
+    // 0.4 秒ぶん帳が伸びる）が緑のまま通る。
+    // **行の尺では測れない**のも同じ理由 — 漂いが滞在いっぱいまで伸ばすので必ず等しくなる
     const at = 1.5;
     const { targets, timeline } = build(
       {
@@ -835,8 +840,27 @@ describe('一文に重ねる漢字の帳（M14-1）', () => {
     const veil = veilOf(timeline, targets[0]);
 
     expect(veil).toBeDefined();
-    expect(at + (veil?.duration() ?? 0)).toBeLessThanOrEqual(VEIL_SPAN);
+    expect(at + (veil?.duration() ?? 0)).toBeLessThanOrEqual(VEIL_SPAN - EXIT_DURATION);
     timeline.kill();
+  });
+
+  it('長い一文では、帳が重なり始めるのが後ろへ動く', () => {
+    // 待ちの本体は「登場が終わる時刻」の実測で、レジストリの `lead` はその上乗せ
+    // （`stage/kanji-veil.ts`）。ここが定数だけになると、**まだ降りている字の上に
+    // 帳が浮かぶ**
+    const starts = ['夢幻', '夢に眠る幻が掌に降り注ぐ'].map((text) => {
+      const { targets, timeline } = build(
+        { time: 0, text, parts: [{ text, at: 0, effect: 'vertical', veil: 'single' }] },
+        VEIL_SPAN,
+      );
+      // 帳の中で最初に立つもの（1 字目の置き場所を書く set）が、待ちの終わりに当たる
+      const first = veilOf(timeline, targets[0])?.getChildren(true, true, false)[0].startTime();
+      timeline.kill();
+
+      return first ?? 0;
+    });
+
+    expect(starts[1]).toBeGreaterThan(starts[0]);
   });
 
   it('行に書いた帳は、刻んだ語句には出ない', () => {

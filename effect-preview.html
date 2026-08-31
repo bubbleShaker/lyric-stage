@@ -52,6 +52,7 @@
       import { ScaledCanvas, systemPixelRatio } from './src/stage/scaled-canvas.ts';
       import { mountScreenDecor } from './src/stage/screen-decor.ts';
       import { sparks } from './src/stage/spark.ts';
+      import { veils } from './src/stage/kanji-veil.ts';
       import { BEAT_GRID } from './src/work.ts';
       import './src/style.css';
 
@@ -132,6 +133,8 @@
        * 語句に刻んだ行を試す（M8-5）。本編シートの parts と同じ形を渡す。
        * **ここは parseLyricSheet を通らない**ので、本番なら弾かれる形（at の逆順など）も
        * そのまま動く。形の検証を見たい時は src/domain/lyrics.test.ts の方を見ること。
+       * 帳（M14-1）を見るときは滞在を伸ばすこと（window.lineSpan = 12 など）。
+       * 帳は語句が居るあいだ続くので、既定の 3 秒では「収まらないから出さない」に落ちる。
        * 例: playParts([
        *       { text: 'シャイニング', at: 0, effect: 'rushIn', place: { at: 'middle-left', size: 'lg' } },
        *       { text: 'スター', at: 0.95, effect: 'zoom', place: { at: 'top-right', size: 'xl' } },
@@ -197,6 +200,7 @@
           `decor（語句に貼り付く図形。playParts でのみ指定）: ${Object.keys(decors).join(' / ')}`,
           `sub（語句に添える英字。playParts でのみ指定。例 sub: 'LIKE MAGIC'）`,
           `spark（語句に一瞬だけ添える装飾。playParts でのみ指定。1 語句に 1 つ）: ${Object.keys(sparks).join(' / ')}`,
+          `veil（一文に重ねる漢字の帳。playParts でのみ指定。滞在いっぱい続くので window.lineSpan を伸ばすこと）: ${Object.keys(veils).join(' / ')}`,
           `背景の盛り上がりと拍の衝撃は window.loud = 0〜1 で動かせます。`,
           `画の明暗は polarity() で裏返せます（polarity('ink') / polarity('paper')）。`,
         ].join('\n'),

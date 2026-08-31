@@ -47,21 +47,27 @@ import type { EffectTimeline } from './effects';
  */
 
 /**
- * 帳の箱と字に当たるクラス。**中身は `src/style.css` が持つ。**
+ * 帳の層・箱・字に当たるクラス。**中身は `src/style.css` が持つ。**
+ *
+ * 層（`VEIL_LAYER_CLASS`）はカメラの外に 1 枚だけ立ち、行をまたいで使い回される
+ * （理由は `LyricStage.veilLayer`）。箱は語句 1 つにつき 1 枚。
  *
  * 定数にしてあるのは `SPARK_BASE_CLASS` と同じ理由 — 当てるのは `LyricStage` で、
  * 形（大きさ・輪郭の太さ）を決めるのは CSS、という分担を綴りで繋がないため。
  */
+export const VEIL_LAYER_CLASS = 'stage__veils';
 export const VEIL_CLASS = 'stage__veil';
 export const VEIL_GLYPH_CLASS = 'stage__veil-glyph';
 
-/** 帳の当て先。`SparkTarget`（`{ box, pieces }`）と同じ形 */
-export interface VeilTarget {
-  /** 字を入れる箱。語句の漂う層に貼り付いている */
-  readonly box: HTMLElement;
-  /** 箱の中に立った字。**数は文の漢字の数**（`kanjiOf` が決める） */
-  readonly glyphs: HTMLElement[];
-}
+/**
+ * 帳の当て先 — **立った字だけ。**
+ *
+ * `SparkTarget` は `{ box, pieces }` の形だが、こちらは箱を渡さない。あちらは箱に
+ * 進み具合（`--spark-head`）を書く案があるので箱を読む者が居るが、帳は字だけを
+ * 動かす。**読まない口を、形を揃えるためだけに残さない**（レビュー指摘 🟢）。
+ * 箱そのものは `LyricStage` が立てて字を入れる（大きさと輪郭を CSS が配るため）。
+ */
+export type VeilTarget = readonly HTMLElement[];
 
 /** 字ごとの置き場所。**すべて字自身の大きさに対する割合**（`glitch` / `shatter` と同じ単位） */
 export interface VeilSpot {
@@ -80,11 +86,16 @@ export interface VeilEntry {
    */
   readonly className: string;
   /**
-   * 一文が降り切るのを待つ間（秒）。
+   * 一文が降り切ってから、さらに置く間（秒）。**待ちの本体ではなく上乗せ。**
    *
    * 帳を語句と同時に始めると、**文が読まれる前に上から字が被さる**。据えた一文が
-   * 読めることが帳の前提なので、縦に降りる演出（`vertical` は 0.5 秒 + 文字送り）が
-   * 終わるだけの間を空ける。
+   * 読めることが帳の前提なので、登場が終わるのを待ってから重ね始める。
+   *
+   * **待ちを定数だけで持ってはいけない**（レビュー指摘 🟡）。`vertical` の着地は
+   * `0.5 + 文字送り` で、14 字を超える一文では 1.3 秒に達する — 定数の待ちだと
+   * **長い一文ほど、まだ降りている字の上に帳が浮かぶ**。実際に降り切る時刻は
+   * 組み立てる側（`line-timeline.ts`）が登場のタイムラインから測って `after` で渡し、
+   * ここはその後ろに置く間だけを持つ。
    */
   readonly lead: number;
   /**
@@ -198,8 +209,11 @@ export function isVeilName(name: string): name is VeilName {
  * 帳にも 2 度出るのが文に対して正直な写し方になる。
  */
 export function kanjiOf(text: string): string[] {
-  return [...text].filter((char) => /\p{Script=Han}/u.test(char));
+  return [...text].filter((char) => KANJI.test(char));
 }
+
+/** 漢字かどうか。`filter` の中に書くと呼び出しのたびに作り直される（レビュー指摘 🟢） */
+const KANJI = /\p{Script=Han}/u;
 
 /** `resolveVeil` の任意指定（`ResolveOptions` と同じ形） */
 export interface ResolveVeilOptions {
@@ -242,6 +256,36 @@ export interface VeilOptions {
    * 渡し忘れた所で帳だけが静かに出なくなる。
    */
   readonly span: number;
+  /**
+   * 一文が降り切る時刻（語句が出てから何秒か）。**登場の実測。**
+   *
+   * 省略できる（0 として扱う）のは `VeilEntry.lead` の説明のとおり — 待ちの本体は
+   * こちらで、`lead` はその後ろに置く間。渡し忘れても帳は出るので `span` のように
+   * 必須にはしないが、**渡す側（`line-timeline.ts`）が登場から測ること**は
+   * 「長い一文では帳が重なり始めるのが後ろへ動く」（`line-timeline.test.ts`）が見張る。
+   */
+  readonly after?: number;
+}
+
+/**
+ * その字数・その滞在で帳が出るかどうか。**組み立てる前に呼べる。**
+ *
+ * `buildKanjiVeil` は出せないとき空のタイムラインを返すが、それだと**当て先（DOM）を
+ * 作った後で「出さない」が決まる**ことになり、動きを減らす設定では当て先ごと立てない
+ * という作り（`resolveVeil`）と非対称になる（レビュー指摘 🟡）。
+ *
+ * 判定そのものは `buildKanjiVeil` の中にも残す。**呼ぶ側の順番に頼らない**ため
+ * （こちらを呼び忘れても、明滅が速くなるのではなく帳が出ないだけで済む）。
+ */
+export function fitsVeil(
+  count: number,
+  entry: VeilEntry,
+  { span, after = 0 }: VeilOptions,
+): boolean {
+  if (count === 0) return false;
+  if (!Number.isFinite(span)) return false;
+
+  return slotFor(count, span, entry, after) >= MIN_VEIL_SLOT;
 }
 
 /**
@@ -251,22 +295,20 @@ export interface VeilOptions {
  * null を返す形にすると呼ぶ側に分岐が増え、「帳が無い」ことを尺 0 として扱えなくなる。
  */
 export function buildKanjiVeil(
-  { glyphs }: VeilTarget,
+  glyphs: VeilTarget,
   entry: VeilEntry,
-  { span }: VeilOptions,
+  options: VeilOptions,
 ): EffectTimeline {
   const timeline = gsap.timeline();
+  const { span, after = 0 } = options;
 
-  if (glyphs.length === 0) return timeline;
-
-  // **`Infinity` を弾くのはここ**（`lineSpanAt` は無限を返しうる。`buildDrift` と同じ）。
+  // **`Infinity` を弾くのもここ**（`lineSpanAt` は無限を返しうる。`buildDrift` と同じ）。
   // 通すと持ち時間が `Infinity / n` ＝ `Infinity` になり、望みの値との比較が
-  // 素通りして 1 字が永久に出入りするトゥイーンになる
-  if (!Number.isFinite(span)) return timeline;
+  // 素通りして 1 字が永久に出入りするトゥイーンになる。
+  // 明滅の安全（上記）も同じ判定に含まれる — **間引かずに丸ごと出さない**
+  if (!fitsVeil(glyphs.length, entry, options)) return timeline;
 
-  const slot = slotFor(glyphs.length, span, entry);
-  // 明滅の安全（上記）。**間引かずに丸ごと出さない**
-  if (slot < MIN_VEIL_SLOT) return timeline;
+  const slot = slotFor(glyphs.length, span, entry, after);
 
   const life = slot * entry.life;
   const enter = life * entry.fade.in;
@@ -276,7 +318,7 @@ export function buildKanjiVeil(
     const spot = entry.spot(index);
     // **待ちはタイムラインの中に持つ。** 呼ぶ側に `part.at + lead` と書かせると、
     // 帳の尺（`duration()`）が待ちを含まなくなり、行の猶予に収まるかを測れない
-    const start = entry.lead + index * slot;
+    const start = after + entry.lead + index * slot;
 
     timeline
       // **置き場所は時間を持たない**（トゥイーンではなく set）。散らし方は案が決めるもので、
@@ -309,10 +351,10 @@ export function buildKanjiVeil(
 /**
  * 1 字あたりの持ち時間を決める。
  *
- * 最後の字が抜け終わるのは `(n - 1) * slot + slot * life` なので、そこが滞在に
- * 収まるように割り戻す。望みの値（`entry.slot`）より長くはしない（上記）。
+ * 最後の字が抜け終わるのは `after + lead + (n - 1) * slot + slot * life` なので、
+ * そこが滞在に収まるように割り戻す。望みの値（`entry.slot`）より長くはしない（上記）。
  */
-function slotFor(count: number, span: number, entry: VeilEntry): number {
-  const room = span - entry.lead;
+function slotFor(count: number, span: number, entry: VeilEntry, after: number): number {
+  const room = span - after - entry.lead;
   return Math.min(entry.slot, room / (count - 1 + entry.life));
 }
