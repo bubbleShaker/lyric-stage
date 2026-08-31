@@ -6,6 +6,7 @@ import {
   parseLyricSheet,
   partsOf,
   sliceSheet,
+  withPrelude,
   type LyricLine,
   type ResolvedPart,
 } from './domain/lyrics';
@@ -18,7 +19,7 @@ import { isVeilName, kanjiOf } from './stage/kanji-veil';
 import { buildLineTimeline, LINE_SETTLED } from './stage/line-timeline';
 import { isSparkName, sparks, type SparkShape } from './stage/spark';
 import { secondsPerBeat } from './domain/beat';
-import { BEAT_GRID, DEFAULT_SHEET_NAME, WORK_FADE, WORK_WINDOW } from './work';
+import { BEAT_GRID, DEFAULT_SHEET_NAME, PRELUDE, WORK_FADE, WORK_WINDOW } from './work';
 // Vite の ?raw は対象ファイルを文字列として読み込む。fs を使わずに済むので
 // Node の型定義をアプリ側の tsconfig に持ち込まなくてよい。
 import sampleJson from '../public/lyrics/sample.json?raw';
@@ -468,30 +469,9 @@ describe(`${DEFAULT_SHEET_NAME}.json`, () => {
     // 滞在を「行の猶予 - 語句が出る時刻」と手で書くと、本番が渡している
     // 「退場が始まるまで」（`exitStartFor` のぶん 0.4 秒短い）と食い違い、
     // **境界の割り当てが検査を通ったまま画から消える**。刻んだ行では食い違いはもっと大きい
-    const silent = sheet.lines.flatMap((line, index) => {
-      const targets: ReturnType<typeof dummyTarget>[] = [];
-      const timeline = buildLineTimeline(
-        line,
-        (part) => {
-          const target = dummyTarget(part.text.length, kanjiOf(part.text).length);
-          targets.push(target);
-          return target;
-        },
-        { span: gapAfter(sheet.lines, index), camera: {} },
-      );
-      // 帳の字を動かしているトゥイーンがあるか。**当て先が作られたかではない** —
-      // 出せない時は当て先ごと作らないが、そこに頼ると「作りはしたが動かない」を見逃す
-      const moving = new Set(tweensOf(timeline).flatMap((tween) => tween.targets()));
-      timeline.kill();
-
-      return partsOf(line).flatMap((part, order) =>
-        part.veil !== undefined &&
-        isVeilName(part.veil) &&
-        !targets[order].veilGlyphs.some((glyph) => moving.has(glyph))
-          ? [`${part.text}: ${part.veil}（漢字 ${kanjiOf(part.text).length} 字）`]
-          : [],
-      );
-    });
+    const silent = sheet.lines.flatMap((line, index) =>
+      silentVeilsOf(line, gapAfter(sheet.lines, index)),
+    );
 
     expect(silent).toStrictEqual([]);
   });
@@ -654,6 +634,31 @@ describe('WORK_WINDOW × 本編シート', () => {
   it('区間の頭に助走がある（いきなり歌から始まらない）', () => {
     // 1 小節ぶん（79.85 BPM で 3.0055 秒）を目安に、無音から入る
     expect(sliced.lines[0].time).toBeGreaterThan(1);
+  });
+
+  it('序が歌い出しに食い込まない', () => {
+    // 序（M14-2）は歌詞シートに書かず、切り出した後の頭に挿す（work.ts の PRELUDE）。
+    // **食い込むと `withPrelude` が投げる** — 起動時に落ちるので画面には
+    // 「歌詞ファイルを読み込めませんでした」しか出ない。値は定数なので、ここで止める
+    expect(() => withPrelude(sliced, PRELUDE)).not.toThrow();
+  });
+
+  it('序が助走の後に出て、歌い出しに繋がる', () => {
+    // 序が消えるのと 1 行目が出るのが同じ時刻。**間を空けると画が一度空になる**
+    // （無音の間奏に空の画面が数秒残る）ので、ぴったり繋げてある
+    const withIt = withPrelude(sliced, PRELUDE);
+    const sung = sliced.lines[0];
+
+    expect(withIt.lines[0]).toBe(PRELUDE);
+    expect(PRELUDE.time + (PRELUDE.duration ?? 0)).toBeCloseTo(sung.time, 2);
+  });
+
+  it('序の帳が実際に出る', () => {
+    // **序の尺（6.01 秒）に入る字数は限られる**（`MIN_VEIL_SLOT` の下限より、
+    // `single` なら 3 字まで）。一文を書き換えて漢字が増えると、綴りも組み合わせも
+    // 正しいのに**帳だけが黙って出なくなる**（画には縦の一文だけが残り、
+    // それはそれで成立してしまう）
+    expect(silentVeilsOf(PRELUDE, PRELUDE.duration ?? 0)).toStrictEqual([]);
   });
 
   it('最後の行が区間の終わりまでに収まる', () => {
@@ -1064,6 +1069,39 @@ function settledTimeOf(line: LyricLine, span: number): number {
   timeline.kill();
 
   return settled;
+}
+
+/**
+ * その行で「帳を書いたのに出ない」語句を挙げる（M14-1）。
+ *
+ * **本番と同じ組み立て（`buildLineTimeline`）で測る。** 滞在を手で計算すると、
+ * 本番が渡す「退場が始まるまで」（`exitStartFor` のぶん 0.4 秒短い）と食い違い、
+ * 境界の割り当てが検査を通ったまま画から消える。
+ *
+ * 見るのは**字が動いているか**であって、当て先が作られたかではない。出せない時は
+ * 当て先ごと作らない作りだが、そこに頼ると「作りはしたが動かない」を見逃す。
+ */
+function silentVeilsOf(line: LyricLine, span: number): string[] {
+  const targets: ReturnType<typeof dummyTarget>[] = [];
+  const timeline = buildLineTimeline(
+    line,
+    (part) => {
+      const target = dummyTarget(part.text.length, kanjiOf(part.text).length);
+      targets.push(target);
+      return target;
+    },
+    { span, camera: {} },
+  );
+  const moving = new Set(tweensOf(timeline).flatMap((tween) => tween.targets()));
+  timeline.kill();
+
+  return partsOf(line).flatMap((part, order) =>
+    part.veil !== undefined &&
+    isVeilName(part.veil) &&
+    !targets[order].veilGlyphs.some((glyph) => moving.has(glyph))
+      ? [`${part.text}: ${part.veil}（漢字 ${kanjiOf(part.text).length} 字）`]
+      : [],
+  );
 }
 
 /** 空白を落とす。画の都合で入れた空白で歌詞の一致を落としたくない */

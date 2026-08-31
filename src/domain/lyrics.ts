@@ -794,6 +794,41 @@ function displayEnd(lines: readonly LyricLine[], index: number): number {
  *
  * 元のシートは書き換えない（行は複製して返す）。
  */
+/**
+ * 切り出したシートの頭に、歌われない一行（序）を挿す（M14-2 / Issue #84）。
+ *
+ * **序を歌詞シートに書かない**ための口。シートは「歌われた歌詞」で、
+ * `src/lyric-sheets.test.ts` の検査群（`同じ歌詞の行には同じ演出が当たっている` /
+ * `語句が出る時刻が拍の格子に載っている` など）はどれもそれを前提にしている。
+ * 序は作品の作り（どの一文を掲げるか）なので、`src/work.ts` が持って組み立て時に挿す。
+ *
+ * **時刻は切り出した後の軸**（作品の何秒目か）。区間を動かすと序の居場所も動くので、
+ * 曲の先頭起点で書くと区間を広げるたびに書き直しになる。
+ *
+ * 歌い出しに食い込む序は**受け取らない**。据えた一文の上に次の行が重なると、
+ * 画は「読めない 2 つの文が重なったもの」になり、しかも**例外も検査の赤も出ない**。
+ * 値は `work.ts` の定数なので、ここで投げれば検査（`work.test.ts`）が落ちる。
+ */
+export function withPrelude(sheet: LyricSheet, prelude: LyricLine | null): LyricSheet {
+  if (prelude === null) return sheet;
+
+  const first = sheet.lines[0];
+  const end = prelude.time + (prelude.duration ?? 0);
+
+  if (prelude.time < 0) {
+    throw new LyricSheetError(`序の time が負です: ${prelude.time}`);
+  }
+  if (first !== undefined && end > first.time) {
+    throw new LyricSheetError(
+      `序が歌い出しに食い込んでいます: ${end} 秒まで出しますが、歌は ${first.time} 秒から始まります`,
+    );
+  }
+
+  // **極性はそのまま持ち越す。** 序は状態を変えない（`polarity` を持たない行を
+  // 足しても `createPolarityTrack` の変化点は増えない）
+  return { ...sheet, lines: [prelude, ...sheet.lines] };
+}
+
 export function sliceSheet(sheet: LyricSheet, workWindow: WorkWindow): LyricSheet {
   const lines: LyricLine[] = [];
 

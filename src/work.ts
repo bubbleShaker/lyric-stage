@@ -8,6 +8,7 @@
 
 import type { BeatGrid } from './domain/beat';
 import type { FadeSpans } from './domain/fade';
+import type { LyricLine } from './domain/lyrics';
 import { WHOLE_SONG, type WorkWindow } from './domain/work-window';
 
 /** 作品本編の歌詞シート名。?lyrics= の指定が無いときはこれを読む */
@@ -23,7 +24,10 @@ export const AUDIO_PATH = 'audio/maou_14_shining_star.mp3';
  * 曲の中で一番強く、前後とも切れ目になっている所を選んで、そこを作り込む。
  *
  * - `155.7`〜`179.78` は 24 秒の間奏（前の切れ目）
- * - `176.77` = 歌の 1 小節前（79.85 BPM / 1 小節 3.0055 秒）。助走を付けて始める
+ * - `170.76` = 歌の **3 小節前**（79.85 BPM / 1 小節 3.0055 秒）。**M14-2 で 2 小節ぶん
+ *   前へ広げた** — 序（`PRELUDE`）を置く場所で、間奏の尻なので歌には掛からない。
+ *   広げても**手で作り込む量は増えない**（序は 1 行・語句に刻まない）
+ * - `176.77` = 歌の 1 小節前。M14-2 より前はここが区間の頭だった（拍の格子の起点でもある）
  * - `179.78`〜 ラスサビ前半の 7 行。**1 行がちょうど 1 小節**（最後の行だけ 2 小節）
  * - `203.82` でサビ頭に折り返し、そこから 3 行（M12-1 / Issue #69 で足した）
  * - `215.84` = 区間の頭から 52 拍（13 小節）ちょうど
@@ -56,7 +60,7 @@ export const AUDIO_PATH = 'audio/maou_14_shining_star.mp3';
  *
  * **この区間は本編シートに固有。** どのシートに当てるかは workWindowFor が決める。
  */
-export const WORK_WINDOW: WorkWindow = { start: 176.77, end: 215.84 };
+export const WORK_WINDOW: WorkWindow = { start: 170.76, end: 215.84 };
 
 /**
  * そのシートを見るときの区間。
@@ -88,6 +92,58 @@ export function workWindowFor(sheetName: string): WorkWindow {
  * `domain/fade.ts` が持つ。
  */
 export const WORK_FADE: FadeSpans = { in: 2.254, out: 1.503 };
+
+/**
+ * 序（M14-2 / [Issue #84](https://github.com/bubbleShaker/lyric-stage/issues/84)）—
+ * **歌が始まる前に、一文を縦に掲げて漢字を重ねる。**
+ *
+ * 作者の依頼「最初に一文を縦に出して、そこから漢字を枠だけのフォントで重ねて
+ * フェードインしてはフェードアウトする」の「最初に」がこれ。仕組みは M14-1
+ * （`stage/kanji-veil.ts`）で、ここが持つのは**作品としての選択**（どの一文を、
+ * どこに、どの案で掲げるか）。
+ *
+ * **歌詞シートには書かない。** シートは「歌われた歌詞」で、`src/lyric-sheets.test.ts`
+ * の検査群はどれもそれを前提にしている（同じ歌詞には同じ演出／語句は拍の格子に載る
+ * ／全行に構図がある……）。歌われない一行を混ぜると、そのどれもが意味を変える。
+ * 挿すのは組み立て時（`domain/lyrics.ts` の `withPrelude`）。
+ *
+ * **時刻は区間の頭からの秒数。** `3.01` は 4 拍ちょうど（助走 1 小節ぶん）で、
+ * 頭のフェードが明けきる（`WORK_FADE.in` = 2.254）**後**に現れる。
+ * `duration` の `6.01` は 8 拍ちょうどで、**歌い出し（`9.02`）にぴったり繋がる** —
+ * 序が消えると同時に 1 行目が出る。
+ *
+ * **一文は本編の 1 行目と同じ**（`魔法が使えるような`）。歌われる前に一度掲げ、
+ * 帳が漢字を重ね、消えたところで歌がその文を引き取る。別の一文にすると
+ * 「歌と関係のない文が最初に出る」ことになるので、**掲げるなら歌う文**にした。
+ *
+ * **帳は `single`**（ひと文字ずつ）。序の尺（6.01 秒）に収まるのは 3 字までで
+ * （`MIN_VEIL_SLOT` の下限より、`魔`・`法`・`使` がちょうど収まる）、
+ * `pair` / `breath` は入らない。**案を変えるならここ 1 行**だが、その時は
+ * `work.test.ts` の「序の帳が実際に出る」が入るかどうかを見ること。
+ */
+export const PRELUDE: LyricLine = {
+  time: 3.01,
+  text: '魔法が使えるような',
+  effect: 'vertical',
+  duration: 6.01,
+  // **大きさは `md`。** `lg` にすると 9 字が縦組みの上限（`max-height: 80dvh`）に
+  // 収まらず、`な` だけが 2 段目へ折り返す（実測 1280×720）。カメラ（M13-4）が
+  // 一文を画面の高さに合わせて寄せるので、**段階を下げても画に出る大きさは変わらない**
+  // — 変わるのは折り返すかどうかだけ
+  place: { at: 'middle-right', size: 'md', nudge: { x: -0.05 } },
+  veil: 'single',
+};
+
+/**
+ * そのシートに掲げる序。**本編以外には無い**（`workWindowFor` と同じ形）。
+ *
+ * 開発用の `?lyrics=sample` は 1〜33 秒の別の曲構成なので、序を挿すと
+ * **歌い出しに食い込んで `withPrelude` が投げる**。対応付けをここに置くのは、
+ * 組み立て側（main.ts）に三項演算子で書くとテストが届かないため。
+ */
+export function preludeFor(sheetName: string): LyricLine | null {
+  return sheetName === DEFAULT_SHEET_NAME ? PRELUDE : null;
+}
 
 /**
  * 拍の格子（M8-4 / Issue #49）。**この曲の実測値。**

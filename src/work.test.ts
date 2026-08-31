@@ -2,7 +2,17 @@ import { describe, expect, it } from 'vitest';
 import { secondsPerBeat } from './domain/beat';
 import { createFadeCurve } from './domain/fade';
 import { WHOLE_SONG } from './domain/work-window';
-import { BEAT_GRID, DEFAULT_SHEET_NAME, WORK_FADE, WORK_WINDOW, workWindowFor } from './work';
+import { isAnchorName, isSizeName } from './stage/composition';
+import { isEffectName } from './stage/effects';
+import { isVeilName } from './stage/kanji-veil';
+import {
+  BEAT_GRID,
+  DEFAULT_SHEET_NAME,
+  PRELUDE,
+  WORK_FADE,
+  WORK_WINDOW,
+  workWindowFor,
+} from './work';
 
 /**
  * 作品固有の値そのものを検証する。
@@ -51,7 +61,9 @@ describe('WORK_WINDOW', () => {
   it('手で作り込める尺に収まっている', () => {
     // 上限は「1 語句ずつ手で構図を置ける量」。語句の構図は 1 つずつ手で置くので、
     // 区間を広げるほど作り込む量がそのまま増える。**M12-1（Issue #69）で作者が
-    // 「あと 10 秒」と言って 39.07 秒（10 行 / 27 語句）になったので 40 秒へ上げた。**
+    // 「あと 10 秒」と言って 39.07 秒（10 行 / 27 語句）になったので 40 秒へ上げ、
+    // **M14-2 で序のぶん（6.01 秒）を足して 46 秒にした** — 上げてよいのは
+    // 「手で置く語句が増えない伸び」だけで、序は 1 行・語句に刻まないのでそれに当たる。**
     // **余白は 1 秒だけにする**（レビュー指摘 🟢）。歯止めなので、次に伸ばす人が
     // 必ずここを読む位置に置く（余裕を持たせると 2 行ぶん黙って広がれてしまう）。
     // ここは作り込みが追いつかない長さへ黙って広がることを止めるための歯止めで、
@@ -68,7 +80,7 @@ describe('WORK_WINDOW', () => {
     // 「切り出すとラスサビの 10 行が残る」の方
     const length = WORK_WINDOW.end - WORK_WINDOW.start;
     expect(length).toBeGreaterThan(20);
-    expect(length).toBeLessThan(40);
+    expect(length).toBeLessThan(46);
   });
 });
 
@@ -95,5 +107,52 @@ describe('WORK_FADE', () => {
   it('作品の半分を覆っていない', () => {
     // フェードは閉じ方であって作品ではない。長すぎると「薄い画をずっと見ている」ことになる
     expect(WORK_FADE.in + WORK_FADE.out).toBeLessThan(length / 2);
+  });
+});
+
+describe('PRELUDE（序 / M14-2）', () => {
+  const perBeat = secondsPerBeat(BEAT_GRID);
+  const end = PRELUDE.time + (PRELUDE.duration ?? 0);
+
+  it('出る時刻と消える時刻が拍の上に載っている', () => {
+    // 区間の頭・終わり・フェードと同じ扱い（許容 0.05 拍 ≒ 38ms）。序は歌の前に
+    // 置くものなので、拍から外れると**歌い出しへの繋がりだけが緩む**
+    const offGrid = [PRELUDE.time, end]
+      .map((time) => time / perBeat)
+      .filter((beats) => Math.abs(beats - Math.round(beats)) >= 0.05);
+
+    expect(offGrid).toStrictEqual([]);
+  });
+
+  it('頭のフェードが明けてから出る', () => {
+    // 明ける前に出すと、序は薄れた状態で現れて途中から濃くなる。
+    // 「無音から画が立ち上がり、そこへ一文が降りる」という順を守る
+    expect(PRELUDE.time).toBeGreaterThan(WORK_FADE.in);
+  });
+
+  it('区間の中に収まっている', () => {
+    expect(end).toBeLessThanOrEqual(WORK_WINDOW.end - WORK_WINDOW.start);
+  });
+
+  it('演出・構図・帳の名前が実在する', () => {
+    // シートの綴りは lyric-sheets.test.ts が落とすが、**序はシートに載らない**ので
+    // その網に掛からない。同じ壊れ方（綴り間違いは既定に落ちるか、黙って消える）を
+    // ここで止める
+    expect(PRELUDE.effect !== undefined && isEffectName(PRELUDE.effect)).toBe(true);
+    expect(PRELUDE.place?.at !== undefined && isAnchorName(PRELUDE.place.at)).toBe(true);
+    expect(PRELUDE.place?.size !== undefined && isSizeName(PRELUDE.place.size)).toBe(true);
+    expect(PRELUDE.veil !== undefined && isVeilName(PRELUDE.veil)).toBe(true);
+  });
+
+  it('掲げる一文が縦組みで読める（ラテン文字を含まない）', () => {
+    // 縦組みはラテン文字を横倒しにする（M4-3 で本編に対して決めた線）。
+    // 序も同じ組み方なので、同じ制限が掛かる
+    expect(/[\p{Script=Latin}\p{Nd}]/u.test(PRELUDE.text)).toBe(false);
+  });
+
+  it('語句に刻んでいない（一文を据え置く）', () => {
+    // 帳の前提（stage/kanji-veil.ts）。刻むとカメラが語句を追い始め、
+    // 据えた一文の上に帳を重ねるという形が崩れる
+    expect(PRELUDE.parts).toBeUndefined();
   });
 });

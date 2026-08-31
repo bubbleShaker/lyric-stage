@@ -11,6 +11,7 @@ import {
   partsOf,
   polarityAt,
   sliceSheet,
+  withPrelude,
   type LyricLine,
   type LyricSheet,
 } from './lyrics';
@@ -997,5 +998,52 @@ describe('sliceSheet（極性の持ち越し）', () => {
       undefined,
       'ink',
     ]);
+  });
+});
+
+describe('withPrelude', () => {
+  /** 切り出した後のシート（作品の何秒目か、の軸） */
+  const sliced = { title: 'w', lines: [{ time: 9.02, text: '魔法が使えるような' }] };
+  const prelude = { time: 3.01, text: '魔法が使えるような', duration: 6.01, veil: 'single' };
+
+  it('序が無ければそのまま返す', () => {
+    // 本編以外のシート（`preludeFor` が null を返す）はここを素通りする
+    expect(withPrelude(sliced, null)).toBe(sliced);
+  });
+
+  it('序を頭に挿す', () => {
+    const withIt = withPrelude(sliced, prelude);
+
+    expect(withIt.lines).toStrictEqual([prelude, ...sliced.lines]);
+  });
+
+  it('元のシートを書き換えない', () => {
+    withPrelude(sliced, prelude);
+
+    expect(sliced.lines).toHaveLength(1);
+  });
+
+  it('極性はそのまま持ち越す', () => {
+    // 序は状態を変えない。持ち越しを落とすと、**序のあいだだけ画が既定の明暗に戻る**
+    const inked = { ...sliced, polarity: 'ink' as const };
+
+    expect(withPrelude(inked, prelude).polarity).toBe('ink');
+  });
+
+  it('歌い出しに食い込む序は受け取らない', () => {
+    // 据えた一文の上に歌の 1 行目が重なると、読めない 2 つの文が重なった画になる。
+    // 例外も検査の赤も出ない壊れ方なので、入口で塞ぐ
+    expect(() => withPrelude(sliced, { ...prelude, duration: 6.02 })).toThrow(/食い込/u);
+  });
+
+  it('負の時刻の序は受け取らない', () => {
+    expect(() => withPrelude(sliced, { ...prelude, time: -1 })).toThrow(/time/u);
+  });
+
+  it('行の無いシートにも挿せる', () => {
+    // 歌詞が 1 行も残らない区間（開発中に起こりうる）でも、序だけは出る
+    const empty = { title: 'w', lines: [] };
+
+    expect(withPrelude(empty, prelude).lines).toStrictEqual([prelude]);
   });
 });

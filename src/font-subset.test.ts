@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { parseLyricSheet, partsOf } from './domain/lyrics';
 import { TEXT_CLASS } from './stage/effects';
 import { VEIL_GLYPH_CLASS } from './stage/kanji-veil';
+import { PRELUDE } from './work';
 import { SUB_CLASS } from './stage/sub-text';
 // ?raw は対象ファイルを文字列として読み込む Vite の機能。fs を使わずに済むので
 // Node の型定義をアプリ側の tsconfig に持ち込まなくてよい（lyric-sheets.test.ts と同じ）
@@ -134,6 +135,18 @@ describe('書体のサブセット', () => {
       // 「今は画に出ないから無くていい」にすると広げた瞬間に崩れる。
       // sample.json（?lyrics=sample）も公開物なので一緒に見る
       const missing = [...charsInSheets()].filter((char) => !covered.has(char));
+
+      expect(missing).toStrictEqual([]);
+    });
+
+    it('序の一文の文字も持っている', () => {
+      // **序（M14-2）は歌詞シートに載らない**ので、上の突き合わせにも
+      // tools/subset-font.mjs の集計にも掛からない。今は本編の 1 行目と同じ一文なので
+      // たまたま揃っているが、**一文を書き換えた日に、その字だけが別の書体で出る**
+      // （字が無いとブラウザは 1 文字ずつ次の候補へ落ちるので、豆腐にすらならない）。
+      // 帳に出るのは漢字だけだが、据える一文はかなも含めて全部描かれる
+      const covered = new Set([...(pick(charsets, `${face.name}.charset.txt`) ?? '')]);
+      const missing = [...PRELUDE.text].filter((char) => !covered.has(char));
 
       expect(missing).toStrictEqual([]);
     });

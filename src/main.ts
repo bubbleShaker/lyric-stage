@@ -3,7 +3,7 @@ import { SplitText } from 'gsap/SplitText';
 import { loadLyricSheet, lyricSheetNameFromLocation } from './app/load-lyric-sheet';
 import { createBeatPulse, createFlashPulse, shiftBeatGrid } from './domain/beat';
 import { createFadeCurve } from './domain/fade';
-import { createPolarityTrack, sliceSheet } from './domain/lyrics';
+import { createPolarityTrack, sliceSheet, withPrelude } from './domain/lyrics';
 import { mountLyricTimeline } from './app/lyric-timeline';
 import { Ticker } from './app/ticker';
 import { assetUrl } from './lib/asset';
@@ -30,6 +30,7 @@ import {
   DEFAULT_SHEET_NAME,
   LOUDNESS_RANGE,
   WORK_FADE,
+  preludeFor,
   workWindowFor,
 } from './work';
 import './style.css';
@@ -195,7 +196,9 @@ Promise.all([loadLyricSheet(sheetName), loadDeclaredFonts(document.fonts)])
   .then(([sheet]) => {
     // 区間で切り出し、時刻を区間の先頭起点に付け替える。以降 domain は
     // 「作品の何秒目か」しか扱わない（WHOLE_SONG なら素通し）
-    const sliced = sliceSheet(sheet, workWindow);
+    // 序（M14-2）は歌詞シートに書かない（理由は work.ts の PRELUDE）。
+    // **切り出した後の軸で挿す** — 序の時刻は「作品の何秒目か」で書いてある
+    const sliced = withPrelude(sliceSheet(sheet, workWindow), preludeFor(sheetName));
     mountLyricTimeline(player, ticker, sliced, stage);
 
     // 画の明暗（M9-3a / Issue #57）。**変化点だけを抜いて一度だけ組み立てる** —
