@@ -16,6 +16,7 @@ import {
   type EffectTimeline,
 } from './effects';
 import { buildLineTimeline, type PartTarget } from './line-timeline';
+import { kanjiOf, VEIL_CLASS, VEIL_GLYPH_CLASS, type VeilTarget } from './kanji-veil';
 import {
   SPARK_BASE_CLASS,
   SPARK_ECHO_CLASS,
@@ -180,6 +181,7 @@ export class LyricStage implements LyricPresenter {
       createDecor: (className) => this.insertDecor(text, className, layout),
       createSub: (sub) => this.insertSub(text, sub),
       createSpark: (spark) => this.appendSpark(drift, spark, part.text),
+      createVeil: (className) => this.appendVeil(drift, className, part.text),
       sliceChars: (count) => split.chars.map((char) => this.sliceChar(char as HTMLElement, count)),
     };
   }
@@ -306,6 +308,44 @@ export class LyricStage implements LyricPresenter {
     host.append(box);
 
     return { box, pieces };
+  }
+
+  /**
+   * 漢字の帳の当て先を、語句の**漂う層の末尾**に足す（M14-1 / Issue #84）。
+   *
+   * 一過性の装飾（`appendSpark`）と同じ場所・同じ理由 — 文字の上に重なることが
+   * 演出の中身なので、手前に置く。**「重なって初めて意味になる」点も同じ**なので、
+   * `ghost` に付けた注意（奥行きを動かす演出と噛み合わない）はこちらにも当てはまる。
+   * 帳を当てる語句は据え置くのが前提なので、そもそも噛み合わせが起きない組み方に
+   * なっている（`src/lyric-sheets.test.ts` が見張る）。
+   *
+   * **立てる字は歌詞から決まる**（`kanjiOf`）。レジストリが数を宣言する `spark` と
+   * 違い、帳の字は文そのものなので、数も中身も語句の歌詞にしか無い。
+   *
+   * **箱ごと支援技術から隠す。** 帳の字は据えた一文に含まれている字の写しなので、
+   * 隠さないと**同じ漢字が 2 度読み上げられる**（`ghost` と同じ問題。本文側は
+   * SplitText が `aria-label` にまとめている）。
+   */
+  private appendVeil(host: HTMLElement, className: string, text: string): VeilTarget {
+    const box = document.createElement('div');
+    box.className = VEIL_CLASS;
+    box.classList.add(className);
+    box.setAttribute('aria-hidden', 'true');
+
+    const glyphs = kanjiOf(text).map((glyph) => {
+      const span = document.createElement('span');
+      span.className = VEIL_GLYPH_CLASS;
+      // 歌詞と同じく外から来た文字列なので、必ず textContent で入れる
+      span.textContent = glyph;
+
+      box.append(span);
+
+      return span;
+    });
+
+    host.append(box);
+
+    return { box, glyphs };
   }
 
   /**

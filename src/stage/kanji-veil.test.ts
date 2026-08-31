@@ -1,0 +1,192 @@
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+  buildKanjiVeil,
+  isVeilName,
+  kanjiOf,
+  MIN_VEIL_SLOT,
+  resolveVeil,
+  veils,
+  type VeilEntry,
+  type VeilTarget,
+} from './kanji-veil';
+
+/**
+ * 帳（M14-1 / Issue #84）— 一文の上に漢字を重ねる第 5 の軸。
+ *
+ * 検査できるのは**時間の組み立てと、字の選び方**だけ。「重なって見えるか」は
+ * 目で見るしかないので、`effect-preview.html` と見本のページで確かめる。
+ */
+
+/**
+ * 当て先のダミー。gsap は要素でなくただのオブジェクトにも書けるので、
+ * これで尺と値の動きを読める（`drift.test.ts` / `spark.test.ts` と同じ手）。
+ */
+function dummyTarget(count: number): VeilTarget {
+  return {
+    box: {} as HTMLElement,
+    glyphs: Array.from(
+      { length: count },
+      () => ({ opacity: 0, xPercent: 0, yPercent: 0, scale: 1 }) as unknown as HTMLElement,
+    ),
+  };
+}
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+describe('kanjiOf', () => {
+  it('漢字だけを拾う', () => {
+    expect(kanjiOf('夢に眠る幻が掌に降り注ぐ')).toStrictEqual([
+      '夢',
+      '眠',
+      '幻',
+      '掌',
+      '降',
+      '注',
+    ]);
+  });
+
+  it('かな・カタカナ・ラテン文字・数字は拾わない', () => {
+    expect(kanjiOf('シャイニングスターを 3 つ')).toStrictEqual([]);
+    expect(kanjiOf("I'll believe of my sensation")).toStrictEqual([]);
+  });
+
+  it('同じ字が 2 度出れば 2 度拾う', () => {
+    // 帳は文の写しなので、重複を畳むと文と数が合わなくなる
+    expect(kanjiOf('降り募る想い、降り注ぐ')).toStrictEqual(['降', '募', '想', '降', '注']);
+  });
+
+  it('踊り字も漢字として拾う', () => {
+    // 用字（Script=Han）で見ているので、字の範囲を書き並べずに済んでいる
+    expect(kanjiOf('人々')).toStrictEqual(['人', '々']);
+  });
+});
+
+describe('resolveVeil', () => {
+  it('名前が無ければ出さない', () => {
+    expect(resolveVeil(undefined)).toBeNull();
+  });
+
+  it('登録済みの名前なら案が返る', () => {
+    expect(resolveVeil('single')).toBe(veils.single);
+  });
+
+  it('知らない名前は警告して出さない', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    expect(resolveVeil('sngle')).toBeNull();
+    expect(warn).toHaveBeenCalledOnce();
+  });
+
+  it('Object.prototype 由来の名前を拾わない', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    expect(resolveVeil('toString')).toBeNull();
+    expect(warn).toHaveBeenCalledOnce();
+    expect(isVeilName('toString')).toBe(false);
+  });
+
+  it('動きを減らす設定では出さない', () => {
+    // 当て先を作るかどうかの分岐がここに閉じているので、DOM ごと立たない
+    expect(resolveVeil('single', { reducedMotion: true })).toBeNull();
+  });
+});
+
+describe('buildKanjiVeil', () => {
+  const entry = veils.single;
+
+  it('字が 1 つも無ければ何もしない', () => {
+    expect(buildKanjiVeil(dummyTarget(0), entry, { span: 12 }).duration()).toBe(0);
+  });
+
+  it('滞在に収まる', () => {
+    const span = 9;
+    const timeline = buildKanjiVeil(dummyTarget(4), entry, { span });
+
+    expect(timeline.duration()).toBeGreaterThan(0);
+    expect(timeline.duration()).toBeLessThanOrEqual(span);
+  });
+
+  it('一文が降り切るのを待ってから始まる', () => {
+    const timeline = buildKanjiVeil(dummyTarget(3), entry, { span: 12 });
+    const glyph = timeline.getChildren()[0].targets()[0] as { opacity: number };
+
+    timeline.time(entry.lead * 0.5);
+    expect(glyph.opacity).toBe(0);
+
+    timeline.time(entry.lead + entry.slot * entry.life * 0.5);
+    expect(glyph.opacity).toBeGreaterThan(0);
+  });
+
+  it('字が増えても滞在からはみ出さない', () => {
+    // 持ち時間を望みの値から縮めて詰める。**間引きはしない**ので、
+    // 6 字でも 6 字ぶんが同じ滞在に収まる
+    const span = 14;
+    const timeline = buildKanjiVeil(dummyTarget(6), entry, { span });
+
+    expect(timeline.duration()).toBeLessThanOrEqual(span);
+    expect(new Set(timeline.getChildren().flatMap((child) => child.targets())).size).toBe(6);
+  });
+
+  it('滞在が余っても伸ばさない（一文だけが残る間ができる）', () => {
+    const timeline = buildKanjiVeil(dummyTarget(3), entry, { span: 40 });
+
+    // 望みの持ち時間で組んだ長さ ＝ 待ち + 2 字ぶんの送り + 最後の 1 字の寿命
+    const wanted = entry.lead + entry.slot * (2 + entry.life);
+    expect(timeline.duration()).toBeCloseTo(wanted);
+  });
+
+  it('明滅が速くなるくらいなら丸ごと出さない', () => {
+    // 6 字を 4 秒に詰めると 1 字あたり 1 秒を切る。間引いて詰め込むと文の漢字が
+    // 黙って欠けるので、帳そのものを出さない
+    expect(buildKanjiVeil(dummyTarget(6), entry, { span: 4 }).duration()).toBe(0);
+  });
+
+  it('どの案でも、出るからには 1 字あたり 1 秒を下回らない', () => {
+    // 光過敏性発作の閾値（1 秒に 3 回）に対する余裕。案を足したときの安全網でもある
+    for (const [name, plan] of Object.entries(veils) as [string, VeilEntry][]) {
+      const count = 5;
+      const timeline = buildKanjiVeil(dummyTarget(count), plan, { span: 30 });
+
+      // 待ちを除いた尺を、字の数と寿命で割り戻すと 1 字あたりの持ち時間になる
+      const slot = (timeline.duration() - plan.lead) / (count - 1 + plan.life);
+      expect(slot, name).toBeGreaterThanOrEqual(MIN_VEIL_SLOT);
+    }
+  });
+
+  it('滞在が無限なら出さない', () => {
+    // 最終行の猶予は Infinity になりうる（domain の lineSpanAt）。
+    // 通すと 1 字が永久に出入りするトゥイーンになる
+    expect(buildKanjiVeil(dummyTarget(3), entry, { span: Infinity }).duration()).toBe(0);
+  });
+
+  it('字は透明から現れて、透明へ戻る', () => {
+    const target = dummyTarget(2);
+    const timeline = buildKanjiVeil(target, entry, { span: 12 });
+    const [first] = target.glyphs as unknown as { opacity: number }[];
+
+    timeline.time(0);
+    expect(first.opacity).toBe(0);
+
+    // 1 字目の寿命の半ば（居座っている間）
+    timeline.time(entry.lead + entry.slot * entry.life * 0.5);
+    expect(first.opacity).toBeCloseTo(1);
+
+    timeline.time(timeline.duration());
+    expect(first.opacity).toBe(0);
+  });
+
+  it('案ごとの散らし方がそのまま字に置かれる', () => {
+    const target = dummyTarget(2);
+    const timeline = buildKanjiVeil(target, veils.pair, { span: 12 });
+    const glyphs = target.glyphs as unknown as { xPercent: number; yPercent: number }[];
+
+    timeline.time(veils.pair.lead + 0.01);
+    expect(glyphs[0].xPercent).toBeCloseTo(veils.pair.spot(0).x);
+
+    // 2 字目は自分の出番が来るまで置かれない（`set` が出番の時刻に立っている）
+    timeline.time(timeline.duration());
+    expect(glyphs[1].xPercent).toBeCloseTo(veils.pair.spot(1).x);
+  });
+});

@@ -873,6 +873,70 @@ body {
   color: var(--stage-accent);
 }
 
+/* --- 一文に重ねる漢字の帳（M14-1 / Issue #84。動きは src/stage/kanji-veil.ts） ---
+
+   据え置いた一文の上に、その文の漢字だけを大きな輪郭で重ねて明滅させる。
+   語句を 1 つずつ映すカメラ（M13-4）とは相反する作りなので、行の単位で切り替える。
+
+   一過性の装飾（.stage__spark）と同じく**文字より手前**に置かれるが、占める面積が
+   桁違いに大きい。重なることが演出の中身なので、隠れては意味が無い。 */
+.stage__veil {
+  position: absolute;
+  inset: 0;
+
+  /* 字は 1 マスの grid に積む。大きさの違う字どうしも中心が揃うので、
+     絶対配置 + translate(-50%) を字ごとに書かずに済む。
+     **ずらしは JS（gsap）が xPercent / yPercent で書く** — 字自身の大きさに
+     対する割合なので、画面が変わっても散らし方の比が保たれる（glitch と同じ単位） */
+  display: grid;
+  place-items: center;
+
+  /* 画面いっぱいの .stage__lines と同じ理由。帳は読むものでも押すものでもない
+     （読み上げからは JS 側で aria-hidden を当てて隠している） */
+  pointer-events: none;
+}
+
+.stage__veil-glyph {
+  /* 1 マスに全部を重ねる。書かないと字の数だけ行が増えて縦に並ぶ */
+  grid-area: 1 / 1;
+
+  font-family: var(--font-display);
+  font-weight: 900;
+  line-height: 1;
+
+  /* **大きさは画面の高さから決める**（語句の基準 --size-base には載せない）。理由は 2 つ —
+     縦組みの語句では基準が横組みのまま残ること（.stage__decor の注記）と、
+     帳が「語句に貼り付く添え物」ではなく画面を覆う層であること。
+     案ごとの値は下の --veil-size が配る */
+  font-size: calc(var(--veil-size, 0.42) * 100dvh);
+
+  /* **塗りは透明、輪郭だけ**（作者の選択）。下に据えた一文が透けて読める。
+     接頭辞の付いた -webkit-text-stroke だけを書くのは、**接頭辞の無い text-stroke が
+     どのブラウザにも実装されていない**ため（-webkit- 版は Chrome / Safari / Firefox が
+     揃って持つ）。太さを em で書くので、字の大小で線の細さの印象が変わらない */
+  color: transparent;
+  -webkit-text-stroke: 0.014em var(--stage-ink);
+
+  /* **出番が来るまで見えない。** 箱は語句が出た時刻に立つが、字が現れるのは
+     それぞれの出番（stage/kanji-veil.ts が set で置く）。ここを書かないと、
+     出番前の字まで素の姿で重なって出る（line-timeline.ts が枠を autoAlpha: 0 で
+     隠しておくのと同じ手当て） */
+  opacity: 0;
+}
+
+/* 案ごとの大きさ。**動きの値（間隔・寿命・散らし方）は stage/kanji-veil.ts が持つ** */
+.stage__veil--single {
+  --veil-size: 0.46;
+}
+
+.stage__veil--pair {
+  --veil-size: 0.6;
+}
+
+.stage__veil--breath {
+  --veil-size: 0.82;
+}
+
 /* --- 構図のアンカー（src/stage/composition.ts が当てる） ---
 
    端の余白は横 7% / 縦 10%。縦を厚めに取るのは、行の高さが幅よりずっと小さく、

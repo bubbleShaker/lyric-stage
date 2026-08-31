@@ -2,6 +2,7 @@ import gsap from 'gsap';
 import { describe, expect, it, vi } from 'vitest';
 import type { LyricLine } from '../domain/lyrics';
 import { CAMERA_LEAD, CAMERA_MOVE, framingFor } from './camera';
+import { kanjiOf } from './kanji-veil';
 import { buildLineTimeline, LINE_SETTLED, type PartTarget } from './line-timeline';
 
 /**
@@ -13,10 +14,12 @@ import { buildLineTimeline, LINE_SETTLED, type PartTarget } from './line-timelin
  */
 function dummyTarget(
   count: number,
+  kanji = 0,
 ): PartTarget & {
   readonly decorClasses: string[];
   readonly subTexts: string[];
   readonly sparkNames: string[];
+  readonly veilClasses: string[];
   /** 図形・英字・一過性の装飾に渡した当て先そのもの。gsap が書いた値を後から読むために控える */
   readonly extras: Record<string, unknown>[];
 } {
@@ -26,6 +29,8 @@ function dummyTarget(
   const subTexts: string[] = [];
   // 一過性の装飾（M10-1）。こちらは登録そのものが渡るので、クラス名で控える
   const sparkNames: string[] = [];
+  // 帳（M14-1）。一過性の装飾と同じくクラス名で控える
+  const veilClasses: string[] = [];
   const extras: Record<string, unknown>[] = [];
 
   const extra = () => {
@@ -51,6 +56,7 @@ function dummyTarget(
     decorClasses,
     subTexts,
     sparkNames,
+    veilClasses,
     extras,
     // 板（M13-5）。**呼ばれた時だけ立てる**ので、使わない演出では空のまま
     sliceChars: (n: number) =>
@@ -68,6 +74,12 @@ function dummyTarget(
       // 破片は本物と同じ数だけ立てる。数が違うと、破片ごとに違う値を書く演出
       // （burst の放射）の検査が「たまたま通る」ようになる
       return { box: extra(), pieces: Array.from({ length: spark.pieces }, () => extra()) };
+    },
+    createVeil: (className) => {
+      veilClasses.push(className);
+      // 字は本物と同じ数だけ立てる（破片と同じ理由）。数で持ち時間が決まるので、
+      // 減らすと帳の尺が実際より短く測れる
+      return { box: extra(), glyphs: Array.from({ length: kanji }, () => extra()) };
     },
   };
 }
@@ -108,7 +120,9 @@ function build(line: LyricLine, span = SPAN) {
   const timeline = buildLineTimeline(
     line,
     (part) => {
-      const target = dummyTarget(part.text.length);
+      // 帳（M14-1）が立てる字の数は語句の歌詞から決まる。**本物と同じ数え方**をしないと、
+      // 字の数で持ち時間が決まる帳の尺が実際とずれる
+      const target = dummyTarget(part.text.length, kanjiOf(part.text).length);
       targets.push(target);
       return target;
     },
@@ -728,6 +742,138 @@ describe('語句に一瞬だけ添える装飾（M10-1）', () => {
     );
 
     expect(targets[0].sparkNames).toEqual([]);
+    timeline.kill();
+  });
+});
+
+describe('一文に重ねる漢字の帳（M14-1）', () => {
+  /** 帳は行の滞在いっぱいを使うので、他の検査より長い尺で見る */
+  const VEIL_SPAN = 12;
+
+  it('書いた語句にだけ当て先を頼む', () => {
+    const { targets, timeline } = build(
+      {
+        time: 0,
+        text: '魔法が使える',
+        parts: [
+          { text: '魔法が', at: 0, veil: 'single' },
+          { text: '使える', at: 6 },
+        ],
+      },
+      VEIL_SPAN,
+    );
+
+    expect(targets.map((target) => target.veilClasses)).toEqual([['stage__veil--single'], []]);
+    timeline.kill();
+  });
+
+  it('知らない帳の名前の当て先は作らない', () => {
+    // 図形・一過性の装飾と同じ（未知の名前は既定に落ちず完全に消える）
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const { targets, timeline } = build({ time: 0, text: '魔法', veil: 'sngle' }, VEIL_SPAN);
+
+    expect(targets[0].veilClasses).toEqual([]);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('sngle'));
+
+    timeline.kill();
+    warn.mockRestore();
+  });
+
+  /**
+   * 行のタイムラインから帳の分だけを取り出す。
+   *
+   * 当て先（`createVeil` が立てた箱と字）を触っている入れ子を探す。**尺と置き場所を
+   * 読むため**で、行ぜんぶの尺（漂いが滞在いっぱいまで伸ばす）を測っても帳のことは
+   * 何も分からない
+   */
+  function veilOf(timeline: gsap.core.Timeline, target: DummyTarget) {
+    const parts = new Set(target.extras);
+
+    return timeline
+      .getChildren(false, false, true)
+      .filter((child): child is gsap.core.Timeline => child instanceof gsap.core.Timeline)
+      .find((child) =>
+        child
+          .getChildren(true, true, false)
+          .some((tween) =>
+            tween.targets().some((it: object) => parts.has(it as Record<string, unknown>)),
+          ),
+      );
+  }
+
+  it('帳は語句が出る時刻から始まる（漂いの前から）', () => {
+    // 帳は「語句の登場」ではなく「語句が居ること」に付く軸なので、着地を待たない。
+    // 一文が降り切るまでの間は帳自身が持っている（`VeilEntry.lead`）
+    const { targets, timeline } = build(
+      {
+        time: 0,
+        text: '夢に眠る幻',
+        parts: [{ text: '夢に眠る幻', at: 1.5, veil: 'single' }],
+      },
+      VEIL_SPAN,
+    );
+
+    expect(veilOf(timeline, targets[0])?.startTime()).toBeCloseTo(1.5);
+    timeline.kill();
+  });
+
+  it('帳は語句が居られる長さに収まる', () => {
+    // 滞在を知っているのはここだけなので、渡し間違えると**行が変わっても帳だけが
+    // 続く**（次の行では要素ごと捨てられるので、画では「途中で切れる」に見える）。
+    // **行の尺では測れない** — 漂いが滞在いっぱいまで伸ばすので必ず等しくなる
+    const at = 1.5;
+    const { targets, timeline } = build(
+      {
+        time: 0,
+        text: '夢に眠る幻が掌に降り注ぐ',
+        parts: [{ text: '夢に眠る幻が掌に降り注ぐ', at, veil: 'single' }],
+      },
+      VEIL_SPAN,
+    );
+
+    const veil = veilOf(timeline, targets[0]);
+
+    expect(veil).toBeDefined();
+    expect(at + (veil?.duration() ?? 0)).toBeLessThanOrEqual(VEIL_SPAN);
+    timeline.kill();
+  });
+
+  it('行に書いた帳は、刻んだ語句には出ない', () => {
+    // 図形・英字・一過性の装飾と同じ扱い。この形の入力はパーサが入口で弾くので、
+    // ここが見ているのは「手で組んだ行でも継がない」という domain の不変条件の方
+    const { targets, timeline } = build(
+      {
+        time: 0,
+        text: '魔法が使える',
+        veil: 'single',
+        parts: [
+          { text: '魔法が', at: 0 },
+          { text: '使える', at: 6 },
+        ],
+      },
+      VEIL_SPAN,
+    );
+
+    expect(targets.map((target) => target.veilClasses)).toEqual([[], []]);
+    timeline.kill();
+  });
+
+  it('動きを減らす設定では当て先ごと作らない', () => {
+    // 一過性の装飾と同じ（出さないと決めた以上、箱も字も生えない）。
+    // 据えた一文は縦組みのまま残るので、文は静かに読める
+    const targets: DummyTarget[] = [];
+    const timeline = buildLineTimeline(
+      { time: 0, text: '夢に眠る', veil: 'single' },
+      (part) => {
+        const target = dummyTarget(part.text.length, kanjiOf(part.text).length);
+        targets.push(target);
+        return target;
+      },
+      { span: VEIL_SPAN, camera: {}, reducedMotion: true },
+    );
+
+    expect(targets[0].veilClasses).toEqual([]);
     timeline.kill();
   });
 });
