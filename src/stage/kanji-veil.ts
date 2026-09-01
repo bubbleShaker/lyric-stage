@@ -69,11 +69,23 @@ export const VEIL_GLYPH_CLASS = 'stage__veil-glyph';
  */
 export type VeilTarget = readonly HTMLElement[];
 
-/** 字ごとの置き場所。**すべて字自身の大きさに対する割合**（`glitch` / `shatter` と同じ単位） */
+/**
+ * 字ごとの置き場所。**画面に対する位置の割合**（`x` は幅の、`y` は高さの何 %）。
+ *
+ * 中央からのずれではなく**位置そのもの**。50 が中央で、案A（`single`）が 42 を
+ * 中心に置いているのは、**右上に据えた一文を避けて左へ寄せている**から。
+ *
+ * **字自身の大きさを単位にしてはいけない**（M14-3 / [Issue #87](https://github.com/bubbleShaker/lyric-stage/issues/87)）。
+ * 一度 `glitch` / `shatter` と同じ「字の大きさに対する割合」で書いていたが、
+ * あちらは**語句に貼り付く残像**なので字を単位にするのが正しく、帳は**画面を覆う層**
+ * なので画面を単位にする（`--veil-size` を画面の高さで書いているのと同じ理由）。
+ * 取り違えると、**作者が案を選んだ時に見た散らし方と別物になる** — 実際、横の
+ * 広がりが半分になり、かたまりが画面のど真ん中へ寄って一文の上に重なっていた。
+ */
 export interface VeilSpot {
-  /** 中央からの左右のずれ（％） */
+  /** 画面の左端からの位置（幅の何 %）。50 が中央 */
   readonly x: number;
-  /** 中央からの上下のずれ（％） */
+  /** 画面の上端からの位置（高さの何 %）。50 が中央 */
   readonly y: number;
   /** 大きさの倍率。CSS が配る基準（`--veil-size`）に掛かる */
   readonly scale: number;
@@ -146,6 +158,11 @@ export const veils = {
    * ひと文字ずつ。前の字が消えかける頃に次が入る。
    *
    * 一度に見えるのはほぼ 1 字なので、**帳そのものが読める**。字の多い文でも画が濁らない。
+   *
+   * **これが作者の選んだ案**（M14-1 で 3 案を実物で動かして選ばれた「案A ひと文字ずつ」）。
+   * 序（M14-2）も要所の行（M14-3）もこれを使う。`pair` / `breath` は選ばれなかったが、
+   * **消さずに残す** — 一文の長さや字数が変われば向き不向きが変わるし、案を並べて
+   * 見比べられること自体が次の判断の材料になる。
    */
   single: {
     className: 'stage__veil--single',
@@ -153,8 +170,9 @@ export const veils = {
     slot: 1.35,
     life: 1.25,
     fade: { in: 0.36, out: 0.44 },
-    // 中央から少しずつ振る。3 つの位置を巡るので、字が増えても散らかりすぎない
-    spot: (index) => ({ x: ((index % 3) - 1) * 14, y: ((index % 2) - 0.5) * 18, scale: 1 }),
+    // **かたまりの中心は 42%（中央より左）。** 据えた一文は右上に縦組みで出るので、
+    // 左へ寄せて避ける。3 つの位置を巡るので、字が増えても散らかりすぎない
+    spot: (index) => ({ x: 42 + ((index % 3) - 1) * 7, y: 50 + ((index % 2) - 0.5) * 10, scale: 1 }),
   },
 
   /**
@@ -168,8 +186,9 @@ export const veils = {
     slot: 1.05,
     life: 1.9,
     fade: { in: 0.24, out: 0.46 },
+    // 大きい字は左上、小さい字は右下。大小の差は倍率が付ける（大きさの基準は 1 つ）
     spot: (index) =>
-      index % 2 === 0 ? { x: -16, y: -8, scale: 1 } : { x: 20, y: 16, scale: 0.55 },
+      index % 2 === 0 ? { x: 36, y: 46, scale: 1 } : { x: 62, y: 62, scale: 0.55 },
   },
 
   /**
@@ -183,7 +202,8 @@ export const veils = {
     slot: 2.2,
     life: 1.15,
     fade: { in: 0.42, out: 0.46 },
-    spot: (index) => ({ x: ((index % 2) - 0.5) * 10, y: 0, scale: 1 }),
+    // ほぼ中央に据わる。大きい一字なので、振ると画面から溢れる
+    spot: (index) => ({ x: 46 + ((index % 2) - 0.5) * 6, y: 50, scale: 1 }),
   },
 } satisfies Record<string, VeilEntry>;
 
@@ -323,10 +343,21 @@ export function buildKanjiVeil(
     timeline
       // **置き場所は時間を持たない**（トゥイーンではなく set）。散らし方は案が決めるもので、
       // 動かすものではない。gsap に書かせているのは、CSS へ字ごとの値を配ると
-      // 「立てる人（LyricStage）が案を知る」ことになるため
+      // 「立てる人（LyricStage）が案を知る」ことになるため。
+      //
+      // **`left` / `top` が画面に対する位置で、`xPercent` / `yPercent` は
+      // 字の中心をそこへ合わせるための -50%**（M14-3 で単位を戻した。`VeilSpot` を見よ）。
+      // 2 つを混ぜているように見えるが、役が違う — 前者が構図、後者が字の芯出し
       .set(
         glyph,
-        { xPercent: spot.x, yPercent: spot.y, scale: spot.scale * ENTER_SCALE, opacity: 0 },
+        {
+          left: `${spot.x}%`,
+          top: `${spot.y}%`,
+          xPercent: -50,
+          yPercent: -50,
+          scale: spot.scale * ENTER_SCALE,
+          opacity: 0,
+        },
         start,
       )
       .to(

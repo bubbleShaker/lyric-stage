@@ -29,7 +29,10 @@ import {
 function dummyTarget(count: number): VeilTarget {
   return Array.from(
     { length: count },
-    () => ({ opacity: 0, xPercent: 0, yPercent: 0, scale: 1 }) as unknown as HTMLElement,
+    // `left` / `top` も先に持たせる（M14-3 で散らし方が画面の割合になった）。
+    // 空のままだと gsap が単位の分からない値として読む
+    () =>
+      ({ opacity: 0, left: '0%', top: '0%', xPercent: 0, yPercent: 0, scale: 1 }) as unknown as HTMLElement,
   );
 }
 
@@ -213,16 +216,38 @@ describe('buildKanjiVeil', () => {
   });
 
   it('案ごとの散らし方がそのまま字に置かれる', () => {
+    // **見るのは `left` / `top`**（M14-3 / Issue #87）。散らし方は**画面に対する構図**
+    // なので画面の割合で置く。`xPercent` / `yPercent` は字の中心をそこへ合わせる
+    // -50% でしかなく、**案ごとに変わらない** — そちらを見ていると、案の値を
+    // どう書き換えても検査が通る
     const target = dummyTarget(2);
     const timeline = buildKanjiVeil(target, veils.pair, { span: 12 });
-    const glyphs = target as unknown as { xPercent: number; yPercent: number }[];
+    const glyphs = target as unknown as { left: string; top: string; xPercent: number }[];
 
     timeline.time(veils.pair.lead + 0.01);
-    expect(glyphs[0].xPercent).toBeCloseTo(veils.pair.spot(0).x);
+    expect(glyphs[0].left).toBe(`${veils.pair.spot(0).x}%`);
+    expect(glyphs[0].top).toBe(`${veils.pair.spot(0).y}%`);
+    expect(glyphs[0].xPercent).toBeCloseTo(-50);
 
     // 2 字目は自分の出番が来るまで置かれない（`set` が出番の時刻に立っている）
     timeline.time(timeline.duration());
-    expect(glyphs[1].xPercent).toBeCloseTo(veils.pair.spot(1).x);
+    expect(glyphs[1].left).toBe(`${veils.pair.spot(1).x}%`);
+  });
+
+  it('散らし方が画面の中に収まっている', () => {
+    // **画面に対する位置なので、0〜100 の外へ出ると字が画面から溢れる**
+    // （字の大きさに対する割合だった頃は、外へ出しても字の隣に居るだけだった）。
+    // 中心が縁に近すぎても、大きい字は半分が切れる — 案の値を触った日に効く
+    for (const [name, plan] of Object.entries(veils) as [string, VeilEntry][]) {
+      for (let index = 0; index < 8; index += 1) {
+        const spot = plan.spot(index);
+
+        expect(spot.x, `${name}[${index}].x`).toBeGreaterThanOrEqual(20);
+        expect(spot.x, `${name}[${index}].x`).toBeLessThanOrEqual(80);
+        expect(spot.y, `${name}[${index}].y`).toBeGreaterThanOrEqual(20);
+        expect(spot.y, `${name}[${index}].y`).toBeLessThanOrEqual(80);
+      }
+    }
   });
 });
 

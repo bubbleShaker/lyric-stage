@@ -256,7 +256,8 @@
           "at": 1.128,
           "effect": "bounce",
           "place": { "at": "top-right", "size": "lg", "nudge": { "y": 0.02 }, "tilt": 5 },
-          "decor": ["band", "rule"]
+          "decor": ["band", "rule"],
+          "spark": "blocks"
         },
         {
           "text": "ような",
@@ -345,31 +346,7 @@
       "text": "切なさやトキメキが輝き出す",
       "effect": "vertical",
       "place": { "at": "top-right", "size": "lg" },
-      "parts": [
-        {
-          "text": "切なさや",
-          "at": 0,
-          "effect": "vertical",
-          "place": { "at": "top-left", "size": "lg", "nudge": { "x": 0.03 } },
-          "decor": ["rule"]
-        },
-        {
-          "text": "トキメキが",
-          "at": 1.879,
-          "effect": "bounce",
-          "place": { "at": "bottom-center", "size": "lg", "nudge": { "y": -0.04 }, "tilt": 3 },
-          "decor": ["band"],
-          "spark": "blocks"
-        },
-        {
-          "text": "輝き出す",
-          "at": 3.757,
-          "effect": "shatter",
-          "place": { "at": "middle-center", "size": "xl", "nudge": { "x": 0.04 }, "tilt": -2 },
-          "sub": "STARTS TO SHINE",
-          "spark": "burst"
-        }
-      ]
+      "veil": "single"
     },
     {
       "time": 203.82,
