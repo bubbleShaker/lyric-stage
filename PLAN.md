@@ -78,7 +78,7 @@
   - [x] **M13-3** 退場 — 語句が次へ渡すときに奥へ引く（[Issue #77](https://github.com/bubbleShaker/lyric-stage/issues/77)）。**M8-5 の積み上げの取り消し**。画面に居るのは出たばかりの語句と引きかけの語句だけになる
   - [x] **M13-4** カメラで 1 語句ずつ映す（[Issue #79](https://github.com/bubbleShaker/lyric-stage/issues/79)）。構図を**世界の座標**として読み替える
   - [x] **M13-5** 板に切る分解（[Issue #81](https://github.com/bubbleShaker/lyric-stage/issues/81)）。`魔法が` と `夢に眠る` に割り当てた
-- [ ] **M14** 一文を据えて漢字を重ねる（2026-08-31。作者の依頼「最初に一文を縦に出して、そこから漢字を枠だけのフォントで重ねてフェードインしてはフェードアウトする」。参考は M8 / M13 と同じ [文字PV - ロウワー](https://youtu.be/3ioQDnOknuY)）（[Issue #84](https://github.com/bubbleShaker/lyric-stage/issues/84)）
+- [x] **M14** 一文を据えて漢字を重ねる（2026-08-31。作者の依頼「最初に一文を縦に出して、そこから漢字を枠だけのフォントで重ねてフェードインしてはフェードアウトする」。参考は M8 / M13 と同じ [文字PV - ロウワー](https://youtu.be/3ioQDnOknuY)）（[Issue #84](https://github.com/bubbleShaker/lyric-stage/issues/84)）
   - [x] **M14-1** 帳の仕組み（第 5 の軸 `veil`）と 3 案の実装。**一番重い判断は「演出ではなく直交する軸にした」こと**（下記）
   - [x] **M14-2** 序 — 作品の頭に一文を掲げる（区間の頭を 2 小節ぶん広げ、序は歌詞シートではなく `work.ts` が持つ）
   - [x] **M14-3** 本編シートへの割り当てと、承認された散らし方への復帰（[Issue #87](https://github.com/bubbleShaker/lyric-stage/issues/87)）。**帳を置ける行は 1 つしか無い**（下記）
