@@ -896,18 +896,24 @@ body {
 .stage__veil {
   position: absolute;
   inset: 0;
-
-  /* 字は 1 マスの grid に積む。大きさの違う字どうしも中心が揃うので、
-     絶対配置 + translate(-50%) を字ごとに書かずに済む。
-     **ずらしは JS（gsap）が xPercent / yPercent で書く** — 字自身の大きさに
-     対する割合なので、画面が変わっても散らし方の比が保たれる（glitch と同じ単位） */
-  display: grid;
-  place-items: center;
 }
 
 .stage__veil-glyph {
-  /* 1 マスに全部を重ねる。書かないと字の数だけ行が増えて縦に並ぶ */
-  grid-area: 1 / 1;
+  /* **置き場所は画面に対する割合**（M14-3 / Issue #87 で戻した）。
+     `left` / `top` は JS（gsap）が案の `spot` から書き、中心を合わせる
+     `translate(-50%, -50%)` は gsap の xPercent / yPercent が受け持つ。
+
+     **一度これを「字自身の大きさに対する割合」で書いていた**（grid に積んで
+     xPercent だけでずらす形）。**作者が案を選んだ時に見た画と単位が違う** —
+     案A は画面幅の ±7% に散らしていたが、字の大きさを単位にすると横の広がりが
+     半分（1280 幅で ±90px → ±46px）になる。**散らし方は画に対する構図なので、
+     画面の寸法で書く**（`--veil-size` を画面の高さで書いているのと同じ理由）。
+
+     位置指定が効くのは「字が絶対配置」かつ「祖先が画面いっぱいの位置指定済みの箱」
+     の両方が成り立つ時だけで、崩れると `left` / `top` は**黙って無視され**、
+     全字が箱の左上に重なる（例外も検査の赤も出ない）。この約束は
+     `stage/kanji-veil.test.ts` が このファイルを読んで見張っている */
+  position: absolute;
 
   font-family: var(--font-display);
   font-weight: 900;
