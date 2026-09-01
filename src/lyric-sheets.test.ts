@@ -792,7 +792,7 @@ describe('WORK_WINDOW × 本編シート', () => {
     // 常態になり、装飾ではなく地になる（作者の言葉は「適度な言葉に付与する」）。
     //
     // 半分という線に理屈は無い — 守りたいのは「選んで付けている」ことなので、
-    // **付けすぎた時に気付ける位置**に置く。今は 19 語句中 8 個
+    // **付けすぎた時に気付ける位置**に置く。今は 25 語句中 10 個
     const sparked = parts.filter((part) => part.spark !== undefined);
 
     expect(sparked.length).toBeLessThan(parts.length / 2);
@@ -825,14 +825,23 @@ describe('WORK_WINDOW × 本編シート', () => {
     // ここを「刻んでいるか」だけで見ると帳の行が落ちるので、**据え置く理由を
     // 持っているか**で見る。理由の無い行＝刻み忘れは今までどおり落ちる。
     //
-    // **`veil` を「刻まなくてよい印」に使えてしまうことは、逆側から塞いである** —
-    // 「帳を当てた語句に漢字がある」「帳が滞在に収まって、字が全部出る」の 2 つが、
-    // 実際に帳が画に出ることまで見ているので、印として書くだけでは通らない
-    const whole = sliced.lines
-      .filter((line) => line.parts === undefined && line.veil === undefined)
-      .map((line) => line.text);
+    // **`veil` を「刻まなくてよい印」に使えてしまうことは、ここで塞ぐ** —
+    // 免除した行に対して、その場で「帳が実際に画へ出るか」を測る。
+    //
+    // **担保を別の検査へ預けない**（レビュー指摘 🟡）。「帳が滞在に収まって、
+    // 字が全部出る」も同じことを見ているが、あちらは別の describe に居るので、
+    // 将来あちらの範囲が変わると**免除だけが残って刻み逃れの道が開く**。
+    // 条件と免除は同じ場所で心中させる
+    const exempt = sliced.lines.filter((line) => line.parts === undefined);
+    const whole = exempt.filter((line) => line.veil === undefined).map((line) => line.text);
 
     expect(whole).toStrictEqual([]);
+
+    for (const line of exempt) {
+      expect(silentVeilsOf(line, gapAfter(sliced.lines, sliced.lines.indexOf(line)))).toStrictEqual(
+        [],
+      );
+    }
   });
 });
 

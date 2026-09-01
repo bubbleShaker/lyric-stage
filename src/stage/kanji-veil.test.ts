@@ -234,10 +234,16 @@ describe('buildKanjiVeil', () => {
     expect(glyphs[1].left).toBe(`${veils.pair.spot(1).x}%`);
   });
 
-  it('散らし方が画面の中に収まっている', () => {
-    // **画面に対する位置なので、0〜100 の外へ出ると字が画面から溢れる**
-    // （字の大きさに対する割合だった頃は、外へ出しても字の隣に居るだけだった）。
-    // 中心が縁に近すぎても、大きい字は半分が切れる — 案の値を触った日に効く
+  it('散らし方の中心が画面の縁に寄りすぎていない', () => {
+    // **画面に対する位置になったので、縁へ寄せると字が切れる**（字の大きさに対する
+    // 割合だった頃は、外へ出しても字の隣に居るだけだった）。
+    //
+    // **見ているのは中心だけで、字の実寸は見ていない**（レビュー指摘 🟡 →
+    // 名前を主張に合わせた）。実際に溢れるかを決めるのは `--veil-size × 100dvh` と
+    // 画面の縦横比で、それは CSS 側の値なので**ここでは測れない**。字がどれだけ
+    // はみ出してよいかは案ごとの狙い（`breath` は画面いっぱいの一字で、
+    // 上下が切れるのが持ち味）でもあるので、ここは「起点が縁に寄りすぎていないか」
+    // に留める
     for (const [name, plan] of Object.entries(veils) as [string, VeilEntry][]) {
       for (let index = 0; index < 8; index += 1) {
         const spot = plan.spot(index);
@@ -310,5 +316,26 @@ describe('CSS との対応', () => {
 
     expect(body).toContain('color: transparent');
     expect(body).toContain('-webkit-text-stroke');
+  });
+
+  it('散らし方を成り立たせる位置指定が CSS に残っている', () => {
+    // **M14-3 でいちばん重い前提**（レビュー指摘 🔴）。散らし方は JS が
+    // `left` / `top` を割合で書くことで効くが、それが効くのは
+    // **①字が絶対配置**で、かつ**②祖先が画面いっぱいの位置指定済みの箱**である
+    // 時だけ。どちらかが落ちると `left` / `top` は**黙って無視され**、
+    // 全字が箱の左上に重なる — 例外も赤も出ず、画だけが壊れる。
+    //
+    // M14-3 より前はこの前提を `display: grid; place-items: center` が持っていて
+    // 位置の正しさが CSS 1 か所で閉じていたが、今は
+    // 「CSS の position ＋ JS の left/top ＋ JS の -50%」の 3 者の約束になった。
+    // **散文のコメントだけでは守れない**ので、ここで綴じる
+    const [, glyph] = ruleOf(VEIL_GLYPH_CLASS).exec(css) ?? [];
+    const [, box] = ruleOf(VEIL_CLASS).exec(css) ?? [];
+
+    expect(glyph, '字が絶対配置でないと left / top が効かない').toContain('position: absolute');
+    expect(box, '箱が位置指定されていないと % の基準が別の箱になる').toContain(
+      'position: absolute',
+    );
+    expect(box, '箱が画面いっぱいでないと % が画面の寸法に解決されない').toContain('inset: 0');
   });
 });

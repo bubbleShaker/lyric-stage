@@ -345,7 +345,7 @@
       "time": 197.81,
       "text": "切なさやトキメキが輝き出す",
       "effect": "vertical",
-      "place": { "at": "top-right", "size": "lg" },
+      "place": { "at": "top-right", "size": "sm" },
       "veil": "single"
     },
     {
